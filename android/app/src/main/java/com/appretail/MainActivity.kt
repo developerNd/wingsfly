@@ -1,4 +1,4 @@
-package com.appretail
+package com.wingsfly
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

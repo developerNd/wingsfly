@@ -1,4 +1,4 @@
-package com.appretail
+package com.wingsfly
 
 import android.app.Application
 import com.facebook.react.PackageList

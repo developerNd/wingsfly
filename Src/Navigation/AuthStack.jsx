@@ -1,12 +1,12 @@
 import * as React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Route } from '../Helper/Contants/Route';
+import { routes } from '../Helper/Contants';
 import Splash from '../Pages/Onboarding/Splash';
 import Login from '../Pages/Onboarding/Login';
-import Verification from '../Pages/Onboarding/Otp/Verification';
-import Signup from '../Pages/Onboarding/Signup';
-import CompleteVerification from '../Pages/Onboarding/Otp/CompleteVerification';
-
+import GenderSelection from '../Pages/Onboarding/GenderSelection';
+import OnBoard from '../Pages/Onboarding/OnBoard';
+import Resister from '../Pages/Onboarding/Resister';
+import Task from '../Pages/Onboarding/Task';
 
 const Stack = createNativeStackNavigator();
 
@@ -16,11 +16,15 @@ function AuthStack() {
             screenOptions={{
                 headerShown: false,
             }}>
-            <Stack.Screen name={Route.SPLASH_SCREEN} component={Splash} />
-            <Stack.Screen name={Route.LOGIN_SCREEN} component={Login} />
-            <Stack.Screen name={Route.SIGNUP_SCREEN} component={Signup} />
-            <Stack.Screen name={Route.OTPVERIFICATION_SCREEN} component={Verification} />
-            <Stack.Screen name={Route.CONFORM_SCREEN} component={CompleteVerification} />
+            <Stack.Screen name={routes.SPLASH_SCREEN} component={Splash} />
+            <Stack.Screen name={routes.LOGIN_SCREEN} component={Login} />
+            <Stack.Screen name={routes.SIGNUP_SCREEN} component={Resister} />
+            <Stack.Screen
+                name={routes.GENDERSELECTION_SCREEN}
+                component={GenderSelection}
+            />
+            <Stack.Screen name={routes.ONBOARD_SCREEN} component={OnBoard} />
+            <Stack.Screen name={routes.TASKSLECTION_SCREEN} component={Task} />
         </Stack.Navigator>
     );
 }

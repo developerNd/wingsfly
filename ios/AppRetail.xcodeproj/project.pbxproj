@@ -484,7 +484,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.appretail;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wingsfly;
 				PRODUCT_NAME = AppRetail;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -512,7 +512,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.appretail;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wingsfly;
 				PRODUCT_NAME = AppRetail;
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
