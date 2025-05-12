@@ -9,9 +9,9 @@ const ModalTaskCard = ({ item, checked, onToggle }) => (
     <View style={styles.taskContainer}>
         <Image source={item.image} style={styles.taskImage} />
         <View style={styles.taskInfo}>
-            <Text style={styles.taskTitle}>Habit</Text>
+            <Text style={styles.taskTitle}>{item.Heading}</Text>
             <Text style={styles.taskDesc}>
-                Activity that repeats over time. It has detailed tracking and statistics.
+               {item.title}
             </Text>
         </View>
 

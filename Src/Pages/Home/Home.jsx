@@ -16,6 +16,7 @@ import Modal from "react-native-modal";
 import TaskCard from "../../Components/TaskCard";
 import ModalTaskCard from "../../Components/ModalTaskCard";
 
+
 const tasks = [
     {
         id: "1",
@@ -37,6 +38,33 @@ const tasks = [
         time: "02:00 PM",
         tags: ["Code", "Must"],
         image: require("../../Assests/Images/taskhome.png"),
+    },
+];
+
+const modaltasks = [
+    {
+        id: "1",
+        Heading:"Habit",
+        title: "Activity that repeats over time it has detailed tracking and statistics.",
+        image: require("../../Assests/Images/habit.png"),
+    },
+    {
+        id: "2",
+        Heading:"Recurring Task",
+        title: "Activity that repeats over time it has detailed tracking and statistics.",
+        image: require("../../Assests/Images/recurring.png"),
+    },
+     {
+        id: "3",
+        Heading:"Task",
+        title: "Single instance activity without tracking over time.",
+        image: require("../../Assests/Images/task.png"),
+    },
+     {
+        id: "4",
+        Heading:"Goal of the Day",
+        title: "A specific target set for oneself to achieve within a single day.",
+        image: require("../../Assests/Images/goal.png"),
     },
 ];
 
@@ -127,7 +155,7 @@ const Home = () => {
             >
                 <View style={styles.modalContent}>
                     <FlatList
-                        data={tasks}
+                        data={modaltasks}
                         keyExtractor={(item) => item.id}
                         renderItem={renderNewTask}
                         contentContainerStyle={{ marginTop: 20 }}

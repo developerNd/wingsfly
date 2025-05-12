@@ -2,8 +2,10 @@ import React from 'react';
 import { View, Text, ImageBackground, TouchableOpacity, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
 import { colors } from '../../Helper/Contants';
 import Headers from '../../Components/Headers';
+import { useNavigation } from '@react-navigation/native';
 
 const TaskCard = () => {
+    const navigation=useNavigation()
     return (
         <SafeAreaView style={styles.container}>
             <View style={{ marginTop: 20 }}>
