@@ -11,10 +11,11 @@ import SearchIcon from "react-native-vector-icons/EvilIcons";
 import ANTIcon from "react-native-vector-icons/AntDesign";
 import PlusIcon from "react-native-vector-icons/AntDesign";
 import Calender from "../../Components/Calender";
-import { colors } from "../../Helper/Contants";
+import { colors, routes } from "../../Helper/Contants";
 import Modal from "react-native-modal";
 import TaskCard from "../../Components/TaskCard";
 import ModalTaskCard from "../../Components/ModalTaskCard";
+import { useNavigation } from "@react-navigation/native";
 
 
 const tasks = [
@@ -41,12 +42,21 @@ const tasks = [
     },
 ];
 
-const modaltasks = [
+
+
+const Home = () => {
+    const [checkedItems, setCheckedItems] = useState({});
+    const [isModalVisible, setModalVisible] = useState(false);
+
+    const navigation=useNavigation()
+
+    const modaltasks = [
     {
         id: "1",
         Heading:"Habit",
         title: "Activity that repeats over time it has detailed tracking and statistics.",
         image: require("../../Assests/Images/habit.png"),
+        navigation:navigation.navigate(routes.CATEOGEYSELECTION_SCREEN)
     },
     {
         id: "2",
@@ -67,10 +77,6 @@ const modaltasks = [
         image: require("../../Assests/Images/goal.png"),
     },
 ];
-
-const Home = () => {
-    const [checkedItems, setCheckedItems] = useState({});
-    const [isModalVisible, setModalVisible] = useState(false);
 
     const toggleCheckbox = (id) => {
         setCheckedItems((prev) => ({

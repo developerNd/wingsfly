@@ -5,7 +5,8 @@ export const routes = {
     GENDERSELECTION_SCREEN: 'genderselection',
     ONBOARD_SCREEN: "onboardscreen",
     TASKSLECTION_SCREEN: "taskselection",
-    HOME_SCREEN: "homescreen"
+    HOME_SCREEN: "homescreen",
+    CATEOGEYSELECTION_SCREEN:"cateogryselection"
 }
 
 export const colors = {
