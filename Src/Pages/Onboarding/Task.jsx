@@ -5,7 +5,7 @@ import Headers from '../../Components/Headers';
 import { useNavigation } from '@react-navigation/native';
 
 const TaskCard = () => {
-    const navigation=useNavigation()
+    const navigation = useNavigation()
     return (
         <SafeAreaView style={styles.container}>
             <View style={{ marginTop: 20 }}>
@@ -15,10 +15,10 @@ const TaskCard = () => {
                 <View style={{ marginTop: 30, width: "95%", alignSelf: "center" }}>
                     <ImageBackground
                         style={styles.image}
-                        source={require('../../Assests/Images/task1.png')}
+                        source={require('../../assets/Images/task1.png')}
                         imageStyle={{ borderRadius: 12 }}
                     >
-                        <TouchableOpacity style={styles.button}>
+                        <TouchableOpacity style={styles.button} onClick={() => navigation.navigate(routes.HOME_SCREEN)} >
                             <TouchableOpacity style={{ width: "95%", height: 65, backgroundColor: "#fff", position: "absolute", bottom: 10, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }}>
                                 <Text style={{ fontSize: 14, fontWeight: "600", textAlign: "center", marginTop: 5 }}>Set Long-Term Goal</Text>
                                 <Text style={{ textAlign: "center", fontSize: 12, fontWeight: "400", width: "80%", alignSelf: "center", marginTop: 10 }}>Define your target, identity milestones, and create an action plan</Text>
@@ -28,7 +28,7 @@ const TaskCard = () => {
 
                     <ImageBackground
                         style={styles.image}
-                        source={require('../../Assests/Images/task3.png')}
+                        source={require('../../assets/Images/task3.png')}
                         imageStyle={{ borderRadius: 12 }}
                     >
                         <TouchableOpacity style={styles.button}>
@@ -41,7 +41,7 @@ const TaskCard = () => {
 
                     <ImageBackground
                         style={styles.image}
-                        source={require('../../Assests/Images/task2.png')}
+                        source={require('../../assets/Images/task2.png')}
                         imageStyle={{ borderRadius: 12 }}
                     >
                         <TouchableOpacity style={styles.button}>

@@ -2,7 +2,7 @@ import React, {useEffect} from 'react';
 import {Image, Text, View, StyleSheet} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {routes} from '../../Helper/Contants';
-import Logo from '../../Assests/Images/brand.svg';
+import Logo from '../../assets/Images/brand.svg';
 
 const Splash = () => {
   const navigation = useNavigation();

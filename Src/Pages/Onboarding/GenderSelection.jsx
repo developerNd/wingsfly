@@ -68,7 +68,7 @@ const GenderSelection = ({ onContinue }) => {
                             ]}
                         >
                             <Image
-                                source={require('../../Assests/Images/female.png')}
+                                source={require('../../assets/Images/female.png')}
                                 style={styles.image}
                             />
                         </Animated.View>
@@ -90,7 +90,7 @@ const GenderSelection = ({ onContinue }) => {
                             ]}
                         >
                             <Image
-                                source={require('../../Assests/Images/male.png')}
+                                source={require('../../assets/Images/male.png')}
                                 style={styles.image}
                             />
                         </Animated.View>

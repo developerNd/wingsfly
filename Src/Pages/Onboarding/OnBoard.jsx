@@ -7,7 +7,7 @@ import {
     StyleSheet,
     SafeAreaView,
 } from "react-native";
-import Continue from '../../Assests/Images/continue.svg';
+import Continue from '../../assets/Images/continue.svg';
 import { useNavigation } from "@react-navigation/native";
 import { routes } from "../../Helper/Contants";
 
@@ -17,7 +17,7 @@ const OnBoard = () => {
         <SafeAreaView style={styles.container}>
             <ImageBackground
                 style={styles.backgroundImage}
-                source={require('../../Assests/Images/preview.png')}
+                source={require('../../assets/Images/preview.png')}
             >
                 <View style={styles.contentContainer}>
                     <Text style={styles.title}>

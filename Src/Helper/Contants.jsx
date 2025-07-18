@@ -6,7 +6,9 @@ export const routes = {
     ONBOARD_SCREEN: "onboardscreen",
     TASKSLECTION_SCREEN: "taskselection",
     HOME_SCREEN: "homescreen",
-    CATEOGEYSELECTION_SCREEN:"cateogryselection"
+    CATEOGEYSELECTION_SCREEN:"cateogryselection",
+    BOTTOM_TAB: "bottomtabnavigator",
+    EVALUATEPROGRESS_SCREEN: "evaluateprogress"
 }
 
 export const colors = {

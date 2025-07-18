@@ -8,62 +8,121 @@ const Calender = () => {
 
   useEffect(() => {
     const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth(); // 0-indexed
-
-    const totalDays = new Date(year, month + 1, 0).getDate();
-
     const dates = [];
-    for (let day = 1; day <= totalDays; day++) {
-      const date = new Date(year, month, day);
-      const weekday = date.toLocaleDateString("en-US", { weekday: "short" }); // "Mon"
+
+    // Generate past 30 days
+    for (let i = 30; i >= 1; i--) {
+      const date = new Date(now);
+      date.setDate(now.getDate() - i);
+      const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
       dates.push({
-        day,
+        day: date.getDate(),
         weekday,
         fullDate: date.toDateString(),
+        isPast: true,
+        isToday: false,
       });
     }
+
+    // Add today
+    const today = new Date(now);
+    const todayWeekday = today.toLocaleDateString("en-US", { weekday: "short" });
+    dates.push({
+      day: today.getDate(),
+      weekday: todayWeekday,
+      fullDate: today.toDateString(),
+      isPast: false,
+      isToday: true,
+    });
+
+    // Generate next 30 days
+    for (let i = 1; i <= 30; i++) {
+      const date = new Date(now);
+      date.setDate(now.getDate() + i);
+      const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
+      dates.push({
+        day: date.getDate(),
+        weekday,
+        fullDate: date.toDateString(),
+        isPast: false,
+        isToday: false,
+      });
+    }
+
     setDays(dates);
+    
+    // Auto-select today's date
+    setSelectedDate(today.toDateString());
   }, []);
 
   const handleSelect = (dateStr) => {
     setSelectedDate(dateStr);
   };
 
+  if (days.length === 0) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
       <FlatList
         horizontal
         data={days}
-        keyExtractor={(item) => item.fullDate}
+        keyExtractor={(item, index) => `${item.fullDate}-${index}`}
         renderItem={({ item }) => {
           const isSelected = selectedDate === item.fullDate;
+          const isToday = item.isToday;
+          
           return (
             <TouchableOpacity onPress={() => handleSelect(item.fullDate)}>
-              <View style={[styles.card, isSelected && styles.selectedCard]}>
+              <View style={[
+                styles.card, 
+                (isSelected || isToday) && styles.selectedCard
+              ]}>
                 <View style={styles.dayContainer}>
-                  <Text style={[styles.dayText, isSelected && styles.selectedText]}>
+                  <Text style={[
+                    styles.dayText, 
+                    (isSelected || isToday) && styles.selectedText
+                  ]}>
                     {item.weekday}
                   </Text>
                 </View>
                 <View
                   style={[
                     styles.dateContainer,
-                    isSelected && styles.selectedDateContainer,
+                    (isSelected || isToday) && styles.selectedDateContainer
                   ]}
                 >
                   <Text
-                    style={[styles.dateText, isSelected && styles.selectedText]}
+                    style={[
+                      styles.dateText, 
+                      (isSelected || isToday) && styles.selectedText
+                    ]}
                   >
                     {item.day}
                   </Text>
                 </View>
+                
+                {(isSelected || isToday) && (
+                  <View style={styles.bottomIndicator} />
+                )}
               </View>
             </TouchableOpacity>
           );
         }}
-        contentContainerStyle={{ gap: 10 }}
+        contentContainerStyle={{ paddingHorizontal: 5 }}
+        ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
         showsHorizontalScrollIndicator={false}
+        initialScrollIndex={30}
+        getItemLayout={(data, index) => ({
+          length: 55,
+          offset: 55 * index,
+          index,
+        })}
+        removeClippedSubviews={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={10}
       />
     </View>
   );
@@ -71,20 +130,23 @@ const Calender = () => {
 
 const styles = StyleSheet.create({
   container: {
-    width: "90%",
+    width: "100%",
     alignSelf: "center",
     marginTop: 20,
+    minHeight: 56,
   },
   card: {
-    width: 55,
-    height: 65,
+    width: 40,
+    height: 51,
     backgroundColor: "#F4F4F4",
-    borderRadius: 12,
+    borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
+    overflow: 'hidden',
+    position: 'relative',
   },
   selectedCard: {
-    backgroundColor: "#CDE7FF",
+    backgroundColor: "#2C3399",
   },
   dayContainer: {
     width: "100%",
@@ -95,9 +157,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
   },
   dayText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#333",
+    fontSize: 10,
+    fontFamily: "OpenSans-Regular",
+    color: "#636363",
   },
   dateContainer: {
     width: "100%",
@@ -111,12 +173,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.PRIMARY
   },
   dateText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#000",
+    fontSize: 13,
+    fontFamily: "OpenSans-Regular",
+    color: "#636363",
   },
   selectedText: {
-    color: "#fff",
+    color: "#FFFFFF",
+  },
+  bottomIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: '50%',
+    marginLeft: -8,
+    width: 16,
+    height: 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 1,
   },
 });
 

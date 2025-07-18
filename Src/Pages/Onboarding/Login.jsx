@@ -11,7 +11,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import CustomButton from '../../Components/CustomButton';
 import { colors, routes } from '../../Helper/Contants';
-import Logo from '../../Assests/Images/brand.svg';
+import Logo from '../../assets/Images/brand.svg';
 import { useNavigation } from '@react-navigation/native';
 
 const Login = () => {
