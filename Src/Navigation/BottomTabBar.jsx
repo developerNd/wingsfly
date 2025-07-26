@@ -1,12 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import {View, Text, StyleSheet, Image} from 'react-native';
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import Home from '../Pages/Home/Home';
+import {Icons, colors} from '../Helper/Contants';
 
 const Tab = createBottomTabNavigator();
 
 // Placeholder screens
-const PlaceholderScreen = ({ screenName }) => {
+const PlaceholderScreen = ({screenName}) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{screenName}</Text>
@@ -23,30 +24,30 @@ const SettingsScreen = () => <PlaceholderScreen screenName="Settings" />;
 const BottomTabNavigator = () => {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color }) => {
+      screenOptions={({route}) => ({
+        tabBarIcon: ({focused, color}) => {
           let iconSource;
-          
+
           switch (route.name) {
             case 'Home':
-              iconSource = require('../assets/icons/home.png');
+              iconSource = Icons.Home;
               break;
             case 'Planner':
-              iconSource = require('../assets/icons/planner.png');
+              iconSource = Icons.Planner;
               break;
             case 'Analysis':
-              iconSource = require('../assets/icons/analysis.png');
+              iconSource = Icons.Analysis;
               break;
             case 'Uplift':
-              iconSource = require('../assets/icons/uplift.png');
+              iconSource = Icons.Uplift;
               break;
             case 'Settings':
-              iconSource = require('../assets/icons/settings.png');
+              iconSource = Icons.Settings;
               break;
             default:
-              iconSource = require('../assets/icons/home.png');
+              iconSource = Icons.Home;
           }
-          
+
           return (
             <Image
               source={iconSource}
@@ -55,14 +56,14 @@ const BottomTabNavigator = () => {
                 {
                   width: 30,
                   height: 30,
-                  tintColor: color
-                }
+                  tintColor: color,
+                },
               ]}
               resizeMode="contain"
             />
           );
         },
-        tabBarActiveTintColor: '#000000',
+        tabBarActiveTintColor: colors.Black,
         tabBarInactiveTintColor: '#666666',
         tabBarStyle: {
           backgroundColor: '#F7F7F7',
@@ -70,7 +71,7 @@ const BottomTabNavigator = () => {
           paddingTop: 7,
           paddingBottom: 5,
           marginRight: -9,
-          marginLeft: -12
+          marginLeft: -12,
         },
         tabBarLabelStyle: {
           fontSize: 9,
@@ -78,8 +79,7 @@ const BottomTabNavigator = () => {
           marginTop: 1,
         },
         headerShown: false,
-      })}
-    >
+      })}>
       <Tab.Screen name="Home" component={Home} />
       <Tab.Screen name="Planner" component={PlannerScreen} />
       <Tab.Screen name="Analysis" component={AnalysisScreen} />

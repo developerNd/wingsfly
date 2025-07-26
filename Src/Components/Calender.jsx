@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { FlatList, Text, View, StyleSheet, TouchableOpacity } from "react-native";
-import { colors } from "../Helper/Contants";
+import React, {useState, useEffect} from 'react';
+import {FlatList, Text, View, StyleSheet, TouchableOpacity} from 'react-native';
+import {colors} from '../Helper/Contants';
+import {HP, WP, FS} from '../utils/dimentions';
 
 const Calender = () => {
   const [days, setDays] = useState([]);
@@ -14,7 +15,7 @@ const Calender = () => {
     for (let i = 30; i >= 1; i--) {
       const date = new Date(now);
       date.setDate(now.getDate() - i);
-      const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
+      const weekday = date.toLocaleDateString('en-US', {weekday: 'short'});
       dates.push({
         day: date.getDate(),
         weekday,
@@ -26,7 +27,7 @@ const Calender = () => {
 
     // Add today
     const today = new Date(now);
-    const todayWeekday = today.toLocaleDateString("en-US", { weekday: "short" });
+    const todayWeekday = today.toLocaleDateString('en-US', {weekday: 'short'});
     dates.push({
       day: today.getDate(),
       weekday: todayWeekday,
@@ -39,7 +40,7 @@ const Calender = () => {
     for (let i = 1; i <= 30; i++) {
       const date = new Date(now);
       date.setDate(now.getDate() + i);
-      const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
+      const weekday = date.toLocaleDateString('en-US', {weekday: 'short'});
       dates.push({
         day: date.getDate(),
         weekday,
@@ -50,12 +51,12 @@ const Calender = () => {
     }
 
     setDays(dates);
-    
+
     // Auto-select today's date
     setSelectedDate(today.toDateString());
   }, []);
 
-  const handleSelect = (dateStr) => {
+  const handleSelect = dateStr => {
     setSelectedDate(dateStr);
   };
 
@@ -69,40 +70,40 @@ const Calender = () => {
         horizontal
         data={days}
         keyExtractor={(item, index) => `${item.fullDate}-${index}`}
-        renderItem={({ item }) => {
+        renderItem={({item}) => {
           const isSelected = selectedDate === item.fullDate;
           const isToday = item.isToday;
-          
+
           return (
             <TouchableOpacity onPress={() => handleSelect(item.fullDate)}>
-              <View style={[
-                styles.card, 
-                (isSelected || isToday) && styles.selectedCard
-              ]}>
+              <View
+                style={[
+                  styles.card,
+                  (isSelected || isToday) && styles.selectedCard,
+                ]}>
                 <View style={styles.dayContainer}>
-                  <Text style={[
-                    styles.dayText, 
-                    (isSelected || isToday) && styles.selectedText
-                  ]}>
+                  <Text
+                    style={[
+                      styles.dayText,
+                      (isSelected || isToday) && styles.selectedText,
+                    ]}>
                     {item.weekday}
                   </Text>
                 </View>
                 <View
                   style={[
                     styles.dateContainer,
-                    (isSelected || isToday) && styles.selectedDateContainer
-                  ]}
-                >
+                    (isSelected || isToday) && styles.selectedDateContainer,
+                  ]}>
                   <Text
                     style={[
-                      styles.dateText, 
-                      (isSelected || isToday) && styles.selectedText
-                    ]}
-                  >
+                      styles.dateText,
+                      (isSelected || isToday) && styles.selectedText,
+                    ]}>
                     {item.day}
                   </Text>
                 </View>
-                
+
                 {(isSelected || isToday) && (
                   <View style={styles.bottomIndicator} />
                 )}
@@ -110,13 +111,13 @@ const Calender = () => {
             </TouchableOpacity>
           );
         }}
-        contentContainerStyle={{ paddingHorizontal: 5 }}
-        ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
+        contentContainerStyle={{paddingHorizontal: WP(1.3)}}
+        ItemSeparatorComponent={() => <View style={{width: WP(2.7)}} />}
         showsHorizontalScrollIndicator={false}
-        initialScrollIndex={30}
+        initialScrollIndex={25.65}
         getItemLayout={(data, index) => ({
-          length: 55,
-          offset: 55 * index,
+          length: WP(14.7),
+          offset: WP(14.7) * index,
           index,
         })}
         removeClippedSubviews={false}
@@ -130,65 +131,65 @@ const Calender = () => {
 
 const styles = StyleSheet.create({
   container: {
-    width: "100%",
-    alignSelf: "center",
-    marginTop: 20,
-    minHeight: 56,
+    width: '100%',
+    alignSelf: 'center',
+    marginTop: HP(2.5),
+    minHeight: HP(7.0),
   },
   card: {
-    width: 40,
-    height: 51,
-    backgroundColor: "#F4F4F4",
-    borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
+    width: WP(11.3),
+    height: HP(6.8),
+    backgroundColor: '#F4F4F4',
+    borderRadius: WP(4.2),
+    justifyContent: 'center',
+    alignItems: 'center',
     overflow: 'hidden',
     position: 'relative',
   },
   selectedCard: {
-    backgroundColor: "#2C3399",
+    backgroundColor: '#2C3399',
   },
   dayContainer: {
-    width: "100%",
-    height: "40%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
+    width: '100%',
+    height: '40%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderTopLeftRadius: WP(3.7),
+    borderTopRightRadius: WP(3.7),
   },
   dayText: {
-    fontSize: 10,
-    fontFamily: "OpenSans-Regular",
-    color: "#636363",
+    fontSize: FS(1.3),
+    fontFamily: 'OpenSans-Regular',
+    color: '#636363',
   },
   dateContainer: {
-    width: "100%",
-    height: "60%",
-    backgroundColor: "#E9E9E9",
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+    width: '100%',
+    height: '60%',
+    backgroundColor: '#E9E9E9',
+    borderRadius: WP(3.2),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   selectedDateContainer: {
-    backgroundColor: colors.PRIMARY
+    backgroundColor: colors.Primary,
   },
   dateText: {
-    fontSize: 13,
-    fontFamily: "OpenSans-Regular",
-    color: "#636363",
+    fontSize: FS(1.7),
+    fontFamily: 'OpenSans-Regular',
+    color: '#636363',
   },
   selectedText: {
-    color: "#FFFFFF",
+    color: colors.White,
   },
   bottomIndicator: {
     position: 'absolute',
     bottom: 0,
     left: '50%',
-    marginLeft: -8,
-    width: 16,
-    height: 2,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 1,
+    marginLeft: WP(-2.1),
+    width: WP(4.3),
+    height: HP(0.25),
+    backgroundColor: colors.White,
+    borderRadius: WP(0.3),
   },
 });
 

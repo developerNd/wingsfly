@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Animated, KeyboardAvoidingView, Platform } from 'react-native';
-import { colors, routes } from '../../Helper/Contants';
+import { colors, routes, Icons } from '../../Helper/Contants';
 import CustomButton from '../../Components/CustomButton';
 import { useNavigation } from '@react-navigation/native';
 
@@ -68,7 +68,7 @@ const GenderSelection = ({ onContinue }) => {
                             ]}
                         >
                             <Image
-                                source={require('../../assets/Images/female.png')}
+                                source={Icons.Female}
                                 style={styles.image}
                             />
                         </Animated.View>
@@ -90,7 +90,7 @@ const GenderSelection = ({ onContinue }) => {
                             ]}
                         >
                             <Image
-                                source={require('../../assets/Images/male.png')}
+                                source={Icons.Male}
                                 style={styles.image}
                             />
                         </Animated.View>
@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
     label: {
         marginTop: 8,
         fontSize: 16,
-        color: '#000',
+        color: colors.Shadow,
     },
     selectedLabel: {
         fontWeight: 'bold',

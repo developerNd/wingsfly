@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, ImageBackground, TouchableOpacity, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { colors } from '../../Helper/Contants';
+import { colors, Icons } from '../../Helper/Contants';
 import Headers from '../../Components/Headers';
 import { useNavigation } from '@react-navigation/native';
 
@@ -15,7 +15,7 @@ const TaskCard = () => {
                 <View style={{ marginTop: 30, width: "95%", alignSelf: "center" }}>
                     <ImageBackground
                         style={styles.image}
-                        source={require('../../assets/Images/task1.png')}
+                        source={Icons.Task1}
                         imageStyle={{ borderRadius: 12 }}
                     >
                         <TouchableOpacity style={styles.button} onClick={() => navigation.navigate(routes.HOME_SCREEN)} >
@@ -28,7 +28,7 @@ const TaskCard = () => {
 
                     <ImageBackground
                         style={styles.image}
-                        source={require('../../assets/Images/task3.png')}
+                        source={Icons.Task3}
                         imageStyle={{ borderRadius: 12 }}
                     >
                         <TouchableOpacity style={styles.button}>
@@ -41,7 +41,7 @@ const TaskCard = () => {
 
                     <ImageBackground
                         style={styles.image}
-                        source={require('../../assets/Images/task2.png')}
+                        source={Icons.Task2}
                         imageStyle={{ borderRadius: 12 }}
                     >
                         <TouchableOpacity style={styles.button}>

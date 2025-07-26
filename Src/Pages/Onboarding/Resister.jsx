@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
   signText: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.Shadow,
     letterSpacing: 1,
   },
   signsmallText: {
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   },
   signupText: {
     fontSize: 14,
-    color: '#000',
+    color: colors.Shadow,
   },
   signupLink: {
     fontWeight: 'bold',

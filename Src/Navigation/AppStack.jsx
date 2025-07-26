@@ -1,26 +1,73 @@
 import * as React from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { routes } from '../Helper/Contants';
-import Home from '../Pages/Home/Home';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
+
 import CateogerySelection from '../Pages/Home/CateogerySelection';
-import EvaluateProgress from "../Pages/PlanYourDay/Habit/Step1/EvaluateProgress";
+import EvaluateProgress from '../Pages/Home/EvaluateProgress';
 import BottomTabNavigator from './BottomTabBar';
 
+// Habit screens
+import TimerScreen from '../Pages/PlanYourDay/Habit/TimerScreens/TimerScreen1';
+import FrequencyScreen from '../Pages/PlanYourDay/Habit/TimerScreens/TimerScreen2';
+import SchedulePreference from '../Pages/PlanYourDay/Habit/TimerScreens/TimerScreen3';
+import LinkGoal from '../Pages/PlanYourDay/Habit/TimerScreens/LinkGoal';
+import ChecklistScreen from '../Pages/PlanYourDay/Habit/ChecklistScreens/ChecklistScreen';
+import NumericScreen from '../Pages/PlanYourDay/Habit/NumericScreens/NumericScreen';
+import YesorNoScreen from '../Pages/PlanYourDay/Habit/YesorNoScreens/YesorNoScreen';
+
+// Recurring Task screens
+import RecurringYesorNoScreen from '../Pages/PlanYourDay/Recurring/RecurringYesorNoScreen';
+import RecurringChecklistScreen from '../Pages/PlanYourDay/Recurring/RecurringChecklistScreen';
+import RecurringTimerScreen from '../Pages/PlanYourDay/Recurring/RecurringTimerScreen';
+import RecurringNumericScreen from '../Pages/PlanYourDay/Recurring/RecurringNumericScreen';
+
+// Goal Task screens
+import GoalScreen from '../Pages/PlanYourDay/Goal/GoalScreen';
 
 const Stack = createNativeStackNavigator();
 
 function AppStack() {
-    return (
-        <Stack.Navigator
-            screenOptions={{
-                headerShown: false,
-            }}>
-            <Stack.Screen name={routes.BOTTOM_TAB} component={BottomTabNavigator} />
-            <Stack.Screen name={routes.CATEOGEYSELECTION_SCREEN} component={CateogerySelection} />
-            <Stack.Screen name={routes.EVALUATEPROGRESS_SCREEN} component={EvaluateProgress} />
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+      }}>
+      {/* Common screens - used by all types */}
+      <Stack.Screen name="BottomTab" component={BottomTabNavigator} />
+      <Stack.Screen name="CategorySelection" component={CateogerySelection} />
+      <Stack.Screen name="EvaluateProgress" component={EvaluateProgress} />
 
-        </Stack.Navigator>
-    );
+      {/* HABIT FLOW SCREENS */}
+      <Stack.Screen name="TimerScreen" component={TimerScreen} />
+      <Stack.Screen name="FrequencyScreen" component={FrequencyScreen} />
+      <Stack.Screen name="SchedulePreference" component={SchedulePreference} />
+      <Stack.Screen name="LinkGoal" component={LinkGoal} />
+      <Stack.Screen name="ChecklistScreen" component={ChecklistScreen} />
+      <Stack.Screen name="NumericScreen" component={NumericScreen} />
+      <Stack.Screen name="YesorNoScreen" component={YesorNoScreen} />
+
+      {/* RECURRING TASK FLOW SCREENS */}
+      <Stack.Screen
+        name="RecurringYesorNoScreen"
+        component={RecurringYesorNoScreen}
+      />
+      <Stack.Screen
+        name="RecurringChecklistScreen"
+        component={RecurringChecklistScreen}
+      />
+      <Stack.Screen
+        name="RecurringTimerScreen"
+        component={RecurringTimerScreen}
+      />
+      <Stack.Screen
+        name="RecurringNumericScreen"
+        component={RecurringNumericScreen}
+      />
+
+      {/* Goal TASK FLOW SCREEN */}
+      <Stack.Screen name="GoalScreen" component={GoalScreen} />
+      
+    </Stack.Navigator>
+  );
 }
 
 export default AppStack;

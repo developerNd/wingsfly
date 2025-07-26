@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import Continue from '../../assets/Images/continue.svg';
 import { useNavigation } from "@react-navigation/native";
-import { routes } from "../../Helper/Contants";
+import { routes, Icons } from "../../Helper/Contants";
 
 const OnBoard = () => {
     const navigation = useNavigation()
@@ -17,7 +17,7 @@ const OnBoard = () => {
         <SafeAreaView style={styles.container}>
             <ImageBackground
                 style={styles.backgroundImage}
-                source={require('../../assets/Images/preview.png')}
+                source={Icons.Preview}
             >
                 <View style={styles.contentContainer}>
                     <Text style={styles.title}>
