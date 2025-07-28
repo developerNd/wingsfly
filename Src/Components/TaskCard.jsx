@@ -3,8 +3,11 @@ import {View, Text, StyleSheet, Image, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
+import {useNavigation} from '@react-navigation/native';
 
-const TaskCard = ({item, checkboxState, onToggle}) => {
+const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
+  const navigation = useNavigation();
+
   const getFlagColor = () => {
     if (item.tags && item.tags.some(tag => tag.toLowerCase() === 'important')) {
       return colors.Primary;
@@ -36,31 +39,43 @@ const TaskCard = ({item, checkboxState, onToggle}) => {
     return colorMap[item.id] || '#1A4BFF';
   };
 
+  const handleCheckboxPress = () => {
+    // State 3 (check mark) should trigger task evaluation
+    if (checkboxState === 3) {
+      // Navigate to task evaluation screen with only serializable data
+      navigation.navigate('TaskEvaluation', {
+        taskData: item,
+        taskId: item.id, 
+      });
+    } else {
+
+      onToggle();
+    }
+  };
+
   const renderCheckbox = () => {
     switch (checkboxState) {
-      case 1:
-        return (
-          <Image
-            source={Icons.Tick}
-            style={{width: WP(5.3), height: WP(5.3)}}
-          />
-        );
-      case 1:
+      case 1: // Empty circle (initial state)
         return <View style={styles.staticCircle} />;
-      case 2:
+      case 2: // Time icon
         return (
           <Image
             source={Icons.Time}
             style={{width: WP(5.3), height: WP(5.3)}}
           />
         );
-      case 3:
-        return <View style={styles.staticCircle} />;
-      case 4:
+      case 3: // Check mark (triggers evaluation)
         return (
           <View style={styles.staticCircle}>
             <Image source={Icons.Check} style={styles.iconInsideCircle} />
           </View>
+        );
+      case 4: // Completed (green tick)
+        return (
+          <Image
+            source={Icons.Tick}
+            style={{width: WP(5.3), height: WP(5.3)}}
+          />
         );
       default:
         return <View style={styles.staticCircle} />;
@@ -123,7 +138,7 @@ const TaskCard = ({item, checkboxState, onToggle}) => {
         <View style={styles.bottomBorder} />
       </View>
 
-      <TouchableOpacity style={styles.checkboxContainer} onPress={onToggle}>
+      <TouchableOpacity style={styles.checkboxContainer} onPress={handleCheckboxPress}>
         {renderCheckbox()}
       </TouchableOpacity>
     </View>

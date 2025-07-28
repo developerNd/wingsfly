@@ -138,10 +138,11 @@ const Home = () => {
     },
   ];
 
+  // FIXED: Correct 4-state checkbox cycling (1->2->3->4->1)
   const toggleCheckbox = id => {
     setCheckboxStates(prev => {
-      const currentState = prev[id] || 1;
-      const nextState = (currentState + 1) % 5;
+      const currentState = prev[id] || 1; // Start with empty circle (state 1)
+      const nextState = currentState >= 4 ? 1 : currentState + 1; // Cycle: 1->2->3->4->1
       return {
         ...prev,
         [id]: nextState,
@@ -149,12 +150,21 @@ const Home = () => {
     });
   };
 
+  // Function to handle task completion from evaluation screen
+  const markTaskCompleted = (taskId) => {
+    setCheckboxStates(prev => ({
+      ...prev,
+      [taskId]: 4,
+    }));
+  };
+
   const renderTask = ({item, index}) => (
     <View style={index === tasks.length - 1 ? styles.lastTaskCard : null}>
       <TaskCard
         item={item}
-        checkboxState={checkboxStates[item.id] || 1}
+        checkboxState={checkboxStates[item.id] || 1} 
         onToggle={() => toggleCheckbox(item.id)}
+        onTaskCompleted={markTaskCompleted}
       />
     </View>
   );

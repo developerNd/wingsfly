@@ -45,6 +45,14 @@ export const Icons = {
   Timer: require('../assets/icons/timer.png'),
   Trash: require('../assets/icons/trash.png'),
   Uplift: require('../assets/icons/uplift.png'),
+  Eye: require('../assets/icons/eye.png'),
+  Filter: require('../assets/icons/filter.png'),
+  Sort: require('../assets/icons/sort.png'),
+  Moment: require('../assets/icons/moment.png'),
+  Delete: require('../assets/icons/delete.png'),
+  CheckTick: require('../assets/icons/checktick.png'),
+  TickCircle: require('../assets/icons/tickcircle.png'),
+  Cup: require('../assets/icons/cup.png'),
 
   // Images
   Create: require('../assets/Images/Cateogery/create.png'),

@@ -55,6 +55,7 @@
 		<string>Anton-Regular.ttf</string>
 		<string>Roboto-Bold.ttf</string>
 		<string>Roboto-SemiBold.ttf</string>
+		<string>Inter-SemiBold.ttf</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
