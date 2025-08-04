@@ -56,6 +56,9 @@
 		<string>Roboto-Bold.ttf</string>
 		<string>Roboto-SemiBold.ttf</string>
 		<string>Inter-SemiBold.ttf</string>
+		<string>Inter-Medium.ttf</string>
+		<string>Poppins-Light.ttf</string>
+		<string>Poppins-SemiBold.ttf</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

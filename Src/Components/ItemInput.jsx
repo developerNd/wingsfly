@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -7,56 +7,18 @@ import {
   TextInput,
   StyleSheet,
   StatusBar,
-  Keyboard,
-  Animated,
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
 
 const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
   const [note, setNote] = useState(initialNote);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const translateY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setNote(initialNote);
     }
   }, [visible, initialNote]);
-
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      e => {
-        const height = e.endCoordinates.height;
-        setKeyboardHeight(height);
-
-        Animated.timing(translateY, {
-          toValue: -height / 2,
-          duration: 250,
-          useNativeDriver: true,
-        }).start();
-      },
-    );
-
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => {
-        setKeyboardHeight(0);
-
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }).start();
-      },
-    );
-
-    return () => {
-      keyboardDidShowListener.remove();
-      keyboardDidHideListener.remove();
-    };
-  }, [translateY]);
 
   const handleCancel = () => {
     setNote(initialNote);
@@ -75,20 +37,14 @@ const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
       animationType="fade"
       onRequestClose={onClose}
       presentationStyle="overFullScreen"
-      statusBarTranslucent={false}>
+      statusBarTranslucent={true}>
       <StatusBar
         backgroundColor="#47474773"
         barStyle="light-content"
-        translucent={false}
+        translucent={true}
       />
       <View style={styles.overlay}>
-        <Animated.View
-          style={[
-            styles.modalContainer,
-            {
-              transform: [{translateY: translateY}],
-            },
-          ]}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Item Name</Text>
@@ -101,7 +57,6 @@ const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
                 multiline={true}
                 textAlignVertical="top"
                 autoFocus={true}
-                blurOnSubmit={false}
               />
             </View>
 
@@ -121,7 +76,7 @@ const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
               </TouchableOpacity>
             </View>
           </View>
-        </Animated.View>
+        </View>
       </View>
     </Modal>
   );
@@ -135,7 +90,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContainer: {
-    width: WP(83),
+    width: WP(87),
+    maxHeight: HP(50),
     backgroundColor: colors.White,
     borderRadius: WP(7),
     elevation: 10,
@@ -161,7 +117,7 @@ const styles = StyleSheet.create({
     borderColor: '#888888',
   },
   inputLabel: {
-    fontSize: FS(1.3),
+    fontSize: FS(1.2),
     color: colors.Black,
     fontFamily: 'OpenSans-SemiBold',
     position: 'absolute',
@@ -178,7 +134,7 @@ const styles = StyleSheet.create({
     padding: WP(3),
     minHeight: HP(12),
     marginLeft: WP(4),
-    flex: 1,
+    maxHeight: HP(12),
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -186,7 +142,7 @@ const styles = StyleSheet.create({
     gap: WP(4),
     alignItems: 'center',
     paddingTop: HP(2.2),
-    marginBottom: HP(0.5),
+    marginBottom: HP(-0.3),
   },
   cancelButton: {
     paddingHorizontal: WP(4),

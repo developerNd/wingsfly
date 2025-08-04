@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import Headers from '../../Components/Headers';
 import {colors, Icons} from '../../Helper/Contants';
-import Icon from 'react-native-vector-icons/MaterialIcons';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {HP, WP, FS} from '../../utils/dimentions';
 
@@ -63,7 +62,11 @@ const CateogerySelection = () => {
                 <View style={styles.createCategoryContent}>
                   <Text style={styles.buttonText}>{item.title}</Text>
                   <View style={styles.plusIcon}>
-                    <Icon name="add" size={WP(4.8)} color={colors.White} />
+                    <Image
+                      source={Icons.Plus}
+                      style={styles.customAddIcon}
+                      resizeMode="contain"
+                    />
                   </View>
                 </View>
               ) : (
@@ -133,15 +136,20 @@ const styles = StyleSheet.create({
   createCategoryContent: {
     flexDirection: 'row',
   },
-  plusIcon: {
-    width: WP(5.5),
-    height: WP(5.5),
-    borderRadius: WP(1.7),
-    backgroundColor: colors.PRIMARY,
+   plusIcon: {
+    width: WP(6.5),
+    height: WP(6.5),
+    borderRadius: WP(2.3),
+    backgroundColor: colors.Primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: WP(4),
-    marginTop: HP(-0.3),
+    marginLeft: WP(3.8),
+    marginTop: HP(-0.5),
+  },
+  customAddIcon: {
+    width: WP(3.1),
+    height: WP(3.1),
+    tintColor: colors.White,
   },
 });
 

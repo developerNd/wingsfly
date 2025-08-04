@@ -44,7 +44,9 @@ const GenderSelection = ({ onContinue }) => {
     };
 
     const handleContinue = async () => {
-        navigation.navigate(routes.ONBOARD_SCREEN)
+        navigation.navigate(routes.ONBOARD_SCREEN, { 
+            selectedGender: selectedGender 
+        });
     };
 
     return (
@@ -131,7 +133,7 @@ const styles = StyleSheet.create({
         fontSize: 22,
         fontWeight: 'bold',
         marginBottom: 40,
-        color: colors.PRIMARY,
+        color: colors.Primary,
     },
     options: {
         width: '100%',
@@ -154,7 +156,7 @@ const styles = StyleSheet.create({
         elevation: 5,
     },
     selectedBox: {
-        borderColor: colors.PRIMARY,
+        borderColor: colors.Primary,
         borderWidth: 3,
     },
     image: {
@@ -169,12 +171,12 @@ const styles = StyleSheet.create({
     },
     selectedLabel: {
         fontWeight: 'bold',
-        color: colors.PRIMARY,
+        color: colors.Primary,
     },
     continueButton: {
         width: '80%',
         height: 50,
-        backgroundColor: colors.PRIMARY,
+        backgroundColor: colors.Primary,
         marginTop: 20,
         borderRadius: 10,
         justifyContent: 'center',

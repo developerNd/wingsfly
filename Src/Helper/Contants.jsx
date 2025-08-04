@@ -53,6 +53,14 @@ export const Icons = {
   CheckTick: require('../assets/icons/checktick.png'),
   TickCircle: require('../assets/icons/tickcircle.png'),
   Cup: require('../assets/icons/cup.png'),
+  Triangle: require('../assets/icons/triangle.png'),
+  MindArrow: require('../assets/icons/mindarrow.png'),
+  MindCircle: require('../assets/icons/mindcircle.png'),
+  Bin: require('../assets/icons/bin.png'),
+  RightAdd: require('../assets/icons/rightadd.png'),
+  BottomAdd: require('../assets/icons/bottomadd.png'),
+  More: require('../assets/icons/more.png'),
+  Camera: require('../assets/icons/camera.png'),
 
   // Images
   Create: require('../assets/Images/Cateogery/create.png'),
@@ -78,5 +86,21 @@ export const Icons = {
   Taskhome: require('../assets/Images/taskhome.png'),
   Walk: require('../assets/Images/walk.png'),
   Yogo: require('../assets/Images/yogo.png'),
-  Cash: require('../assets/Images/money.png')
+  Cash: require('../assets/Images/money.png'),
+  ManHiker: require('../assets/Images/man.png'),
+  WomenHiker: require('../assets/Images/women.png'),
+  Family: require('../assets/Images/Cateogery/family.png'),
+  Men1: require('../assets/Images/Cateogery/Male/men1.png'),
+  Men2: require('../assets/Images/Cateogery/Male/men2.png'),
+  Men3: require('../assets/Images/Cateogery/Male/men3.png'),
+  Men4: require('../assets/Images/Cateogery/Male/men4.png'),
+  Men5: require('../assets/Images/Cateogery/Male/men5.png'),
+  Men6: require('../assets/Images/Cateogery/Male/men6.png'),
+  Men7: require('../assets/Images/Cateogery/Male/men7.png'),
+  Men8: require('../assets/Images/Cateogery/Male/men8.png'),
+  LongGoal: require('../assets/Images/longgoal.png'),
+  WomenTask1: require('../assets/Images/womentask1.png'),
+  WomenTask2: require('../assets/Images/womentask2.png'),
+  WomenTask3: require('../assets/Images/womentask3.png'),
+  Landing: require('../assets/Images/landing.png')
 };

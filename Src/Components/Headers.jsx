@@ -3,7 +3,7 @@ import {View, Text, TouchableOpacity} from 'react-native';
 import BackIcon from 'react-native-vector-icons/Ionicons';
 import {HP, WP, FS} from '../utils/dimentions';
 
-const Headers = ({title = 'Set Your Goal', children}) => {
+const Headers = ({title = 'Set Your First Goal', children}) => {
   return (
     <View
       style={{
@@ -13,7 +13,7 @@ const Headers = ({title = 'Set Your Goal', children}) => {
         justifyContent: 'space-between',
       }}>
       <TouchableOpacity style={{marginTop: HP(0.25)}}>
-        <BackIcon name="chevron-back-outline" size={WP(6)} color="#3B3B3B" />
+        <BackIcon name="chevron-back-outline" size={WP(6.5)} color="#3B3B3B" />
       </TouchableOpacity>
       <Text
         style={{

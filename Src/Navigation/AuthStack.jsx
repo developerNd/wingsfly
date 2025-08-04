@@ -7,6 +7,12 @@ import GenderSelection from '../Pages/Onboarding/GenderSelection';
 import OnBoard from '../Pages/Onboarding/OnBoard';
 import Resister from '../Pages/Onboarding/Resister';
 import Task from '../Pages/Onboarding/Task';
+import CategoryScreen from '../Pages/LongTermScreens/CategoryScreen';
+import AddGoalScreen from '../Pages/LongTermScreens/AddGoalScreen';
+import SetLongTermGoal from '../Pages/LongTermScreens/SetGoalScreen';
+import MindMapScreen from '../Pages/LongTermScreens/MindMapScreen';
+import LandingPage from '../Pages/LongTermScreens/LandingScreen';
+import AppStack from './AppStack';
 
 const Stack = createNativeStackNavigator();
 
@@ -25,6 +31,14 @@ function AuthStack() {
       />
       <Stack.Screen name={routes.ONBOARD_SCREEN} component={OnBoard} />
       <Stack.Screen name={routes.TASKSLECTION_SCREEN} component={Task} />
+
+      <Stack.Screen name="Category" component={CategoryScreen} />
+      <Stack.Screen name="GoalScreen" component={AddGoalScreen} />
+      <Stack.Screen name="SetGoalScreen" component={SetLongTermGoal} />
+      <Stack.Screen name="MindMapScreen" component={MindMapScreen} />
+      <Stack.Screen name="LandingPage" component={LandingPage} />
+      <Stack.Screen name="AppStack" component={AppStack} />
+      
     </Stack.Navigator>
   );
 }

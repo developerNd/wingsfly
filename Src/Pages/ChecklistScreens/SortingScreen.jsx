@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.White,
   },
   headerWrapper: {
-    marginTop: HP(2.2),
+    marginTop: HP(2.5),
     paddingBottom: HP(1.8),
     borderBottomWidth: 1,
     borderBottomColor: '#ECECEC',
@@ -269,8 +269,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   icon: {
-    width: WP(4.8),
-    height: WP(4.8),
+    width: WP(4.9),
+    height: WP(4.9),
     resizeMode: 'contain',
     tintColor: colors.Black,
   },
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     tintColor: colors.Black,
   },
   sortingOptionTitle: {
-    fontSize: FS(1.7),
+    fontSize: FS(1.735),
     fontFamily: 'OpenSans-SemiBold',
     color: '#393939',
     flex: 1,
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     paddingTop: HP(1),
     paddingBottom: HP(1.4),
     backgroundColor: '#F1F1F1',
-    marginLeft: WP(0.2),
+    marginLeft: WP(0.7),
   },
   optionItem: {
     flexDirection: 'row',
@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
     fontSize: FS(1.5),
     fontFamily: 'OpenSans-SemiBold',
     color: '#626262',
-    marginRight: WP(0.5),
+    marginRight: WP(0.7),
   },
   bottomSpacing: {
     height: HP(5),

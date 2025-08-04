@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     backgroundColor: colors.White,
     borderRadius: WP(5.5),
-    paddingVertical: HP(3.2),
+    paddingVertical: HP(3),
     width: WP(89),
     shadowColor: colors.Shadow,
     shadowOffset: {
@@ -92,9 +92,10 @@ const styles = StyleSheet.create({
   },
   optionsContainer: {
     marginBottom: HP(1),
+    marginTop: HP(-0.2),
   },
   optionButton: {
-    paddingVertical: HP(1.4),
+    paddingVertical: HP(1.35),
     backgroundColor: 'transparent',
     borderBottomWidth: 1,
     borderBottomColor: '#EDEDED',
@@ -104,7 +105,7 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-SemiBold',
     color: colors.Black,
     textAlign: 'center',
-    marginTop: HP(0.25),
+    marginTop: HP(0.6),
   },
   closeButton: {
     alignSelf: 'center',
