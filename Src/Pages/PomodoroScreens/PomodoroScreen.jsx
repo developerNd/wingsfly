@@ -19,25 +19,25 @@ import {useNavigation} from '@react-navigation/native';
 
 const PomodoroTimerScreen = () => {
   const navigation = useNavigation();
-  
+
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [targetTime, setTargetTime] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [currentTag, setCurrentTag] = useState('Focus');
   const [activeMode, setActiveMode] = useState('Pomodoro');
-  
+
   const [showSettings, setShowSettings] = useState(false);
   const [timedReminder, setTimedReminder] = useState(true);
   const [reminderInterval, setReminderInterval] = useState(25);
-  
-  const chickenRotate = useRef(new Animated.Value(0)).current;
-  const celebrationScale = useRef(new Animated.Value(0)).current;
-  
+
+  const focusIndicatorRotate = useRef(new Animated.Value(0)).current;
+  const completionScale = useRef(new Animated.Value(0)).current;
+
   const timerRef = useRef(null);
-  
+
   const tags = ['Focus', 'Study', 'Work', 'Sport', 'Play', 'Muse'];
-  
+
   useEffect(() => {
     if (isRunning && timeElapsed < targetTime) {
       timerRef.current = setTimeout(() => {
@@ -46,77 +46,79 @@ const PomodoroTimerScreen = () => {
     } else if (timeElapsed >= targetTime && !isCompleted) {
       setIsCompleted(true);
       setIsRunning(false);
-      
-      Animated.spring(celebrationScale, {
+
+      Animated.spring(completionScale, {
         toValue: 1,
         tension: 100,
         friction: 8,
         useNativeDriver: true,
       }).start();
     }
-    
+
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
     };
   }, [isRunning, timeElapsed, targetTime]);
-  
+
   useEffect(() => {
     if (isRunning) {
       const rotateAnimation = Animated.loop(
-        Animated.timing(chickenRotate, {
+        Animated.timing(focusIndicatorRotate, {
           toValue: 1,
           duration: 2000,
           easing: Easing.linear,
           useNativeDriver: true,
-        })
+        }),
       );
       rotateAnimation.start();
-      
+
       return () => rotateAnimation.stop();
     } else {
-      chickenRotate.setValue(0);
+      focusIndicatorRotate.setValue(0);
     }
   }, [isRunning]);
-  
+
   const handleStartPause = () => {
     if (isCompleted) {
       setIsCompleted(false);
       setTimeElapsed(0);
-      celebrationScale.setValue(0);
+      completionScale.setValue(0);
     } else {
       setIsRunning(!isRunning);
     }
   };
-  
+
   const handleStop = () => {
     setIsRunning(false);
     setTimeElapsed(0);
     setIsCompleted(false);
-    celebrationScale.setValue(0);
+    completionScale.setValue(0);
   };
-  
+
   const handleClose = () => {
     navigation.goBack();
   };
-  
+
   const handleMusicSettings = () => {
     console.log('Music settings pressed');
     setShowSettings(true);
   };
-  
-  const formatTime = (seconds) => {
+
+  const formatTime = seconds => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, '0')}:${secs
+      .toString()
+      .padStart(2, '0')}`;
   };
-  
+
   const getProgress = () => {
     return (timeElapsed / targetTime) * 100;
   };
-  
-  const handleTimeChange = (minutes) => {
+
+  const handleTimeChange = minutes => {
     const newTime = minutes * 60;
     setTargetTime(newTime);
     if (!isRunning) {
@@ -125,8 +127,8 @@ const PomodoroTimerScreen = () => {
     setReminderInterval(minutes);
   };
 
-  const handleSliderPress = (event) => {
-    const { locationX } = event.nativeEvent;
+  const handleSliderPress = event => {
+    const {locationX} = event.nativeEvent;
     const sliderWidth = WP(85);
     const percentage = Math.max(0, Math.min(1, locationX / sliderWidth));
     const minutes = Math.max(1, Math.min(60, Math.round(percentage * 59 + 1)));
@@ -135,8 +137,8 @@ const PomodoroTimerScreen = () => {
       setTargetTime(minutes * 60);
     }
   };
-  
-  const rotateInterpolate = chickenRotate.interpolate({
+
+  const rotateInterpolate = focusIndicatorRotate.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
@@ -144,49 +146,56 @@ const PomodoroTimerScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="white" barStyle="dark-content" />
-      
+
       <View style={styles.mainContent}>
         {!isCompleted ? (
           <>
             <View style={styles.header}>
-              <TouchableOpacity onPress={handleMusicSettings} style={styles.musicButton}>
+              <TouchableOpacity
+                onPress={handleMusicSettings}
+                style={styles.musicButton}>
                 <Icon name="music-note" size={WP(6)} color={colors.Black} />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.timerContainer}>
-              <Animated.View 
+              <Animated.View
                 style={[
-                  styles.chickenContainer,
+                  styles.focusIndicatorContainer,
                   {
-                    transform: [{rotate: rotateInterpolate}]
-                  }
-                ]}
-              >
-                <View style={styles.chickenIcon}>
-                  <Icon name="pets" size={WP(15)} color={colors.Black} />
+                    transform: [{rotate: rotateInterpolate}],
+                  },
+                ]}>
+                <View style={styles.focusIcon}>
+                  <Icon
+                    name="center-focus-strong"
+                    size={WP(15)}
+                    color={colors.Black}
+                  />
                 </View>
               </Animated.View>
-              
+
               <Text style={styles.timerText}>{formatTime(timeElapsed)}</Text>
               <Text style={styles.statusText}>
-                {isRunning ? 'Chicken is growing...' : 'Ready to focus'}
+                {isRunning ? 'Focus session in progress...' : 'Ready to focus'}
               </Text>
-              
+
               <View style={styles.progressContainer}>
-                <View style={[styles.progressBar, {width: `${getProgress()}%`}]} />
+                <View
+                  style={[styles.progressBar, {width: `${getProgress()}%`}]}
+                />
               </View>
             </View>
-            
+
             <View style={styles.controlsContainer}>
               <TouchableOpacity
                 style={styles.controlButton}
                 onPress={handleStartPause}
                 activeOpacity={0.8}>
-                <Icon 
-                  name={isRunning ? "pause" : "play-arrow"} 
-                  size={WP(8)} 
-                  color={colors.White} 
+                <Icon
+                  name={isRunning ? 'pause' : 'play-arrow'}
+                  size={WP(8)}
+                  color={colors.White}
                 />
               </TouchableOpacity>
             </View>
@@ -194,50 +203,62 @@ const PomodoroTimerScreen = () => {
         ) : (
           <>
             <View style={styles.celebrationContainer}>
-              <Animated.View 
+              <Animated.View
                 style={[
-                  styles.celebrationChicken,
+                  styles.completionIndicator,
                   {
-                    transform: [{scale: celebrationScale}]
-                  }
-                ]}
-              >
-                <View style={styles.completedChickenIcon}>
-                  <Icon name="pets" size={WP(20)} color="#FF6B35" />
+                    transform: [{scale: completionScale}],
+                  },
+                ]}>
+                <View style={styles.completedFocusIcon}>
+                  <Icon name="emoji-events" size={WP(20)} color="#FF6B35" />
                   <View style={styles.checkmarkOverlay}>
                     <Icon name="check-circle" size={WP(8)} color="#00754B" />
                   </View>
                 </View>
               </Animated.View>
-              
+
               <Text style={styles.congratsText}>
-                Wow~ You focused for{'\n'}{Math.floor(targetTime / 60)}min and raised a Super{'\n'}Chicken
+                Congratulations!{'\n'}You focused for{' '}
+                {Math.floor(targetTime / 60)} minutes{'\n'}and completed your
+                session
               </Text>
-              
+
               <View style={styles.celebrationDots}>
                 {[...Array(8)].map((_, index) => (
-                  <View 
+                  <View
                     key={index}
                     style={[
                       styles.celebrationDot,
                       {
-                        backgroundColor: ['#FF6B35', '#4ECDC4', '#45B7D1', '#96CEB4'][index % 4],
+                        backgroundColor: [
+                          '#FF6B35',
+                          '#4ECDC4',
+                          '#45B7D1',
+                          '#96CEB4',
+                        ][index % 4],
                         transform: [
-                          {translateX: Math.cos(index * 45 * Math.PI / 180) * WP(25)},
-                          {translateY: Math.sin(index * 45 * Math.PI / 180) * WP(25)},
-                        ]
-                      }
+                          {
+                            translateX:
+                              Math.cos((index * 45 * Math.PI) / 180) * WP(25),
+                          },
+                          {
+                            translateY:
+                              Math.sin((index * 45 * Math.PI) / 180) * WP(25),
+                          },
+                        ],
+                      },
                     ]}
                   />
                 ))}
               </View>
             </View>
-            
+
             <View style={styles.celebrationActions}>
               <TouchableOpacity style={styles.shareButton} activeOpacity={0.8}>
                 <Icon name="share" size={WP(6)} color={colors.Black} />
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.continueButton}
                 onPress={handleStartPause}
@@ -248,76 +269,93 @@ const PomodoroTimerScreen = () => {
           </>
         )}
       </View>
-      
+
       {showSettings && (
         <View style={styles.settingsOverlay}>
           <View style={styles.settingsModal}>
             <View style={styles.settingsHeader}>
-              <TouchableOpacity onPress={() => setShowSettings(false)} style={styles.closeButton}>
+              <TouchableOpacity
+                onPress={() => setShowSettings(false)}
+                style={styles.closeButton}>
                 <Icon name="close" size={WP(6)} color={colors.Black} />
               </TouchableOpacity>
-              
+
               <View style={styles.headerTitles}>
                 <View style={styles.modeSelector}>
                   <TouchableOpacity
                     style={[
                       styles.modeButton,
-                      activeMode === 'Pomodoro' && styles.modeButtonActive
+                      activeMode === 'Pomodoro' && styles.modeButtonActive,
                     ]}
                     onPress={() => setActiveMode('Pomodoro')}>
-                    <Text style={[
-                      styles.modeText,
-                      activeMode === 'Pomodoro' && styles.modeTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.modeText,
+                        activeMode === 'Pomodoro' && styles.modeTextActive,
+                      ]}>
                       Pomodoro
                     </Text>
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity
                     style={[
                       styles.modeButton,
-                      activeMode === 'AddTime' && styles.modeButtonActive
+                      activeMode === 'AddTime' && styles.modeButtonActive,
                     ]}
                     onPress={() => setActiveMode('AddTime')}>
-                    <Text style={[
-                      styles.modeText,
-                      activeMode === 'AddTime' && styles.modeTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.modeText,
+                        activeMode === 'AddTime' && styles.modeTextActive,
+                      ]}>
                       AddTime
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
-            
+
             <View style={styles.settingItem}>
               <View style={styles.settingRow}>
                 <Text style={styles.settingLabel}>Timed reminder</Text>
                 <TouchableOpacity
                   style={[styles.toggle, timedReminder && styles.toggleActive]}
                   onPress={() => setTimedReminder(!timedReminder)}>
-                  <View style={[styles.toggleThumb, timedReminder && styles.toggleThumbActive]} />
+                  <View
+                    style={[
+                      styles.toggleThumb,
+                      timedReminder && styles.toggleThumbActive,
+                    ]}
+                  />
                 </TouchableOpacity>
               </View>
             </View>
-            
+
             <View style={styles.settingItem}>
-              <Text style={styles.settingLabel}>Remind every : {reminderInterval}min</Text>
+              <Text style={styles.settingLabel}>
+                Remind every : {reminderInterval}min
+              </Text>
               <View style={styles.sliderSection}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.sliderTrack}
                   onPress={handleSliderPress}
-                  activeOpacity={1}
-                >
-                  <View style={[styles.sliderFill, {width: `${((reminderInterval - 1) / 59) * 100}%`}]} />
-                  <View style={[
-                    styles.sliderThumb, 
-                    {left: `${((reminderInterval - 1) / 59) * 100}%`}
-                  ]} />
+                  activeOpacity={1}>
+                  <View
+                    style={[
+                      styles.sliderFill,
+                      {width: `${((reminderInterval - 1) / 59) * 100}%`},
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.sliderThumb,
+                      {left: `${((reminderInterval - 1) / 59) * 100}%`},
+                    ]}
+                  />
                 </TouchableOpacity>
               </View>
             </View>
-            
+
             <View style={styles.settingItem}>
               <View style={styles.tagHeader}>
                 <Text style={styles.settingLabel}>Tag</Text>
@@ -330,36 +368,38 @@ const PomodoroTimerScreen = () => {
                   </TouchableOpacity>
                 </View>
               </View>
-              
+
               <View style={styles.tagsContainer}>
                 <View style={styles.tagsRow}>
                   <TouchableOpacity
                     style={[
                       styles.tagButton,
-                      currentTag === 'Focus' && styles.tagButtonActive
+                      currentTag === 'Focus' && styles.tagButtonActive,
                     ]}
                     onPress={() => setCurrentTag('Focus')}>
-                    <Text style={[
-                      styles.tagText,
-                      currentTag === 'Focus' && styles.tagTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.tagText,
+                        currentTag === 'Focus' && styles.tagTextActive,
+                      ]}>
                       Focus
                     </Text>
                     {currentTag === 'Focus' && (
                       <Icon name="check" size={WP(4)} color={colors.White} />
                     )}
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity
                     style={[
                       styles.tagButton,
-                      currentTag === 'Study' && styles.tagButtonActive
+                      currentTag === 'Study' && styles.tagButtonActive,
                     ]}
                     onPress={() => setCurrentTag('Study')}>
-                    <Text style={[
-                      styles.tagText,
-                      currentTag === 'Study' && styles.tagTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.tagText,
+                        currentTag === 'Study' && styles.tagTextActive,
+                      ]}>
                       Study
                     </Text>
                     {currentTag === 'Study' && (
@@ -367,35 +407,37 @@ const PomodoroTimerScreen = () => {
                     )}
                   </TouchableOpacity>
                 </View>
-                
+
                 <View style={styles.tagsRow}>
                   <TouchableOpacity
                     style={[
                       styles.tagButton,
-                      currentTag === 'Work' && styles.tagButtonActive
+                      currentTag === 'Work' && styles.tagButtonActive,
                     ]}
                     onPress={() => setCurrentTag('Work')}>
-                    <Text style={[
-                      styles.tagText,
-                      currentTag === 'Work' && styles.tagTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.tagText,
+                        currentTag === 'Work' && styles.tagTextActive,
+                      ]}>
                       Work
                     </Text>
                     {currentTag === 'Work' && (
                       <Icon name="check" size={WP(4)} color={colors.White} />
                     )}
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity
                     style={[
                       styles.tagButton,
-                      currentTag === 'Sport' && styles.tagButtonActive
+                      currentTag === 'Sport' && styles.tagButtonActive,
                     ]}
                     onPress={() => setCurrentTag('Sport')}>
-                    <Text style={[
-                      styles.tagText,
-                      currentTag === 'Sport' && styles.tagTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.tagText,
+                        currentTag === 'Sport' && styles.tagTextActive,
+                      ]}>
                       Sport
                     </Text>
                     {currentTag === 'Sport' && (
@@ -403,35 +445,37 @@ const PomodoroTimerScreen = () => {
                     )}
                   </TouchableOpacity>
                 </View>
-                
+
                 <View style={styles.tagsRow}>
                   <TouchableOpacity
                     style={[
                       styles.tagButton,
-                      currentTag === 'Play' && styles.tagButtonActive
+                      currentTag === 'Play' && styles.tagButtonActive,
                     ]}
                     onPress={() => setCurrentTag('Play')}>
-                    <Text style={[
-                      styles.tagText,
-                      currentTag === 'Play' && styles.tagTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.tagText,
+                        currentTag === 'Play' && styles.tagTextActive,
+                      ]}>
                       Play
                     </Text>
                     {currentTag === 'Play' && (
                       <Icon name="check" size={WP(4)} color={colors.White} />
                     )}
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity
                     style={[
                       styles.tagButton,
-                      currentTag === 'Muse' && styles.tagButtonActive
+                      currentTag === 'Muse' && styles.tagButtonActive,
                     ]}
                     onPress={() => setCurrentTag('Muse')}>
-                    <Text style={[
-                      styles.tagText,
-                      currentTag === 'Muse' && styles.tagTextActive
-                    ]}>
+                    <Text
+                      style={[
+                        styles.tagText,
+                        currentTag === 'Muse' && styles.tagTextActive,
+                      ]}>
                       Muse
                     </Text>
                     {currentTag === 'Muse' && (
@@ -462,7 +506,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingHorizontal: WP(5),
     paddingVertical: HP(2),
-    paddingTop: HP(4), 
+    paddingTop: HP(4),
   },
   musicButton: {
     padding: WP(2),
@@ -473,10 +517,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: WP(5),
   },
-  chickenContainer: {
+  focusIndicatorContainer: {
     marginBottom: HP(3),
   },
-  chickenIcon: {
+  focusIcon: {
     width: WP(25),
     height: WP(25),
     backgroundColor: '#F8F8F8',
@@ -518,7 +562,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: HP(3),
-    paddingBottom: HP(10), 
+    paddingBottom: HP(10),
   },
   controlButton: {
     width: WP(16),
@@ -540,11 +584,11 @@ const styles = StyleSheet.create({
     position: 'relative',
     paddingTop: HP(4),
   },
-  celebrationChicken: {
+  completionIndicator: {
     marginBottom: HP(3),
     position: 'relative',
   },
-  completedChickenIcon: {
+  completedFocusIcon: {
     width: WP(30),
     height: WP(30),
     backgroundColor: '#FFF5F0',
@@ -567,7 +611,7 @@ const styles = StyleSheet.create({
     color: colors.Black,
     textAlign: 'center',
     lineHeight: HP(3),
-    marginTop: HP(5)
+    marginTop: HP(5),
   },
   celebrationDots: {
     position: 'absolute',
@@ -588,7 +632,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: WP(25),
     paddingVertical: HP(3),
-    paddingBottom: HP(10), 
+    paddingBottom: HP(10),
   },
   shareButton: {
     width: WP(16),
@@ -686,7 +730,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: colors.Black,
     marginBottom: HP(1.5),
-    marginLeft: WP(1)
+    marginLeft: WP(1),
   },
   toggle: {
     width: WP(12),
@@ -695,7 +739,7 @@ const styles = StyleSheet.create({
     borderRadius: WP(3.25),
     justifyContent: 'center',
     padding: WP(0.5),
-    marginTop:HP(-1.5)
+    marginTop: HP(-1.5),
   },
   toggleActive: {
     backgroundColor: colors.Black,
@@ -720,8 +764,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: WP(1),
   },
   sliderTrack: {
-    width: WP(85), 
-    height: HP(1.2), 
+    width: WP(85),
+    height: HP(1.2),
     backgroundColor: '#E8E8E8',
     borderRadius: HP(0.6),
     position: 'relative',
@@ -735,12 +779,12 @@ const styles = StyleSheet.create({
   },
   sliderThumb: {
     position: 'absolute',
-    width: WP(6), 
+    width: WP(6),
     height: WP(6),
     backgroundColor: colors.Black,
     borderRadius: WP(3),
     top: -WP(2.4),
-    marginLeft: -WP(3), 
+    marginLeft: -WP(3),
     elevation: 4,
     shadowColor: colors.Shadow,
     shadowOffset: {width: 0, height: 2},

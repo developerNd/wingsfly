@@ -15,6 +15,7 @@ import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
+import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../Helper/Contants';
@@ -42,6 +43,11 @@ const RecurringYesorNoScreen = () => {
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [blockTimeData, setBlockTimeData] = useState(null);
   const [reminderData, setReminderData] = useState(null);
+
+  // Toast states - ADD THESE
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
 
   // Date picker states
   const [startDate, setStartDate] = useState(new Date());
@@ -81,11 +87,35 @@ const RecurringYesorNoScreen = () => {
     },
   ];
 
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
   // Check if task label should be active
   const isTaskLabelActive = taskFocused || taskTitle.length > 0;
 
-  // Handle Next button press
+  // Handle Next button press - UPDATE WITH VALIDATION
   const handleNextPress = () => {
+    if (toastVisible) {
+      hideToast();
+    }
+
+    if (!taskTitle.trim()) {
+      showToast('Enter a name');
+      return;
+    }
+
+    if (!blockTimeData) {
+      showToast('Select a block time');
+      return;
+    }
+
     const taskData = {
       taskTitle,
       selectedCategory,
@@ -105,9 +135,22 @@ const RecurringYesorNoScreen = () => {
     // navigation.navigate("NextScreen", taskData);
   };
 
-  // Handle Link To Goal press - Simplified for navigation only
+  // Handle Link To Goal press - UPDATE WITH VALIDATION
   const handleLinkToGoalPress = () => {
-    // Navigate to LinkGoal screen
+    if (toastVisible) {
+      hideToast();
+    }
+
+    if (!taskTitle.trim()) {
+      showToast('Enter a name');
+      return;
+    }
+
+    if (!blockTimeData) {
+      showToast('Select a block time');
+      return;
+    }
+
     navigation.navigate('LinkGoal');
   };
 
@@ -153,6 +196,10 @@ const RecurringYesorNoScreen = () => {
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
+    // Hide toast when block time is saved
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   // Handle priority dropdown
@@ -736,6 +783,17 @@ const RecurringYesorNoScreen = () => {
         onClose={() => setShowNoteModal(false)}
         onSave={handleNoteSave}
         initialNote={note}
+      />
+
+      {/* Custom Toast - ADD THIS */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
       />
     </View>
   );

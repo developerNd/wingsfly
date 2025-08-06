@@ -14,6 +14,7 @@ import Headers from '../../../Components/Headers';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import {colors, Icons} from '../../../Helper/Contants';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import CustomToast from '../../../Components/CustomToast';
 
 const RecurringChecklistScreen = () => {
   const navigation = useNavigation();
@@ -31,6 +32,11 @@ const RecurringChecklistScreen = () => {
     useState('Custom');
   const [customItems, setCustomItems] = useState('1');
 
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
   const [checklistItems, setChecklistItems] = useState([
     {id: 1, text: 'Intraday', completed: false},
     {id: 2, text: 'Swing Trading', completed: false},
@@ -40,6 +46,16 @@ const RecurringChecklistScreen = () => {
 
   const isHabitLabelActive = habitFocused || habit.length > 0;
   const isDescriptionLabelActive = descriptionFocused || description.length > 0;
+
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
 
   const handleDeleteItem = id => {
     setChecklistItems(checklistItems.filter(item => item.id !== id));
@@ -65,11 +81,34 @@ const RecurringChecklistScreen = () => {
     setCustomItems(numericValue);
   };
 
+  const handleHabitChange = text => {
+    setHabit(text);
+
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
+  const handleHabitBlur = () => {
+    setHabitFocused(false);
+  };
+
   const handleNextPress = () => {
+    if (!habit.trim()) {
+      showToast('Enter a name');
+      return;
+    }
+
+    // Validation for minimum checklist items
+    if (checklistItems.length === 0) {
+      showToast('Minimum 1 checklist item required');
+      return;
+    }
+
     const navigationData = {
       selectedCategory,
       evaluationType,
-      habit,
+      habit: habit.trim(),
       description,
       checklistItems,
       selectedSuccessCondition,
@@ -105,9 +144,9 @@ const RecurringChecklistScreen = () => {
           <TextInput
             style={styles.textInput}
             value={habit}
-            onChangeText={setHabit}
+            onChangeText={handleHabitChange}
             onFocus={() => setHabitFocused(true)}
-            onBlur={() => setHabitFocused(false)}
+            onBlur={handleHabitBlur}
             placeholder={isHabitLabelActive ? '' : ''}
             placeholderTextColor="transparent"
           />
@@ -239,6 +278,17 @@ const RecurringChecklistScreen = () => {
           </View>
         </View>
       </ScrollView>
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
+      />
     </View>
   );
 };

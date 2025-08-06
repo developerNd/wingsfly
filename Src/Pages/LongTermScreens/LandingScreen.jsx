@@ -15,6 +15,7 @@ import DatePickerModal from '../../Components/DatePickerModal';
 import BlockTimeModal from '../../Components/BlockTime';
 import DurationModal from '../../Components/DurationModal';
 import ReminderModal from '../../Components/ReminderModal';
+import CustomToast from '../../Components/CustomToast';
 import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 
@@ -32,11 +33,48 @@ const LandingPage = () => {
   const [durationData, setDurationData] = useState(null);
   const [reminderData, setReminderData] = useState(null);
 
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
   // Date picker states
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
+  // Helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
+  // Handle Next button press with validation
+  const handleNextPress = () => {
+    if (toastVisible) {
+      hideToast();
+    }
+
+    if (!blockTimeData) {
+      showToast('Select a block time');
+      return;
+    }
+
+    if (!durationData) {
+      showToast('Select duration');
+      return;
+    }
+
+    // If validation passes, proceed with navigation/logic
+    console.log('All validation passed, proceeding...');
+    // navigation.navigate("NextScreen");
+  };
 
   const formatDisplayDate = date => {
     const today = new Date();
@@ -108,6 +146,10 @@ const LandingPage = () => {
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
+
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   const handleDurationPress = () => {
@@ -116,6 +158,10 @@ const LandingPage = () => {
 
   const handleDurationSave = duration => {
     setDurationData(duration);
+
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   const handleReminderToggle = () => {
@@ -400,7 +446,7 @@ const LandingPage = () => {
 
       <View style={styles.headerWrapper}>
         <Headers title="Landing Page">
-          <TouchableOpacity>
+          <TouchableOpacity onPress={handleNextPress}>
             <Text style={styles.nextText}>Next</Text>
           </TouchableOpacity>
         </Headers>
@@ -568,11 +614,20 @@ const LandingPage = () => {
         onSave={handleReminderSave}
         initialData={reminderData}
       />
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
+      />
     </SafeAreaView>
   );
 };
-
-export default LandingPage;
 
 const styles = StyleSheet.create({
   container: {
@@ -581,7 +636,6 @@ const styles = StyleSheet.create({
   },
   headerWrapper: {
     marginTop: HP(2.2),
-    marginBottom: -HP(7.8),
   },
   nextText: {
     fontSize: FS(1.8),
@@ -600,6 +654,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: WP(3.8),
     paddingBottom: HP(3),
+    marginTop: -HP(7.8),
   },
   mainImageContainer: {
     position: 'relative',
@@ -634,7 +689,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
   },
   divider: {
-    height: 0.2,
+    height: 0.3,
     backgroundColor: '#868686',
   },
   optionsSection: {
@@ -832,3 +887,5 @@ const styles = StyleSheet.create({
     marginRight: WP(1.5),
   },
 });
+
+export default LandingPage;

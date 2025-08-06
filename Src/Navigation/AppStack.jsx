@@ -28,6 +28,8 @@ import TaskEvaluationScreen from '../Pages/ChecklistScreens/TaskEvaluationScreen
 import FilterScreen from '../Pages/ChecklistScreens/FilterScreen';
 import SortingScreen from '../Pages/ChecklistScreens/SortingScreen';
 
+import PomodoroTimerScreen from '../Pages/PomodoroScreens/PomodoroScreen';
+
 const Stack = createNativeStackNavigator();
 
 function AppStack() {
@@ -40,6 +42,7 @@ function AppStack() {
       <Stack.Screen name="BottomTab" component={BottomTabNavigator} />
       <Stack.Screen name="CategorySelection" component={CateogerySelection} />
       <Stack.Screen name="EvaluateProgress" component={EvaluateProgress} />
+
       {/* HABIT FLOW SCREENS */}
       <Stack.Screen name="TimerScreen" component={TimerScreen} />
       <Stack.Screen name="FrequencyScreen" component={FrequencyScreen} />
@@ -48,6 +51,7 @@ function AppStack() {
       <Stack.Screen name="ChecklistScreen" component={ChecklistScreen} />
       <Stack.Screen name="NumericScreen" component={NumericScreen} />
       <Stack.Screen name="YesorNoScreen" component={YesorNoScreen} />
+
       {/* RECURRING TASK FLOW SCREENS */}
       <Stack.Screen
         name="RecurringYesorNoScreen"
@@ -65,6 +69,7 @@ function AppStack() {
         name="RecurringNumericScreen"
         component={RecurringNumericScreen}
       />
+      
       {/* Goal TASK FLOW SCREEN */}
       <Stack.Screen name="GoalScreen" component={GoalScreen} />
 
@@ -92,6 +97,12 @@ function AppStack() {
         }}
       />
       <Stack.Screen name="SortingScreen" component={SortingScreen} />
+
+      {/* Pomodoro Timer Screen */}
+      <Stack.Screen
+        name="PomodoroTimerScreen"
+        component={PomodoroTimerScreen}
+      />
     </Stack.Navigator>
   );
 }

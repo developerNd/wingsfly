@@ -12,6 +12,7 @@ import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../../Components/Headers';
 import {colors} from '../../../../Helper/Contants';
 import {HP, WP, FS} from '../../../../utils/dimentions';
+import CustomToast from '../../../../Components/CustomToast';
 
 const YesorNoScreen = () => {
   const navigation = useNavigation();
@@ -26,18 +27,51 @@ const YesorNoScreen = () => {
   const [habitFocused, setHabitFocused] = useState(false);
   const [descriptionFocused, setDescriptionFocused] = useState(false);
 
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
   const isHabitLabelActive = habitFocused || habit.length > 0;
   const isDescriptionLabelActive = descriptionFocused || description.length > 0;
 
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
   const handleNextPress = () => {
+    if (!habit.trim()) {
+      showToast('Enter a name');
+      return;
+    }
+
+    // Navigate to next screen
     const navigationData = {
       selectedCategory,
       evaluationType,
-      habit,
-      description,
+      habit: habit.trim(),
+      description: description.trim(),
     };
 
     navigation.navigate('FrequencyScreen', navigationData);
+  };
+
+  const handleHabitChange = text => {
+    setHabit(text);
+
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
+  const handleHabitBlur = () => {
+    setHabitFocused(false);
   };
 
   return (
@@ -66,11 +100,12 @@ const YesorNoScreen = () => {
           <TextInput
             style={styles.textInput}
             value={habit}
-            onChangeText={setHabit}
+            onChangeText={handleHabitChange}
             onFocus={() => setHabitFocused(true)}
-            onBlur={() => setHabitFocused(false)}
+            onBlur={handleHabitBlur}
             placeholder=""
             placeholderTextColor="#625F5F"
+            maxLength={70}
           />
         </View>
 
@@ -97,6 +132,7 @@ const YesorNoScreen = () => {
             placeholder=""
             placeholderTextColor="#625F5F"
             multiline={true}
+            maxLength={200}
           />
         </View>
       </View>
@@ -121,6 +157,17 @@ const YesorNoScreen = () => {
           <Text style={styles.progressDotTextInactive}>4</Text>
         </View>
       </View>
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
+      />
     </View>
   );
 };

@@ -10,9 +10,15 @@ import {
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
+import CustomToast from './CustomToast';
 
 const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
   const [note, setNote] = useState(initialNote);
+  
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
 
   useEffect(() => {
     if (visible) {
@@ -20,14 +26,39 @@ const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
     }
   }, [visible, initialNote]);
 
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
   const handleCancel = () => {
     setNote(initialNote);
+    hideToast(); 
     onClose();
   };
 
   const handleOK = () => {
-    onSave(note);
+    if (!note.trim()) {
+      showToast('Enter a name');
+      return;
+    }
+    
+    onSave(note.trim());
+    hideToast(); 
     onClose();
+  };
+
+  const handleNoteChange = (text) => {
+    setNote(text);
+    
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   return (
@@ -51,7 +82,7 @@ const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
               <TextInput
                 style={styles.textInput}
                 value={note}
-                onChangeText={setNote}
+                onChangeText={handleNoteChange}
                 placeholder=""
                 placeholderTextColor="#999999"
                 multiline={true}
@@ -77,6 +108,17 @@ const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
             </View>
           </View>
         </View>
+
+        {/* Custom Toast */}
+        <CustomToast
+          visible={toastVisible}
+          message={toastMessage}
+          type={toastType}
+          duration={3000}
+          onHide={hideToast}
+          position="bottom"
+          showIcon={true}
+        />
       </View>
     </Modal>
   );

@@ -16,7 +16,6 @@ import Modal from 'react-native-modal';
 import TaskCard from '../../Components/TaskCard';
 import ModalTaskCard from '../../Components/ModalTaskCard';
 import NumericInputModal from '../../Components/NumericModal';
-import TimeInputModal from '../../Components/TimerModal';
 import AppreciationModal from '../../Components/AppreciationModal';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -88,7 +87,6 @@ const Home = () => {
   const [checkboxStates, setCheckboxStates] = useState({});
   const [isModalVisible, setModalVisible] = useState(false);
   const [isNumericModalVisible, setNumericModalVisible] = useState(false);
-  const [isTimeModalVisible, setTimeModalVisible] = useState(false);
   const [isAppreciationVisible, setAppreciationVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [completedTask, setCompletedTask] = useState(null);
@@ -96,14 +94,24 @@ const Home = () => {
 
   const navigation = useNavigation();
 
-  // Reset modal state when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       setModalVisible(false);
       setNumericModalVisible(false);
-      setTimeModalVisible(false);
     }, []),
   );
+
+  React.useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      const route = navigation.getState()?.routes?.find(r => r.name === 'Home');
+      if (route?.params?.completedTaskId) {
+        markTaskCompleted(route.params.completedTaskId);
+        navigation.setParams({ completedTaskId: undefined });
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const modaltasks = [
     {
@@ -151,11 +159,7 @@ const Home = () => {
     },
   ];
 
-  // Helper function to calculate task streak (implement based on your data storage)
   const calculateTaskStreak = (taskId) => {
-    // This is a placeholder - implement based on your actual data storage
-    // You might want to store completion history and calculate from there
-    // For now, returning different values based on task ID for demo purposes
     const streakMap = {
       '1': 3,
       '2': 15,
@@ -167,14 +171,10 @@ const Home = () => {
     return streakMap[taskId] || 1;
   };
 
-  // Helper function to check if it's a new best streak
   const isNewBestStreak = (taskId, currentStreak) => {
-    // This should be implemented based on your actual data storage
-    // For demo purposes, assuming it's a new best if streak is > 10
     return currentStreak > 10;
   };
 
-  // Show appreciation modal for completed task
   const showAppreciationModal = (task) => {
     const currentStreak = calculateTaskStreak(task.id);
     setCompletedTask(task);
@@ -182,31 +182,28 @@ const Home = () => {
     setAppreciationVisible(true);
   };
 
-  // FIXED: Correct 4-state checkbox cycling (1->2->3->4->1)
   const toggleCheckbox = id => {
     const task = tasks.find(task => task.id === id);
     
-    // If it's the first task (numeric type), show numeric modal instead of cycling
     if (task && task.type === 'numeric') {
       setSelectedTask(task);
       setNumericModalVisible(true);
       return;
     }
 
-    // If it's the second task (timer type), show time modal instead of cycling
     if (task && task.type === 'timer') {
-      setSelectedTask(task);
-      setTimeModalVisible(true);
+      navigation.navigate('PomodoroTimerScreen', {
+        task: task
+      });
       return;
     }
 
     setCheckboxStates(prev => {
-      const currentState = prev[id] || 1; // Start with empty circle (state 1)
-      const nextState = currentState >= 4 ? 1 : currentState + 1; // Cycle: 1->2->3->4->1
+      const currentState = prev[id] || 1;
+      const nextState = currentState >= 4 ? 1 : currentState + 1;
       
-      // If moving to completed state (4), show appreciation modal
       if (nextState === 4 && task) {
-        setTimeout(() => showAppreciationModal(task), 300); // Small delay for smooth UX
+        setTimeout(() => showAppreciationModal(task), 300);
       }
       
       return {
@@ -216,7 +213,6 @@ const Home = () => {
     });
   };
 
-  // Function to handle task completion from evaluation screen
   const markTaskCompleted = (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     
@@ -225,50 +221,21 @@ const Home = () => {
       [taskId]: 4,
     }));
 
-    // Show appreciation modal
     if (task) {
-      setTimeout(() => showAppreciationModal(task), 300); // Small delay for smooth UX
+      setTimeout(() => showAppreciationModal(task), 300);
     }
   };
 
-  // Handle numeric input save
   const handleNumericSave = (value) => {
     if (selectedTask) {
       console.log(`Task ${selectedTask.id} updated with value: ${value}`);
       
-      // Update checkbox state and show appreciation if completed
       if (value > 0) {
         setCheckboxStates(prev => ({
           ...prev,
           [selectedTask.id]: 4,
         }));
         
-        // Show appreciation modal
-        setTimeout(() => showAppreciationModal(selectedTask), 300);
-      } else {
-        setCheckboxStates(prev => ({
-          ...prev,
-          [selectedTask.id]: 1,
-        }));
-      }
-    }
-    setSelectedTask(null);
-  };
-
-  // Handle time input save
-  const handleTimeSave = (timeValue) => {
-    if (selectedTask) {
-      const totalSeconds = timeValue.hours * 3600 + timeValue.minutes * 60 + timeValue.seconds;
-      console.log(`Task ${selectedTask.id} updated with time: ${timeValue.hours}:${timeValue.minutes}:${timeValue.seconds} (${totalSeconds} seconds)`);
-      
-      // Update checkbox state and show appreciation if completed
-      if (totalSeconds > 0) {
-        setCheckboxStates(prev => ({
-          ...prev,
-          [selectedTask.id]: 4,
-        }));
-        
-        // Show appreciation modal
         setTimeout(() => showAppreciationModal(selectedTask), 300);
       } else {
         setCheckboxStates(prev => ({
@@ -307,7 +274,6 @@ const Home = () => {
     <View style={styles.container}>
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
 
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoRow}>
           <Logo width={WP(7.8)} height={WP(7.8)} />
@@ -320,10 +286,8 @@ const Home = () => {
         </View>
       </View>
 
-      {/* Calendar */}
       <Calender />
 
-      {/* Quote Card */}
       <View style={styles.quoteCard}>
         <Text style={styles.quoteTitle}>Today's Quote</Text>
         <Text style={styles.quoteText}>
@@ -336,7 +300,6 @@ const Home = () => {
         </View>
       </View>
 
-      {/* Task List */}
       <FlatList
         data={tasks}
         keyExtractor={item => item.id}
@@ -345,12 +308,10 @@ const Home = () => {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Plus Button */}
       <Pressable style={styles.fab} onPress={() => setModalVisible(true)}>
         <PlusIcon name="plus" size={WP(6.4)} color="#fff" />
       </Pressable>
 
-      {/* Bottom Modal for New Tasks */}
       <Modal
         isVisible={isModalVisible}
         onBackdropPress={() => setModalVisible(false)}
@@ -369,7 +330,6 @@ const Home = () => {
         </View>
       </Modal>
 
-      {/* Numeric Input Modal */}
       <NumericInputModal
         isVisible={isNumericModalVisible}
         onClose={() => {
@@ -380,18 +340,6 @@ const Home = () => {
         taskTitle={selectedTask?.title}
       />
 
-      {/* Time Input Modal */}
-      <TimeInputModal
-        isVisible={isTimeModalVisible}
-        onClose={() => {
-          setTimeModalVisible(false);
-          setSelectedTask(null);
-        }}
-        onSave={handleTimeSave}
-        taskTitle={selectedTask?.title}
-      />
-
-      {/* Appreciation Modal */}
       <AppreciationModal
         isVisible={isAppreciationVisible}
         onClose={() => {

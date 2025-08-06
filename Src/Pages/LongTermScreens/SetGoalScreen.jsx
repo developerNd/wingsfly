@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
   },
   divider: {
-    height: 0.2,
+    height: 0.3,
     backgroundColor: '#868686',
   },
 });

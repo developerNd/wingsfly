@@ -16,6 +16,7 @@ import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
+import CustomToast from '../../../Components/CustomToast';
 import {colors, Icons} from '../../../Helper/Contants';
 import {HP, WP, FS} from '../../../utils/dimentions';
 
@@ -110,11 +111,17 @@ const RecurringNumericScreen = () => {
   const [unit, setUnit] = useState('');
   const [description, setDescription] = useState('');
   const [habitFocused, setHabitFocused] = useState(false);
+  const [goalFocused, setGoalFocused] = useState(false);
   const [selectedDropdownValue, setSelectedDropdownValue] =
     useState('At Least');
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
+
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
 
   // Feature states
   const [addPomodoro, setAddPomodoro] = useState(false);
@@ -149,10 +156,76 @@ const RecurringNumericScreen = () => {
   ];
 
   const isHabitLabelActive = habitFocused || habit.length > 0;
+  const isGoalLabelActive = goalFocused || goal.length > 0;
+
+  // Toast helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
+  // Validation function
+  const validateForm = () => {
+    if (!habit.trim()) {
+      showToast('Enter a name');
+      return false;
+    }
+
+    // Check if goal is required based on dropdown selection
+    if (selectedDropdownValue !== 'Any Value') {
+      if (!goal.trim()) {
+        showToast('Enter a value');
+        return false;
+      }
+    }
+
+    if (!blockTimeData) {
+      showToast('Select a Block Time');
+      return false;
+    }
+
+    return true;
+  };
 
   const handleDropdownSelect = value => {
     setSelectedDropdownValue(value);
+
+    if (toastVisible) {
+      hideToast();
+    }
+
     console.log('Selected option:', value);
+  };
+
+  const handleHabitChange = text => {
+    setHabit(text);
+
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
+  const handleGoalChange = text => {
+    setGoal(text);
+
+    if (toastVisible && selectedDropdownValue !== 'Any Value') {
+      if (text.trim()) {
+        hideToast();
+      }
+    }
+  };
+
+  const handleHabitBlur = () => {
+    setHabitFocused(false);
+  };
+
+  const handleGoalBlur = () => {
+    setGoalFocused(false);
   };
 
   const formatDisplayDate = date => {
@@ -197,6 +270,10 @@ const RecurringNumericScreen = () => {
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
+
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   const handlePriorityPress = () => {
@@ -239,13 +316,17 @@ const RecurringNumericScreen = () => {
   };
 
   const handleNextPress = () => {
+    if (!validateForm()) {
+      return;
+    }
+
     const navigationData = {
       selectedCategory,
       evaluationType,
-      habit,
-      goal,
-      unit,
-      description,
+      habit: habit.trim(),
+      goal: goal.trim(),
+      unit: unit.trim(),
+      description: description.trim(),
       selectedDropdownValue,
       startDate,
       blockTimeData,
@@ -259,7 +340,7 @@ const RecurringNumericScreen = () => {
     };
 
     // Navigate to next screen
-    //  navigation.navigate("FrequencyScreen", navigationData);
+    navigation.navigate('FrequencyScreen', navigationData);
   };
 
   const handleLinkToGoalPress = () => {
@@ -372,11 +453,12 @@ const RecurringNumericScreen = () => {
           <TextInput
             style={styles.textInput}
             value={habit}
-            onChangeText={setHabit}
+            onChangeText={handleHabitChange}
             onFocus={() => setHabitFocused(true)}
-            onBlur={() => setHabitFocused(false)}
+            onBlur={handleHabitBlur}
             placeholder=""
             placeholderTextColor="#575656"
+            maxLength={70}
           />
         </View>
 
@@ -395,12 +477,23 @@ const RecurringNumericScreen = () => {
 
           {/* Goal Input Container */}
           <View style={[styles.inputContainer, styles.goalContainer]}>
+            <Text
+              style={[
+                styles.inputLabel,
+                isGoalLabelActive
+                  ? styles.inputLabelActive
+                  : styles.inputLabelInactive1,
+              ]}>
+              Goal
+            </Text>
             <TextInput
               style={styles.textInput1}
               value={goal}
-              onChangeText={setGoal}
-              placeholder="Goal"
-              placeholderTextColor="#929292"
+              onChangeText={handleGoalChange}
+              onFocus={() => setGoalFocused(true)}
+              onBlur={handleGoalBlur}
+              placeholder=""
+              placeholderTextColor="#575656"
               keyboardType="numeric"
             />
           </View>
@@ -434,6 +527,7 @@ const RecurringNumericScreen = () => {
             placeholder="Description (optional)"
             placeholderTextColor="#575656"
             multiline={true}
+            maxLength={200}
           />
         </View>
 
@@ -780,6 +874,17 @@ const RecurringNumericScreen = () => {
         onSave={handleNoteSave}
         initialNote={note}
       />
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
+      />
     </View>
   );
 };
@@ -844,6 +949,13 @@ const styles = StyleSheet.create({
     fontSize: FS(1.9),
     color: '#575656',
     fontFamily: 'OpenSans-Bold',
+  },
+  inputLabelInactive1: {
+    top: HP(1.7),
+    left: WP(3.2),
+    fontSize: FS(1.9),
+    color: '#929292',
+    fontFamily: 'OpenSans-SemiBold',
   },
   textInput: {
     fontSize: FS(2.0),

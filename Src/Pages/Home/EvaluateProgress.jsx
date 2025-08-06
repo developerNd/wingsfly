@@ -18,16 +18,15 @@ const EvaluateProgress = () => {
 
   const {selectedCategory, type} = route.params || {};
 
-  // Function to determine the number of progress steps based on flow type
   const getProgressSteps = () => {
     if (type === 'Habit') {
-      return 4; // Always 4 steps for Habit flow
+      return 4; 
     } else if (type === 'Recurring') {
-      return 2; // Default 2 steps for Recurring flow (will be adjusted on next screens)
+      return 2; 
     } else if (type === 'Task' || type === 'Goal') {
-      return 2; // 3 steps for Task and Goal flows
+      return 2; 
     }
-    return 4; // Default fallback
+    return 4; 
   };
 
   // Function to render progress dots dynamically
@@ -36,7 +35,6 @@ const EvaluateProgress = () => {
     const dots = [];
 
     for (let i = 1; i <= totalSteps; i++) {
-      // First dot is always active (current step)
       const isActive = i === 1;
 
       dots.push(

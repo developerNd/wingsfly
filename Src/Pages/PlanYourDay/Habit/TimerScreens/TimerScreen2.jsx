@@ -17,6 +17,7 @@ import MonthDateSelector from '../../../../Components/MonthDateSelector';
 import YearDateSelector from '../../../../Components/YearDateSelector';
 import PeriodSelector from '../../../../Components/PeriodSelector';
 import RepeatSelector from '../../../../Components/RepeatSelector';
+import CustomToast from '../../../../Components/CustomToast';
 import {colors} from '../../../../Helper/Contants';
 import {HP, WP, FS} from '../../../../utils/dimentions';
 
@@ -50,6 +51,11 @@ const FrequencyScreen = () => {
   // states for repeat selector
   const [isRepeatFlexible, setIsRepeatFlexible] = useState(false);
   const [isRepeatAlternateDays, setIsRepeatAlternateDays] = useState(false);
+
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
 
   // Animation values for radio buttons
   const radioAnimations = useRef(
@@ -112,8 +118,59 @@ const FrequencyScreen = () => {
     {key: 'sunday', label: 'Sunday'},
   ];
 
-  // Handle Next button press
+  // Toast helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
+  // Validation function
+  const validateSelection = () => {
+    switch (selectedFrequency) {
+      case 'Specific days of the week':
+        if (selectedWeekdays.length === 0) {
+          showToast('Select at least one day');
+          return false;
+        }
+        break;
+      case 'Specific days of the month':
+        if (selectedMonthDates.length === 0) {
+          showToast('Select at least one day');
+          return false;
+        }
+        break;
+      case 'Specific days of the year':
+        if (selectedYearDates.length === 0) {
+          showToast('Select at least one day');
+          return false;
+        }
+        break;
+      case 'Some days per period':
+        if (!periodDays || periodDays === '0') {
+          showToast('Select at least one day');
+          return false;
+        }
+        break;
+      case 'Repeat':
+        // any specific validation for repeat if needed
+        break;
+      default:
+        // 'Every Day' doesn't need validation
+        break;
+    }
+    return true;
+  };
+
   const handleNextPress = () => {
+    if (!validateSelection()) {
+      return;
+    }
+
     const frequencyData = {
       selectedFrequency,
       selectedWeekdays,
@@ -203,6 +260,11 @@ const FrequencyScreen = () => {
   const handleFrequencySelect = frequency => {
     const isSelected = frequency === selectedFrequency ? false : true;
 
+    // Hide toast if visible when user makes a selection
+    if (toastVisible) {
+      hideToast();
+    }
+
     Object.keys(radioAnimations).forEach(option => {
       if (option !== frequency) {
         animateRadioButton(option, false);
@@ -273,6 +335,11 @@ const FrequencyScreen = () => {
       // Animate checkbox
       animateCheckbox(weekdayKey, !isSelected);
 
+      // Hide toast if visible when user makes a selection
+      if (toastVisible) {
+        hideToast();
+      }
+
       return newSelection;
     });
   };
@@ -287,7 +354,16 @@ const FrequencyScreen = () => {
   const handleMonthDateToggle = date => {
     setSelectedMonthDates(prev => {
       const isSelected = prev.includes(date);
-      return isSelected ? prev.filter(d => d !== date) : [...prev, date];
+      const newSelection = isSelected
+        ? prev.filter(d => d !== date)
+        : [...prev, date];
+
+      // Hide toast if visible when user makes a selection
+      if (toastVisible && newSelection.length > 0) {
+        hideToast();
+      }
+
+      return newSelection;
     });
   };
 
@@ -305,7 +381,16 @@ const FrequencyScreen = () => {
   const handleYearDateToggle = date => {
     setSelectedYearDates(prev => {
       const isSelected = prev.includes(date);
-      return isSelected ? prev.filter(d => d !== date) : [...prev, date];
+      const newSelection = isSelected
+        ? prev.filter(d => d !== date)
+        : [...prev, date];
+
+      // Hide toast if visible when user makes a selection
+      if (toastVisible && newSelection.length > 0) {
+        hideToast();
+      }
+
+      return newSelection;
     });
   };
 
@@ -317,6 +402,12 @@ const FrequencyScreen = () => {
   // Handlers for period selector
   const handlePeriodDaysChange = days => {
     setPeriodDays(days);
+
+    // Hide toast if visible when user makes a selection
+    if (toastVisible && days && days !== '0') {
+      hideToast();
+    }
+
     console.log('Period days changed:', days);
   };
 
@@ -586,6 +677,17 @@ const FrequencyScreen = () => {
           <Text style={styles.progressDotTextInactive}>4</Text>
         </View>
       </View>
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
+      />
     </View>
   );
 };

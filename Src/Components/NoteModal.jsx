@@ -6,12 +6,19 @@ import {
   TouchableOpacity,
   TextInput,
   StyleSheet,
+  StatusBar,
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
+import CustomToast from './CustomToast';
 
 const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
   const [note, setNote] = useState(initialNote);
+  
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
 
   useEffect(() => {
     if (visible) {
@@ -19,14 +26,39 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
     }
   }, [visible, initialNote]);
 
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
   const handleCancel = () => {
     setNote(initialNote);
+    hideToast();
     onClose();
   };
 
   const handleOK = () => {
-    onSave(note);
+    if (!note.trim()) {
+      showToast('Enter a note');
+      return;
+    }
+    
+    onSave(note.trim());
+    hideToast();
     onClose();
+  };
+
+  const handleNoteChange = (text) => {
+    setNote(text);
+    
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   return (
@@ -34,7 +66,14 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent={true}>
+      <StatusBar
+        backgroundColor="#47474773"
+        barStyle="light-content"
+        translucent={true}
+      />
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -43,7 +82,7 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
               <TextInput
                 style={styles.textInput}
                 value={note}
-                onChangeText={setNote}
+                onChangeText={handleNoteChange}
                 placeholder=""
                 placeholderTextColor="#999999"
                 multiline={true}
@@ -69,6 +108,17 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
             </View>
           </View>
         </View>
+
+        {/* Custom Toast */}
+        <CustomToast
+          visible={toastVisible}
+          message={toastMessage}
+          type={toastType}
+          duration={3000}
+          onHide={hideToast}
+          position="bottom"
+          showIcon={true}
+        />
       </View>
     </Modal>
   );

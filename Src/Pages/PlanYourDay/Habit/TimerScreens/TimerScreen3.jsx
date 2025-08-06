@@ -14,6 +14,7 @@ import DatePickerModal from '../../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../../Components/BlockTime';
 import DurationModal from '../../../../Components/DurationModal';
 import ReminderModal from '../../../../Components/ReminderModal';
+import CustomToast from '../../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../../Helper/Contants';
@@ -35,11 +36,27 @@ const SchedulePreference = () => {
   const [durationData, setDurationData] = useState(null);
   const [reminderData, setReminderData] = useState(null);
 
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
   // Date picker states
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
+  // Toast helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
 
   // Helper function to serialize dates for navigation
   const serializeDatesForNavigation = data => {
@@ -75,8 +92,24 @@ const SchedulePreference = () => {
     return deserialized;
   };
 
-  // Handle Done button press
+  // Handle Done button press with validation
   const handleDonePress = () => {
+    // Hide any existing toast
+    if (toastVisible) {
+      hideToast();
+    }
+
+    // Validation checks
+    if (!blockTimeData) {
+      showToast('Select a Block Time');
+      return;
+    }
+
+    if (!durationData) {
+      showToast('Select a Duration');
+      return;
+    }
+
     const scheduleData = {
       startDate,
       endDate,
@@ -102,8 +135,22 @@ const SchedulePreference = () => {
     console.log('Final habit data:', finalData);
   };
 
-  // Handle Link To Goal press
+  // Handle Link To Goal press with validation
   const handleLinkToGoalPress = () => {
+    if (toastVisible) {
+      hideToast();
+    }
+
+    if (!blockTimeData) {
+      showToast('Select a Block Time');
+      return;
+    }
+
+    if (!durationData) {
+      showToast('Select a Duration');
+      return;
+    }
+
     const currentData = {
       ...previousData,
       scheduleData: {
@@ -198,15 +245,20 @@ const SchedulePreference = () => {
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
-  // Updated handlers for duration modal
   const handleDurationPress = () => {
     setShowDurationModal(true);
   };
 
   const handleDurationSave = duration => {
     setDurationData(duration);
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   // Handlers for reminder functionality
@@ -648,6 +700,17 @@ const SchedulePreference = () => {
         onClose={handleReminderClose}
         onSave={handleReminderSave}
         initialData={reminderData}
+      />
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
       />
     </View>
   );

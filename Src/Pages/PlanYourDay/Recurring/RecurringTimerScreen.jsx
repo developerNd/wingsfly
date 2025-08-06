@@ -18,6 +18,7 @@ import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
+import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import {colors, Icons} from '../../../Helper/Contants';
 
@@ -58,6 +59,11 @@ const RecurringTimerScreen = () => {
   const [startDate, setStartDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
 
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
   const dropdownOptions = ['At Least', 'Less than', 'Any Value'];
 
   const priorityOptions = [
@@ -78,18 +84,80 @@ const RecurringTimerScreen = () => {
   // Check if habit label should be active
   const isHabitLabelActive = habitFocused || habit.length > 0;
 
+  // Toast helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
+  // Validation function
+  const validateForm = () => {
+    if (!habit.trim()) {
+      showToast('Enter a name');
+      return false;
+    }
+
+    if (selectedDropdownValue === 'Less than') {
+      const {hours, minutes, seconds} = selectedTime;
+      const totalTime = hours + minutes + seconds;
+
+      if (totalTime === 0) {
+        showToast('Enter a value greater than zero');
+        return false;
+      }
+    }
+
+    if (!blockTimeData) {
+      showToast('Select a block time');
+      return false;
+    }
+
+    return true;
+  };
+
   // Handle dropdown selection
   const handleDropdownSelect = value => {
     setSelectedDropdownValue(value);
+
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   // Handle time selection
   const handleTimeSelect = time => {
     setSelectedTime(time);
+
+    if (toastVisible && selectedDropdownValue === 'Less than') {
+      const {hours, minutes, seconds} = time;
+      const totalTime = hours + minutes + seconds;
+
+      if (totalTime > 0) {
+        hideToast();
+      }
+    }
+  };
+
+  // Handle habit input change
+  const handleHabitChange = text => {
+    setHabit(text);
+
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   // Handle Next button press
   const handleNextPress = () => {
+    if (!validateForm()) {
+      return;
+    }
+
     const taskData = {
       habit,
       description,
@@ -166,6 +234,11 @@ const RecurringTimerScreen = () => {
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
+
+    // Hide toast if it was showing block time validation message
+    if (toastVisible && toastMessage === 'Select a block time') {
+      hideToast();
+    }
   };
 
   const handlePriorityPress = () => {
@@ -268,11 +341,12 @@ const RecurringTimerScreen = () => {
           <TextInput
             style={styles.textInput}
             value={habit}
-            onChangeText={setHabit}
+            onChangeText={handleHabitChange}
             onFocus={() => setHabitFocused(true)}
             onBlur={() => setHabitFocused(false)}
             placeholder=""
             placeholderTextColor="#575656"
+            maxLength={70}
           />
         </View>
 
@@ -310,6 +384,7 @@ const RecurringTimerScreen = () => {
             placeholder="Description (optional)"
             placeholderTextColor="#575656"
             multiline={true}
+            maxLength={200}
           />
         </View>
 
@@ -661,6 +736,17 @@ const RecurringTimerScreen = () => {
         onClose={() => setShowNoteModal(false)}
         onSave={handleNoteSave}
         initialNote={note}
+      />
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
       />
     </View>
   );

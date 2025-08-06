@@ -1,9 +1,25 @@
 import React from 'react';
 import {View, Text, TouchableOpacity} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
 import BackIcon from 'react-native-vector-icons/Ionicons';
 import {HP, WP, FS} from '../utils/dimentions';
 
-const Headers = ({title = 'Set Your First Goal', children}) => {
+const Headers = ({
+  title = 'Set Your First Goal', 
+  children, 
+  onBackPress,
+  showBackButton = true
+}) => {
+  const navigation = useNavigation();
+  
+  const handleBackPress = () => {
+    if (onBackPress) {
+      onBackPress();
+    } else {
+      navigation.goBack();
+    }
+  };
+
   return (
     <View
       style={{
@@ -12,9 +28,17 @@ const Headers = ({title = 'Set Your First Goal', children}) => {
         flexDirection: 'row',
         justifyContent: 'space-between',
       }}>
-      <TouchableOpacity style={{marginTop: HP(0.25)}}>
-        <BackIcon name="chevron-back-outline" size={WP(6.5)} color="#3B3B3B" />
-      </TouchableOpacity>
+      {showBackButton ? (
+        <TouchableOpacity 
+          style={{marginTop: HP(0.25)}}
+          onPress={handleBackPress}
+        >
+          <BackIcon name="chevron-back-outline" size={WP(6.5)} color="#3B3B3B" />
+        </TouchableOpacity>
+      ) : (
+        <View style={{width: WP(6.5)}} />
+      )}
+      
       <Text
         style={{
           fontSize: FS(1.97),

@@ -10,6 +10,7 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../../Components/Headers';
+import CustomToast from '../../../../Components/CustomToast';
 import {colors} from '../../../../Helper/Contants';
 import {HP, WP, FS} from '../../../../utils/dimentions';
 
@@ -96,30 +97,101 @@ const NumericScreen = () => {
   const [unit, setUnit] = useState('');
   const [description, setDescription] = useState('');
   const [habitFocused, setHabitFocused] = useState(false);
+  const [goalFocused, setGoalFocused] = useState(false);
   const [selectedDropdownValue, setSelectedDropdownValue] =
     useState('At Least');
+
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
 
   const dropdownOptions = ['At Least', 'Less than', 'Exactly', 'Any Value'];
 
   const isHabitLabelActive = habitFocused || habit.length > 0;
+  const isGoalLabelActive = goalFocused || goal.length > 0;
+
+  // Toast helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
+  // Validation function
+  const validateForm = () => {
+    if (!habit.trim()) {
+      showToast('Enter a name');
+      return false;
+    }
+
+    // Check if goal is required based on dropdown selection
+    if (selectedDropdownValue !== 'Any Value') {
+      if (!goal.trim()) {
+        showToast('Enter a value');
+        return false;
+      }
+    }
+
+    return true;
+  };
 
   const handleDropdownSelect = value => {
     setSelectedDropdownValue(value);
+
+    if (toastVisible) {
+      hideToast();
+    }
+
     console.log('Selected option:', value);
   };
 
+  const handleHabitChange = text => {
+    setHabit(text);
+
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
+  const handleGoalChange = text => {
+    setGoal(text);
+
+    if (toastVisible && selectedDropdownValue !== 'Any Value') {
+      if (text.trim()) {
+        hideToast();
+      }
+    }
+  };
+
+  const handleHabitBlur = () => {
+    setHabitFocused(false);
+  };
+
+  const handleGoalBlur = () => {
+    setGoalFocused(false);
+  };
+
   const handleNextPress = () => {
+    if (!validateForm()) {
+      return;
+    }
+
     const navigationData = {
       selectedCategory,
       evaluationType,
-      habit,
-      goal,
-      unit,
-      description,
+      habit: habit.trim(),
+      goal: goal.trim(),
+      unit: unit.trim(),
+      description: description.trim(),
       selectedDropdownValue,
     };
 
-    // Navigate to next screen (you can change this to your desired screen)
+    // Navigate to next screen
     navigation.navigate('FrequencyScreen', navigationData);
   };
 
@@ -149,11 +221,12 @@ const NumericScreen = () => {
           <TextInput
             style={styles.textInput}
             value={habit}
-            onChangeText={setHabit}
+            onChangeText={handleHabitChange}
             onFocus={() => setHabitFocused(true)}
-            onBlur={() => setHabitFocused(false)}
+            onBlur={handleHabitBlur}
             placeholder=""
             placeholderTextColor="#575656"
+            maxLength={70}
           />
         </View>
 
@@ -172,12 +245,23 @@ const NumericScreen = () => {
 
           {/* Goal Input Container */}
           <View style={[styles.inputContainer, styles.goalContainer]}>
+            <Text
+              style={[
+                styles.inputLabel,
+                isGoalLabelActive
+                  ? styles.inputLabelActive
+                  : styles.inputLabelInactive1,
+              ]}>
+              Goal
+            </Text>
             <TextInput
               style={styles.textInput1}
               value={goal}
-              onChangeText={setGoal}
-              placeholder="Goal"
-              placeholderTextColor="#929292"
+              onChangeText={handleGoalChange}
+              onFocus={() => setGoalFocused(true)}
+              onBlur={handleGoalBlur}
+              placeholder=""
+              placeholderTextColor="#575656"
               keyboardType="numeric"
             />
           </View>
@@ -202,7 +286,7 @@ const NumericScreen = () => {
           e.g. go running. At least 3 miles a day.
         </Text>
 
-        {/* Description Input Container - Updated to match second file */}
+        {/* Description Input Container */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.descriptionInput}
@@ -211,6 +295,7 @@ const NumericScreen = () => {
             placeholder="Description (optional)"
             placeholderTextColor="#575656"
             multiline={true}
+            maxLength={200}
           />
         </View>
       </View>
@@ -235,6 +320,17 @@ const NumericScreen = () => {
           <Text style={styles.progressDotTextInactive}>4</Text>
         </View>
       </View>
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
+      />
     </View>
   );
 };
@@ -245,25 +341,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.White,
   },
   headerWrapper: {
-    marginTop: HP(2.2),
+    marginTop: HP(2.5),
     paddingBottom: HP(0.625),
   },
   nextText: {
     fontSize: FS(1.8),
-    color: '#1A73E8',
+    color: '#0059FF',
     fontFamily: 'OpenSans-Bold',
     marginTop: HP(0.5),
   },
   content: {
     flex: 1,
     paddingHorizontal: WP(4.533),
-    paddingTop: HP(2.7),
+    paddingTop: HP(2.8),
   },
   inputContainer: {
     backgroundColor: colors.White,
-    borderRadius: WP(1.8),
+    borderRadius: WP(2.133),
     padding: WP(2.133),
-    marginBottom: HP(1.7),
+    marginBottom: HP(2.3),
     elevation: 3,
     shadowColor: colors.Shadow,
     shadowOffset: {
@@ -283,8 +379,9 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Bold',
     position: 'absolute',
     backgroundColor: colors.White,
-    paddingHorizontal: WP(1.4),
+    paddingHorizontal: WP(1.7),
     zIndex: 1,
+    transition: 'all 0.2s ease',
   },
   inputLabelActive: {
     top: HP(-1.25),
@@ -299,6 +396,13 @@ const styles = StyleSheet.create({
     fontSize: FS(1.9),
     color: '#575656',
     fontFamily: 'OpenSans-Bold',
+  },
+  inputLabelInactive1: {
+    top: HP(1.75),
+    left: WP(3.2),
+    fontSize: FS(1.9),
+    color: '#929292',
+    fontFamily: 'OpenSans-SemiBold',
   },
   textInput: {
     fontSize: FS(2.0),
@@ -330,12 +434,6 @@ const styles = StyleSheet.create({
   goalContainer: {
     flex: 1,
   },
-  staticLabel: {
-    fontSize: FS(1.7),
-    color: '#666666',
-    fontFamily: 'OpenSans-Bold',
-    marginBottom: HP(0.5),
-  },
   unitMainContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -344,7 +442,7 @@ const styles = StyleSheet.create({
   },
   unitDisplayContainer: {
     backgroundColor: colors.White,
-    borderRadius: WP(1.8),
+    borderRadius: WP(2.133),
     padding: WP(2.133),
     marginBottom: HP(0.7),
     elevation: 3,
@@ -376,7 +474,7 @@ const styles = StyleSheet.create({
     marginBottom: HP(1.4),
   },
   exampleText: {
-    fontSize: FS(1.5),
+    fontSize: FS(1.25),
     fontFamily: 'OpenSans-SemiBold',
     color: '#A3A3A3',
     marginBottom: HP(2.0),
@@ -384,11 +482,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   descriptionInput: {
-    fontSize: FS(1.8),
+    fontSize: FS(1.75),
     fontFamily: 'OpenSans-Regular',
     color: '#575656',
     minHeight: HP(2.0),
-    paddingVertical: HP(0.3),
+    paddingVertical: HP(0.4375),
     paddingHorizontal: WP(2.667),
   },
   progressIndicator: {

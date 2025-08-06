@@ -61,6 +61,7 @@ export const Icons = {
   BottomAdd: require('../assets/icons/bottomadd.png'),
   More: require('../assets/icons/more.png'),
   Camera: require('../assets/icons/camera.png'),
+  Wingsfly: require('../assets/icons/wingsfly.png'),
 
   // Images
   Create: require('../assets/Images/Cateogery/create.png'),

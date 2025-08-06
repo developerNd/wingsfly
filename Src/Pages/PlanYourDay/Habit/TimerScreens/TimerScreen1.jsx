@@ -12,6 +12,7 @@ import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../../Components/Headers';
 import CustomDropdown from '../../../../Components/Dropdown';
 import TimePicker from '../../../../Components/TimePicker';
+import CustomToast from '../../../../Components/CustomToast';
 import {colors} from '../../../../Helper/Contants';
 import {HP, WP, FS} from '../../../../utils/dimentions';
 
@@ -34,32 +35,98 @@ const TimerScreen = () => {
     seconds: 0,
   });
 
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
   const dropdownOptions = ['At Least', 'Less than', 'Any Value'];
 
   const isHabitLabelActive = habitFocused || habit.length > 0;
 
+  // Toast helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
+  // Validation function
+  const validateForm = () => {
+    if (!habit.trim()) {
+      showToast('Enter a name');
+      return false;
+    }
+
+    if (selectedDropdownValue === 'Less than') {
+      const {hours, minutes, seconds} = selectedTime;
+      const totalTime = hours + minutes + seconds;
+
+      if (totalTime === 0) {
+        showToast('Enter a value greater than zero');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleDropdownSelect = value => {
     setSelectedDropdownValue(value);
+
+    if (toastVisible) {
+      hideToast();
+    }
+
     console.log('Selected option:', value);
   };
 
   const handleTimeSelect = time => {
     setSelectedTime(time);
+
+    if (toastVisible && selectedDropdownValue === 'Less than') {
+      const {hours, minutes, seconds} = time;
+      const totalTime = hours + minutes + seconds;
+
+      if (totalTime > 0) {
+        hideToast();
+      }
+    }
+
     console.log('Selected time:', time);
   };
 
+  const handleHabitChange = text => {
+    setHabit(text);
+
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
   const handleNextPress = () => {
+    if (!validateForm()) {
+      return;
+    }
+
     const navigationData = {
       selectedCategory,
       evaluationType,
-      habit,
-      description,
+      habit: habit.trim(),
+      description: description.trim(),
       selectedDropdownValue,
       selectedTime,
     };
 
     // Navigate to FrequencyScreen
     navigation.navigate('FrequencyScreen', navigationData);
+  };
+
+  const handleHabitBlur = () => {
+    setHabitFocused(false);
   };
 
   const formatTime = time => {
@@ -105,11 +172,12 @@ const TimerScreen = () => {
           <TextInput
             style={styles.textInput}
             value={habit}
-            onChangeText={setHabit}
+            onChangeText={handleHabitChange}
             onFocus={() => setHabitFocused(true)}
-            onBlur={() => setHabitFocused(false)}
+            onBlur={handleHabitBlur}
             placeholder=""
             placeholderTextColor="#575656"
+            maxLength={70}
           />
         </View>
 
@@ -147,6 +215,7 @@ const TimerScreen = () => {
             placeholder="Description (optional)"
             placeholderTextColor="#575656"
             multiline={true}
+            maxLength={200}
           />
         </View>
       </View>
@@ -178,6 +247,17 @@ const TimerScreen = () => {
         onClose={() => setShowTimePicker(false)}
         onTimeSelect={handleTimeSelect}
         initialTime={selectedTime}
+      />
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
       />
     </View>
   );
