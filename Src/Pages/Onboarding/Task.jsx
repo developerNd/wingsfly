@@ -38,13 +38,13 @@ const TaskCard = () => {
     };
 
     const handleRecurringGoalPress = () => {
-        navigation.navigate('AppStack', {
+        navigation.navigate('BottomTab', {
             selectedGender: selectedGender
         });
     };
 
     const handlePlanYourDayPress = () => {
-        navigation.navigate('AppStack', {
+        navigation.navigate('BottomTab', {
             selectedGender: selectedGender
         });
     };

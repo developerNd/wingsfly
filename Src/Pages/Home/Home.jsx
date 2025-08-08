@@ -309,7 +309,7 @@ const Home = () => {
       />
 
       <Pressable style={styles.fab} onPress={() => setModalVisible(true)}>
-        <PlusIcon name="plus" size={WP(6.4)} color="#fff" />
+        <PlusIcon name="plus" size={WP(6.4)} color={colors.White} />
       </Pressable>
 
       <Modal

@@ -1,5 +1,6 @@
 import * as React from 'react';
-import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { routes } from '../Helper/Contants';
 
 import CateogerySelection from '../Pages/Home/CateogerySelection';
 import EvaluateProgress from '../Pages/Home/EvaluateProgress';
@@ -23,6 +24,14 @@ import RecurringNumericScreen from '../Pages/PlanYourDay/Recurring/RecurringNume
 // Goal Task screens
 import GoalScreen from '../Pages/PlanYourDay/Goal/GoalScreen';
 
+// Onboarding screens that should be accessible after login
+import Task from '../Pages/Onboarding/Task';
+import CategoryScreen from '../Pages/LongTermScreens/CategoryScreen';
+import AddGoalScreen from '../Pages/LongTermScreens/AddGoalScreen';
+import SetLongTermGoal from '../Pages/LongTermScreens/SetGoalScreen';
+import MindMapScreen from '../Pages/LongTermScreens/MindMapScreen';
+import LandingPage from '../Pages/LongTermScreens/LandingScreen';
+
 //Checklist screens
 import TaskEvaluationScreen from '../Pages/ChecklistScreens/TaskEvaluationScreen';
 import FilterScreen from '../Pages/ChecklistScreens/FilterScreen';
@@ -37,8 +46,20 @@ function AppStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-      }}>
-      {/* Common screens - used by all types */}
+      }}
+      initialRouteName={routes.TASKSLECTION_SCREEN}
+    >
+      {/* Initial screen after login */}
+      <Stack.Screen name={routes.TASKSLECTION_SCREEN} component={Task} />
+      
+      {/* Long-term goal setup screens */}
+      <Stack.Screen name="Category" component={CategoryScreen} />
+      <Stack.Screen name="GoalScreen" component={AddGoalScreen} />
+      <Stack.Screen name="SetGoalScreen" component={SetLongTermGoal} />
+      <Stack.Screen name="MindMapScreen" component={MindMapScreen} />
+      <Stack.Screen name="LandingPage" component={LandingPage} />
+      
+      {/* Main app navigation */}
       <Stack.Screen name="BottomTab" component={BottomTabNavigator} />
       <Stack.Screen name="CategorySelection" component={CateogerySelection} />
       <Stack.Screen name="EvaluateProgress" component={EvaluateProgress} />
@@ -71,7 +92,7 @@ function AppStack() {
       />
       
       {/* Goal TASK FLOW SCREEN */}
-      <Stack.Screen name="GoalScreen" component={GoalScreen} />
+      <Stack.Screen name="GoalTaskScreen" component={GoalScreen} />
 
       {/* CheckList FLOW SCREENS */}
       <Stack.Screen

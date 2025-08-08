@@ -3,22 +3,45 @@ import {
     View,
     Text,
     StyleSheet,
-    Image,
     TextInput,
     SafeAreaView,
     TouchableOpacity,
+    Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import CustomButton from '../../Components/CustomButton';
 import { colors, routes } from '../../Helper/Contants';
 import Logo from '../../assets/Images/brand.svg';
 import { useNavigation } from '@react-navigation/native';
+import { supabase } from '../../../supabase';
 
 const Login = () => {
-    const [username, setUserName] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const navigation = useNavigation();
 
-    const navigation = useNavigation()
+    const handleLogin = async () => {
+        if (!email || !password) {
+            Alert.alert('Error', 'Please fill in all fields');
+            return;
+        }
+
+        setLoading(true);
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email,
+            password: password,
+        });
+
+        setLoading(false);
+
+        if (error) {
+            Alert.alert('Login Failed', error.message);
+        } else {
+            console.log('Login successful');
+        }
+    };
 
     return (
         <LinearGradient
@@ -37,25 +60,30 @@ const Login = () => {
 
                     <View style={styles.inputContainer}>
                         <TextInput
-                            value={username}
-                            onChangeText={text => setUserName(text)}
-                            placeholder="Enter Your Username"
+                            value={email}
+                            onChangeText={setEmail}
+                            placeholder="Enter Your Email"
+                            keyboardType="email-address"
+                            autoCapitalize="none"
                             style={styles.inputbox}
+                            editable={!loading}
                         />
                         <TextInput
                             value={password}
-                            onChangeText={text => setPassword(text)}
+                            onChangeText={setPassword}
                             placeholder="Enter Your Password"
                             secureTextEntry
                             style={styles.inputbox}
+                            editable={!loading}
                         />
                     </View>
 
                     <CustomButton
-                        buttonStyle={styles.loginButton}
+                        buttonStyle={[styles.loginButton, loading && styles.disabledButton]}
                         TextStyle={styles.loginButtonText}
-                        text="Login"
-                        onClick={() => navigation.navigate(routes.GENDERSELECTION_SCREEN)}
+                        text={loading ? "Logging in..." : "Login"}
+                        onClick={handleLogin}
+                        disabled={loading}
                     />
 
                     <View style={styles.separator}>
@@ -64,7 +92,11 @@ const Login = () => {
                         <Text style={styles.line}></Text>
                     </View>
 
-                    <TouchableOpacity onPress={() => navigation.navigate(routes.SIGNUP_SCREEN)} style={styles.signupContainer}>
+                    <TouchableOpacity 
+                        onPress={() => navigation.navigate(routes.SIGNUP_SCREEN)} 
+                        style={styles.signupContainer}
+                        disabled={loading}
+                    >
                         <Text style={styles.signupText}>
                             New user? <Text style={styles.signupLink}>Sign up</Text>
                         </Text>
@@ -120,6 +152,9 @@ const styles = StyleSheet.create({
         backgroundColor: colors.Primary,
         marginTop: 30,
         borderRadius: 10,
+    },
+    disabledButton: {
+        backgroundColor: '#ccc',
     },
     loginButtonText: {
         color: '#fff',

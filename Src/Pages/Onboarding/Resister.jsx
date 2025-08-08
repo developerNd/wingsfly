@@ -6,20 +6,59 @@ import {
   TextInput,
   SafeAreaView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import CustomButton from '../../Components/CustomButton';
 import { colors, routes } from '../../Helper/Contants';
 import Logo from '../../assets/Images/brand.svg';
 import { useNavigation } from '@react-navigation/native';
+import { supabase } from '../../../supabase';
 
-const Resister = () => {
+const Register = () => {
   const [username, setUserName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigation = useNavigation();
 
-  const navigation=useNavigation()
+  const handleSignup = async () => {
+    if (!username || !email || !mobile || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          username: username,
+          mobile: mobile,
+        },
+      },
+    });
+
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Signup Failed', error.message);
+    } else {
+      Alert.alert(
+        'Signup Success', 
+        'Account created successfully! Please check your email for verification.',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate(routes.LOGIN_SCREEN)
+          }
+        ]
+      );
+    }
+  };
 
   return (
     <LinearGradient
@@ -42,13 +81,16 @@ const Resister = () => {
               onChangeText={setUserName}
               placeholder="Username"
               style={styles.inputbox}
+              editable={!loading}
             />
             <TextInput
               value={email}
               onChangeText={setEmail}
               placeholder="Email"
               keyboardType="email-address"
+              autoCapitalize="none"
               style={styles.inputbox}
+              editable={!loading}
             />
             <TextInput
               value={mobile}
@@ -56,6 +98,7 @@ const Resister = () => {
               placeholder="Mobile Number"
               keyboardType="phone-pad"
               style={styles.inputbox}
+              editable={!loading}
             />
             <TextInput
               value={password}
@@ -63,17 +106,23 @@ const Resister = () => {
               placeholder="Password"
               secureTextEntry
               style={styles.inputbox}
+              editable={!loading}
             />
           </View>
 
           <CustomButton
-            buttonStyle={styles.loginButton}
+            buttonStyle={[styles.loginButton, loading && styles.disabledButton]}
             TextStyle={styles.loginButtonText}
-            text="Sign Up"
-            onClick={() => {}}
+            text={loading ? "Creating Account..." : "Sign Up"}
+            onClick={handleSignup}
+            disabled={loading}
           />
 
-          <TouchableOpacity onPress={() => navigation.navigate(routes.LOGIN_SCREEN)} style={styles.signupContainer}>
+          <TouchableOpacity 
+            onPress={() => navigation.navigate(routes.LOGIN_SCREEN)} 
+            style={styles.signupContainer}
+            disabled={loading}
+          >
             <Text style={styles.signupText}>
               Already have an account?{' '}
               <Text style={styles.signupLink}>Log in</Text>
@@ -85,7 +134,7 @@ const Resister = () => {
   );
 };
 
-export default Resister;
+export default Register;
 
 const styles = StyleSheet.create({
   container: {
@@ -131,6 +180,9 @@ const styles = StyleSheet.create({
     marginTop: 30,
     borderRadius: 10,
   },
+  disabledButton: {
+    backgroundColor: '#ccc',
+  },
   loginButtonText: {
     color: '#fff',
     fontSize: 18,
@@ -150,4 +202,3 @@ const styles = StyleSheet.create({
     color: colors.Primary,
   },
 });
-
