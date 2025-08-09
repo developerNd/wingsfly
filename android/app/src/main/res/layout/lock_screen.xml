@@ -34,8 +34,10 @@
         android:orientation="vertical"
         android:padding="32dp"
         android:clickable="true"
-        android:focusable="true">
+        android:focusable="true"
+        android:gravity="center">
 
+        <!-- Lock icon (missing from second code) -->
         <ImageView
             android:id="@+id/lockIcon"
             android:layout_width="48dp"
@@ -51,7 +53,8 @@
             android:layout_gravity="center_horizontal"
             android:layout_marginBottom="16dp"
             android:padding="8dp"
-            android:background="@drawable/app_icon_background" />
+            android:background="@drawable/app_icon_background"
+            android:scaleType="centerCrop" />
 
         <TextView
             android:id="@+id/appName"
@@ -59,9 +62,11 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginBottom="16dp"
+            android:text="App Name"
             android:textColor="#1A1A1A"
             android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:gravity="center" />
 
         <TextView
             android:id="@+id/lockMessage"
@@ -71,9 +76,10 @@
             android:gravity="center"
             android:text="This app is currently locked"
             android:textColor="#666666"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:textAlignment="center" />
 
-        <!-- Add timer text -->
+        <!-- Timer text with proper styling -->
         <TextView
             android:id="@+id/timerText"
             android:layout_width="wrap_content"
@@ -83,18 +89,25 @@
             android:textSize="32sp"
             android:textColor="#FF5722"
             android:textStyle="bold"
-            android:text="1" />
+            android:text="1"
+            android:gravity="center"
+            android:visibility="visible" />
 
+        <!-- Auto-close message (missing from second code) -->
         <TextView
+            android:id="@+id/autoCloseMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="4dp"
             android:text="Closing automatically in a second..."
             android:textColor="#666666"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:gravity="center" />
 
+        <!-- Motivational message (missing from second code) -->
         <TextView
+            android:id="@+id/motivationalMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
@@ -103,9 +116,10 @@
             android:text="Focus on what matters most\nBecause you are the greatest personality in this world."
             android:textColor="#888888"
             android:textSize="14sp"
-            android:textStyle="italic" />
+            android:textStyle="italic"
+            android:textAlignment="center" />
 
-        <!-- Add close button -->
+        <!-- Close button with proper styling -->
         <Button
             android:id="@+id/closeButton"
             android:layout_width="wrap_content"
@@ -114,10 +128,12 @@
             android:layout_marginTop="24dp"
             android:background="@drawable/button_background"
             android:paddingHorizontal="32dp"
+            android:paddingVertical="12dp"
             android:text="Close"
             android:textColor="#FFFFFF"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:minWidth="120dp" />
 
     </LinearLayout>
 
-</RelativeLayout> 
+</RelativeLayout>

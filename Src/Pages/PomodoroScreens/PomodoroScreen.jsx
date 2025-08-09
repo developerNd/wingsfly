@@ -11,11 +11,15 @@ import {
   Platform,
   PanGestureHandler,
   State,
+  NativeModules,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {useNavigation} from '@react-navigation/native';
+
+const {PomodoroModule} = NativeModules;
 
 const PomodoroTimerScreen = () => {
   const navigation = useNavigation();
@@ -26,6 +30,7 @@ const PomodoroTimerScreen = () => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [currentTag, setCurrentTag] = useState('Focus');
   const [activeMode, setActiveMode] = useState('Pomodoro');
+  const [isPomodoroBlocking, setIsPomodoroBlocking] = useState(false);
 
   const [showSettings, setShowSettings] = useState(false);
   const [timedReminder, setTimedReminder] = useState(true);
@@ -38,6 +43,108 @@ const PomodoroTimerScreen = () => {
 
   const tags = ['Focus', 'Study', 'Work', 'Sport', 'Play', 'Muse'];
 
+  // Check Pomodoro blocking status on component mount
+  useEffect(() => {
+    checkPomodoroStatus();
+  }, []);
+
+  const checkPomodoroStatus = async () => {
+    try {
+      if (PomodoroModule) {
+        const isBlocking = await PomodoroModule.isPomodoroBlocking();
+        setIsPomodoroBlocking(isBlocking);
+        console.log('Pomodoro blocking status:', isBlocking);
+        
+        // Debug: Get detailed state
+        try {
+          const state = await PomodoroModule.getPomodoroState();
+          console.log('Detailed Pomodoro state:', state);
+        } catch (e) {
+          console.log('getPomodoroState not available or failed:', e);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking Pomodoro status:', error);
+    }
+  };
+
+  const startPomodoroBlocking = async () => {
+    try {
+      if (PomodoroModule) {
+        await PomodoroModule.startPomodoroBlocking();
+        setIsPomodoroBlocking(true);
+        console.log('Pomodoro blocking started');
+        
+        // Show confirmation alert
+        Alert.alert(
+          "Focus Mode Activated",
+          "All apps are now blocked during your focus session. Only essential system apps will remain accessible.",
+          [{ text: "OK" }]
+        );
+      }
+    } catch (error) {
+      console.error('Error starting Pomodoro blocking:', error);
+      Alert.alert("Error", "Failed to start app blocking. Please try again.");
+    }
+  };
+
+  const stopPomodoroBlocking = async () => {
+    try {
+      if (PomodoroModule) {
+        await PomodoroModule.stopPomodoroBlocking();
+        setIsPomodoroBlocking(false);
+        console.log('Pomodoro blocking stopped');
+      }
+    } catch (error) {
+      console.error('Error stopping Pomodoro blocking:', error);
+    }
+  };
+
+  const pausePomodoroBlocking = async () => {
+    try {
+      if (PomodoroModule) {
+        await PomodoroModule.pausePomodoroBlocking();
+        // Update state immediately to reflect pause
+        setIsPomodoroBlocking(false);
+        console.log('Pomodoro blocking paused');
+        
+        // Verify the state after pause
+        setTimeout(async () => {
+          const isBlocking = await PomodoroModule.isPomodoroBlocking();
+          setIsPomodoroBlocking(isBlocking);
+          console.log('Verified blocking state after pause:', isBlocking);
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Error pausing Pomodoro blocking:', error);
+    }
+  };
+
+  const resumePomodoroBlocking = async () => {
+    try {
+      if (PomodoroModule) {
+        await PomodoroModule.resumePomodoroBlocking();
+        // Update state immediately to reflect resume
+        setIsPomodoroBlocking(true);
+        console.log('Pomodoro blocking resumed');
+        
+        // Verify the state after resume
+        setTimeout(async () => {
+          const isBlocking = await PomodoroModule.isPomodoroBlocking();
+          setIsPomodoroBlocking(isBlocking);
+          console.log('Verified blocking state after resume:', isBlocking);
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Error resuming Pomodoro blocking:', error);
+      // If resume fails, make sure we reflect the actual state
+      setTimeout(async () => {
+        const isBlocking = await PomodoroModule.isPomodoroBlocking();
+        setIsPomodoroBlocking(isBlocking);
+      }, 100);
+    }
+  };
+
   useEffect(() => {
     if (isRunning && timeElapsed < targetTime) {
       timerRef.current = setTimeout(() => {
@@ -46,6 +153,9 @@ const PomodoroTimerScreen = () => {
     } else if (timeElapsed >= targetTime && !isCompleted) {
       setIsCompleted(true);
       setIsRunning(false);
+      
+      // Stop app blocking when session completes
+      stopPomodoroBlocking();
 
       Animated.spring(completionScale, {
         toValue: 1,
@@ -80,24 +190,53 @@ const PomodoroTimerScreen = () => {
     }
   }, [isRunning]);
 
-  const handleStartPause = () => {
+  const handleStartPause = async () => {
     if (isCompleted) {
+      // Reset session
       setIsCompleted(false);
       setTimeElapsed(0);
       completionScale.setValue(0);
     } else {
-      setIsRunning(!isRunning);
+      const newRunningState = !isRunning;
+      setIsRunning(newRunningState);
+
+      console.log('Timer state changing to:', newRunningState, 'Current blocking state:', isPomodoroBlocking);
+
+      // Handle app blocking based on timer state
+      if (newRunningState) {
+        // Starting timer - start blocking
+        console.log('Starting timer - initiating app blocking');
+        await startPomodoroBlocking();
+      } else {
+        // Pausing timer - pause blocking (don't stop completely)
+        console.log('Pausing timer - pausing app blocking');
+        await pausePomodoroBlocking();
+      }
+      
+      // Verify state after operation
+      setTimeout(async () => {
+        const currentBlockingState = await PomodoroModule.isPomodoroBlocking();
+        console.log('Final blocking state after start/pause:', currentBlockingState);
+        setIsPomodoroBlocking(currentBlockingState);
+      }, 200);
     }
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
     setIsRunning(false);
     setTimeElapsed(0);
     setIsCompleted(false);
     completionScale.setValue(0);
+    
+    // Stop app blocking when manually stopping
+    await stopPomodoroBlocking();
   };
 
-  const handleClose = () => {
+  const handleClose = async () => {
+    // Stop blocking if active when closing
+    if (isPomodoroBlocking) {
+      await stopPomodoroBlocking();
+    }
     navigation.goBack();
   };
 
@@ -143,6 +282,21 @@ const PomodoroTimerScreen = () => {
     outputRange: ['0deg', '360deg'],
   });
 
+  // Get status text based on blocking and timer state
+  const getStatusText = () => {
+    if (isRunning && isPomodoroBlocking) {
+      return 'Focus mode active - Apps blocked';
+    } else if (isRunning && !isPomodoroBlocking) {
+      return 'Focus session paused - Apps accessible';
+    } else if (isRunning) {
+      return 'Focus session in progress...';
+    } else if (isPomodoroBlocking) {
+      return 'Apps blocked - Session paused';
+    } else {
+      return 'Ready to focus';
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="white" barStyle="dark-content" />
@@ -151,6 +305,27 @@ const PomodoroTimerScreen = () => {
         {!isCompleted ? (
           <>
             <View style={styles.header}>
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeButton}>
+                <Icon name="close" size={WP(6)} color={colors.Black} />
+              </TouchableOpacity>
+              
+              <View style={styles.headerCenter}>
+                {isPomodoroBlocking && (
+                  <View style={styles.blockingIndicator}>
+                    <Icon name="block" size={WP(4)} color="#FF6B35" />
+                    <Text style={styles.blockingText}>Apps Blocked</Text>
+                  </View>
+                )}
+                {isRunning && !isPomodoroBlocking && (
+                  <View style={[styles.blockingIndicator, {backgroundColor: '#FFF8E1'}]}>
+                    <Icon name="pause" size={WP(4)} color="#FFA726" />
+                    <Text style={[styles.blockingText, {color: '#FFA726'}]}>Session Paused</Text>
+                  </View>
+                )}
+              </View>
+
               <TouchableOpacity
                 onPress={handleMusicSettings}
                 style={styles.musicButton}>
@@ -166,30 +341,62 @@ const PomodoroTimerScreen = () => {
                     transform: [{rotate: rotateInterpolate}],
                   },
                 ]}>
-                <View style={styles.focusIcon}>
+                <View style={[
+                  styles.focusIcon,
+                  isPomodoroBlocking && styles.focusIconBlocked,
+                  isRunning && !isPomodoroBlocking && styles.focusIconPaused
+                ]}>
                   <Icon
                     name="center-focus-strong"
                     size={WP(15)}
-                    color={colors.Black}
+                    color={
+                      isPomodoroBlocking ? '#FF6B35' : 
+                      (isRunning && !isPomodoroBlocking) ? '#FFA726' : 
+                      colors.Black
+                    }
                   />
                 </View>
               </Animated.View>
 
               <Text style={styles.timerText}>{formatTime(timeElapsed)}</Text>
-              <Text style={styles.statusText}>
-                {isRunning ? 'Focus session in progress...' : 'Ready to focus'}
+              <Text style={[
+                styles.statusText,
+                isPomodoroBlocking && styles.statusTextBlocked,
+                isRunning && !isPomodoroBlocking && styles.statusTextPaused
+              ]}>
+                {getStatusText()}
               </Text>
 
               <View style={styles.progressContainer}>
                 <View
-                  style={[styles.progressBar, {width: `${getProgress()}%`}]}
+                  style={[
+                    styles.progressBar,
+                    {width: `${getProgress()}%`},
+                    isPomodoroBlocking && styles.progressBarBlocked,
+                    isRunning && !isPomodoroBlocking && styles.progressBarPaused
+                  ]}
                 />
               </View>
             </View>
 
             <View style={styles.controlsContainer}>
               <TouchableOpacity
-                style={styles.controlButton}
+                style={styles.stopButton}
+                onPress={handleStop}
+                activeOpacity={0.8}>
+                <Icon
+                  name="stop"
+                  size={WP(6)}
+                  color={colors.Black}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.controlButton,
+                  isPomodoroBlocking && styles.controlButtonBlocked,
+                  isRunning && !isPomodoroBlocking && styles.controlButtonPaused
+                ]}
                 onPress={handleStartPause}
                 activeOpacity={0.8}>
                 <Icon
@@ -356,6 +563,31 @@ const PomodoroTimerScreen = () => {
               </View>
             </View>
 
+            {/* App Blocking Setting */}
+            <View style={styles.settingItem}>
+              <View style={styles.settingRow}>
+                <View style={styles.blockingSettingInfo}>
+                  <Text style={styles.settingLabel}>Block Apps During Focus</Text>
+                  <Text style={styles.settingDescription}>
+                    Prevent access to distracting apps during your session
+                  </Text>
+                </View>
+                <View style={styles.blockingStatus}>
+                  <Icon 
+                    name={isPomodoroBlocking ? "block" : (isRunning ? "pause" : "check-circle-outline")} 
+                    size={WP(5)} 
+                    color={isPomodoroBlocking ? "#FF6B35" : (isRunning && !isPomodoroBlocking ? "#FFA726" : "#00754B")} 
+                  />
+                  <Text style={[
+                    styles.blockingStatusText,
+                    {color: isPomodoroBlocking ? "#FF6B35" : (isRunning && !isPomodoroBlocking ? "#FFA726" : "#00754B")}
+                  ]}>
+                    {isPomodoroBlocking ? "Active" : (isRunning && !isPomodoroBlocking ? "Paused" : "Inactive")}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
             <View style={styles.settingItem}>
               <View style={styles.tagHeader}>
                 <Text style={styles.settingLabel}>Tag</Text>
@@ -503,10 +735,35 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     paddingHorizontal: WP(5),
     paddingVertical: HP(2),
     paddingTop: HP(4),
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  blockingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF5F0',
+    paddingHorizontal: WP(3),
+    paddingVertical: HP(0.5),
+    borderRadius: WP(4),
+    gap: WP(1),
+  },
+  blockingText: {
+    fontSize: FS(1.4),
+    fontFamily: 'Inter-Medium',
+    color: '#FF6B35',
+  },
+  closeButton: {
+    padding: WP(2),
+    backgroundColor: '#F5F5F5',
+    borderRadius: WP(4),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   musicButton: {
     padding: WP(2),
@@ -533,6 +790,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
+  focusIconBlocked: {
+    backgroundColor: '#FFF5F0',
+    borderWidth: 2,
+    borderColor: '#FF6B35',
+  },
+  focusIconPaused: {
+    backgroundColor: '#FFF8E1',
+    borderWidth: 2,
+    borderColor: '#FFA726',
+  },
   timerText: {
     fontSize: FS(6),
     fontFamily: 'Inter-Bold',
@@ -544,6 +811,15 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginBottom: HP(2),
+    textAlign: 'center',
+  },
+  statusTextBlocked: {
+    color: '#FF6B35',
+    fontFamily: 'OpenSans-SemiBold',
+  },
+  statusTextPaused: {
+    color: '#FFA726',
+    fontFamily: 'OpenSans-SemiBold',
   },
   progressContainer: {
     width: '80%',
@@ -557,12 +833,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.Primary,
     borderRadius: HP(0.25),
   },
+  progressBarBlocked: {
+    backgroundColor: '#FF6B35',
+  },
+  progressBarPaused: {
+    backgroundColor: '#FFA726',
+  },
   controlsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: HP(3),
     paddingBottom: HP(10),
+    gap: WP(8),
+  },
+  stopButton: {
+    width: WP(12),
+    height: WP(12),
+    backgroundColor: '#F0F0F0',
+    borderRadius: WP(6),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   controlButton: {
     width: WP(16),
@@ -576,6 +867,12 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
+  },
+  controlButtonBlocked: {
+    backgroundColor: '#FF6B35',
+  },
+  controlButtonPaused: {
+    backgroundColor: '#FFA726',
   },
   celebrationContainer: {
     flex: 1,
@@ -672,15 +969,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: WP(5),
     paddingVertical: HP(2.5),
   },
-  closeButton: {
-    marginRight: WP(4),
-    width: WP(8),
-    height: WP(8),
-    backgroundColor: '#F5F5F5',
-    borderRadius: WP(4),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   headerTitles: {
     flex: 1,
     alignItems: 'center',
@@ -732,6 +1020,24 @@ const styles = StyleSheet.create({
     marginBottom: HP(1.5),
     marginLeft: WP(1),
   },
+  settingDescription: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(0.5),
+  },
+  blockingSettingInfo: {
+    flex: 1,
+  },
+  blockingStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: WP(1),
+  },
+  blockingStatusText: {
+    fontSize: FS(1.6),
+    fontFamily: 'Inter-Medium',
+  },
   toggle: {
     width: WP(12),
     height: WP(6.5),
@@ -758,7 +1064,6 @@ const styles = StyleSheet.create({
   toggleThumbActive: {
     transform: [{translateX: WP(5.5)}],
   },
-
   sliderSection: {
     paddingVertical: HP(2),
     paddingHorizontal: WP(1),

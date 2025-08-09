@@ -31,6 +31,7 @@ class MainApplication : Application(), ReactApplication {
               add(InstalledAppsPackage())
               add(AppUsagePackage())
               add(RunningAppsPackage())
+              add(PomodoroPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

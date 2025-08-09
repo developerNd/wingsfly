@@ -630,7 +630,7 @@ const Home = () => {
           data={[1, 2, 3, 4, 5]} // Show 5 skeleton items
           keyExtractor={(item, index) => `skeleton-${index}`}
           renderItem={() => <TaskSkeleton />}
-          contentContainerStyle={{marginTop: HP(2.5)}}
+          contentContainerStyle={{marginTop: HP(0.7)}}
           showsVerticalScrollIndicator={false}
         />
       ) : tasks.length === 0 ? (
@@ -643,7 +643,7 @@ const Home = () => {
           data={tasks}
           keyExtractor={item => item.id}
           renderItem={renderTask}
-          contentContainerStyle={{marginTop: HP(2.5)}}
+          contentContainerStyle={{marginTop: HP(0.7)}}
           showsVerticalScrollIndicator={false}
           refreshing={loading}
           onRefresh={refreshTasks}
@@ -737,7 +737,7 @@ const styles = StyleSheet.create({
     marginTop: HP(1.9),
     borderRadius: WP(2.1),
     paddingBottom: HP(1.9),
-    marginBottom: HP(-0.9),
+    marginBottom: HP(1),
     paddingTop: HP(1.0),
     height: HP(13.5),
     shadowColor: colors.Shadow,
@@ -766,7 +766,7 @@ const styles = StyleSheet.create({
     bottom: HP(1.6),
     fontSize: FS(1.4),
     fontFamily: 'OpenSans-SemiBold',
-    color: colors.PRIMARY,
+    color: colors.Primary,
   },
   progressBarContainer: {
     position: 'absolute',

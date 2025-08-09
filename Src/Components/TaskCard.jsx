@@ -9,9 +9,9 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
   const navigation = useNavigation();
 
   // Helper function to get image source from category name
-  const getImageSource = (categoryName) => {
+  const getImageSource = categoryName => {
     if (!categoryName) return Icons.Work;
-    
+
     const categoryImageMap = {
       'Work & Career': Icons.Work,
       'Work and Career': Icons.Work,
@@ -26,10 +26,10 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
       'Personal & Growth': Icons.Growth,
       'Personal and Growth': Icons.Growth,
       'Other Goals': Icons.Other,
-      'Other': Icons.Other,
+      Other: Icons.Other,
       'Create a category': Icons.Create,
     };
-    
+
     return categoryImageMap[categoryName] || Icons.Work;
   };
 
@@ -75,7 +75,15 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
           </View>
         );
       case 'yesNo':
-        return <View style={styles.staticCircle}></View>;
+        return (
+          <View style={styles.staticCircle}>
+            <Icon
+              name="check"
+              size={WP(3.2)}
+              color={colors.Black}
+            />
+          </View>
+        );
       case 'checklist':
         return (
           <View style={styles.staticCircle}>
@@ -109,16 +117,6 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
       case 1:
         return getInitialIconInsideRadio();
       case 2:
-        if (item.type === 'yesNo') {
-          return (
-            <Icon
-              name="check"
-              size={WP(3.8)}
-              color={colors.Black}
-              style={styles.tickIcon}
-            />
-          );
-        }
         return (
           <Image
             source={Icons.Tick}
@@ -315,9 +313,6 @@ const styles = StyleSheet.create({
     width: WP(5.3),
     height: WP(5.3),
     resizeMode: 'contain',
-  },
-  tickIcon: {
-    marginRight: WP(0.5),
   },
 });
 
