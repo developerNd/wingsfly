@@ -13,7 +13,7 @@ import {HP, WP, FS} from '../../utils/dimentions';
 
 const SettingsScreen = ({navigation}) => {
   const handleManageAppsPress = () => {
-    navigation.navigate('ManageApps'); 
+    navigation.navigate('AppBlockerScreen'); 
   };
 
   const SettingItem = ({title, onPress, showArrow = true}) => (
@@ -48,7 +48,7 @@ const SettingsScreen = ({navigation}) => {
           <Text style={styles.sectionTitle}>Apps</Text>
           <View style={styles.sectionContent}>
             <SettingItem
-              title="Manage Apps"
+              title="App Lock"
               onPress={handleManageAppsPress}
             />
           </View>

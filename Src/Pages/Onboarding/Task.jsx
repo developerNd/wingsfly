@@ -31,7 +31,7 @@ const TaskCard = () => {
 
     // Navigation handlers
     const handleLongTermGoalPress = () => {
-        navigation.navigate('Category', {
+        navigation.navigate('CategoryLongTerm', {
             goalType: 'longTerm',
             selectedGender: selectedGender
         });

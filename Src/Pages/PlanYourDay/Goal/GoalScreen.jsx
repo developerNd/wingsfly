@@ -15,7 +15,7 @@ import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
-import CustomToast from '../../../Components/CustomToast'; // ADD THIS IMPORT
+import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../Helper/Contants';

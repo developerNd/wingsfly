@@ -39,38 +39,61 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
     return colorMap[item.id] || '#1A4BFF';
   };
 
-  const handleCheckboxPress = () => {
-    // State 3 (check mark) should trigger task evaluation
-    if (checkboxState === 3) {
-      // Navigate to task evaluation screen with only serializable data
-      navigation.navigate('TaskEvaluation', {
-        taskData: item,
-        taskId: item.id, 
-      });
-    } else {
-
-      onToggle();
-    }
-  };
-
-  const renderCheckbox = () => {
-    switch (checkboxState) {
-      case 1: // Empty circle (initial state)
-        return <View style={styles.staticCircle} />;
-      case 2: // Time icon
+  const getInitialIconInsideRadio = () => {
+    switch (item.type) {
+      case 'timer':
+        return <Image source={Icons.Time} style={styles.timerIcon} />;
+      case 'numeric':
         return (
-          <Image
-            source={Icons.Time}
-            style={{width: WP(5.3), height: WP(5.3)}}
-          />
+          <View style={styles.staticCircle}>
+            <Image source={Icons.Numeric} style={styles.iconInsideCircle} />
+          </View>
         );
-      case 3: // Check mark (triggers evaluation)
+      case 'yesno':
+        return <View style={styles.staticCircle}></View>;
+      case 'checklist':
         return (
           <View style={styles.staticCircle}>
             <Image source={Icons.Check} style={styles.iconInsideCircle} />
           </View>
         );
-      case 4: // Completed (green tick)
+      case 'task':
+      default:
+        return (
+          <View style={styles.staticCircle}>
+            <Image source={Icons.Task} style={styles.iconInsideCircle} />
+          </View>
+        );
+    }
+  };
+
+  const handleCheckboxPress = () => {
+    if (item.type === 'checklist') {
+      navigation.navigate('TaskEvaluation', {
+        taskData: item,
+        taskId: item.id,
+      });
+      return;
+    }
+
+    onToggle();
+  };
+
+  const renderCheckbox = () => {
+    switch (checkboxState) {
+      case 1:
+        return getInitialIconInsideRadio();
+      case 2:
+        if (item.type === 'yesno') {
+          return (
+            <Icon
+              name="check"
+              size={WP(3.8)}
+              color={colors.Black}
+              style={styles.tickIcon}
+            />
+          );
+        }
         return (
           <Image
             source={Icons.Tick}
@@ -78,7 +101,7 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
           />
         );
       default:
-        return <View style={styles.staticCircle} />;
+        return getInitialIconInsideRadio();
     }
   };
 
@@ -138,7 +161,9 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
         <View style={styles.bottomBorder} />
       </View>
 
-      <TouchableOpacity style={styles.checkboxContainer} onPress={handleCheckboxPress}>
+      <TouchableOpacity
+        style={styles.checkboxContainer}
+        onPress={handleCheckboxPress}>
         {renderCheckbox()}
       </TouchableOpacity>
     </View>
@@ -260,6 +285,14 @@ const styles = StyleSheet.create({
     width: WP(2.7),
     height: WP(2.7),
     resizeMode: 'contain',
+  },
+  timerIcon: {
+    width: WP(5.3),
+    height: WP(5.3),
+    resizeMode: 'contain',
+  },
+  tickIcon: {
+    marginRight: WP(0.5),
   },
 });
 

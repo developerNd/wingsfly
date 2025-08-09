@@ -20,13 +20,13 @@ const EvaluateProgress = () => {
 
   const getProgressSteps = () => {
     if (type === 'Habit') {
-      return 4; 
+      return 4;
     } else if (type === 'Recurring') {
-      return 2; 
+      return 2;
     } else if (type === 'Task' || type === 'Goal') {
-      return 2; 
+      return 2;
     }
-    return 4; 
+    return 4;
   };
 
   // Function to render progress dots dynamically
@@ -104,16 +104,16 @@ const EvaluateProgress = () => {
     } else if (type === 'Task') {
       switch (optionType) {
         case 'yesNo':
-          //      navigation.navigate("TaskYNScreen", navigationData); // task flow yes/no screen
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         case 'timer':
-          //       navigation.navigate("TaskTimerScreen", navigationData); // add if needed
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         case 'checklist':
-          //      navigation.navigate("TaskChecklistScreen", navigationData); // add if needed
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         case 'numeric':
-          //      navigation.navigate("TaskValueScreen", navigationData); // add if needed
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         default:
           console.log('Unknown option type for Task:', optionType);
@@ -121,16 +121,16 @@ const EvaluateProgress = () => {
     } else if (type === 'Goal') {
       switch (optionType) {
         case 'yesNo':
-          navigation.navigate('GoalScreen', navigationData);
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         case 'timer':
-          navigation.navigate('GoalScreen', navigationData);
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         case 'checklist':
-          navigation.navigate('GoalScreen', navigationData);
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         case 'numeric':
-          navigation.navigate('GoalScreen', navigationData);
+          navigation.navigate('GoalTaskScreen', navigationData);
           break;
         default:
           console.log('Unknown option type for Goal:', optionType);

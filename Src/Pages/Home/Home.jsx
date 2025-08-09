@@ -30,7 +30,7 @@ const tasks = [
     tags: ['Habit', 'Must'],
     image: Icons.Taskhome,
     hasFlag: true,
-    type: 'numeric',
+    type: 'yesno',
   },
   {
     id: '2',
@@ -50,6 +50,7 @@ const tasks = [
     tags: ['Habit', 'Must'],
     image: Icons.Cash,
     hasFlag: true,
+    type: 'checklist',
   },
   {
     id: '4',
@@ -60,6 +61,7 @@ const tasks = [
     tags: ['Habit', 'Important'],
     image: Icons.Walk,
     hasFlag: true,
+    type: 'numeric',
   },
   {
     id: '5',
@@ -70,6 +72,7 @@ const tasks = [
     tags: ['Task', 'Important'],
     image: Icons.Task5,
     hasFlag: true,
+    type: 'yesno',
   },
   {
     id: '6',
@@ -80,6 +83,7 @@ const tasks = [
     tags: ['Task', 'Important'],
     image: Icons.Task6,
     hasFlag: true,
+    type: 'timer',
   },
 ];
 
@@ -106,7 +110,7 @@ const Home = () => {
       const route = navigation.getState()?.routes?.find(r => r.name === 'Home');
       if (route?.params?.completedTaskId) {
         markTaskCompleted(route.params.completedTaskId);
-        navigation.setParams({ completedTaskId: undefined });
+        navigation.setParams({completedTaskId: undefined});
       }
     });
 
@@ -159,14 +163,14 @@ const Home = () => {
     },
   ];
 
-  const calculateTaskStreak = (taskId) => {
+  const calculateTaskStreak = taskId => {
     const streakMap = {
-      '1': 3,
-      '2': 15,
-      '3': 7,
-      '4': 22,
-      '5': 1,
-      '6': 8,
+      1: 3,
+      2: 15,
+      3: 7,
+      4: 22,
+      5: 1,
+      6: 8,
     };
     return streakMap[taskId] || 1;
   };
@@ -175,7 +179,7 @@ const Home = () => {
     return currentStreak > 10;
   };
 
-  const showAppreciationModal = (task) => {
+  const showAppreciationModal = task => {
     const currentStreak = calculateTaskStreak(task.id);
     setCompletedTask(task);
     setTaskStreak(currentStreak);
@@ -184,7 +188,7 @@ const Home = () => {
 
   const toggleCheckbox = id => {
     const task = tasks.find(task => task.id === id);
-    
+
     if (task && task.type === 'numeric') {
       setSelectedTask(task);
       setNumericModalVisible(true);
@@ -193,19 +197,19 @@ const Home = () => {
 
     if (task && task.type === 'timer') {
       navigation.navigate('PomodoroTimerScreen', {
-        task: task
+        task: task,
       });
       return;
     }
 
     setCheckboxStates(prev => {
       const currentState = prev[id] || 1;
-      const nextState = currentState >= 4 ? 1 : currentState + 1;
-      
-      if (nextState === 4 && task) {
+      const nextState = currentState === 1 ? 2 : 1;
+
+      if (nextState === 2 && task) {
         setTimeout(() => showAppreciationModal(task), 300);
       }
-      
+
       return {
         ...prev,
         [id]: nextState,
@@ -213,12 +217,12 @@ const Home = () => {
     });
   };
 
-  const markTaskCompleted = (taskId) => {
+  const markTaskCompleted = taskId => {
     const task = tasks.find(t => t.id === taskId);
-    
+
     setCheckboxStates(prev => ({
       ...prev,
-      [taskId]: 4,
+      [taskId]: 2,
     }));
 
     if (task) {
@@ -226,16 +230,16 @@ const Home = () => {
     }
   };
 
-  const handleNumericSave = (value) => {
+  const handleNumericSave = value => {
     if (selectedTask) {
       console.log(`Task ${selectedTask.id} updated with value: ${value}`);
-      
+
       if (value > 0) {
         setCheckboxStates(prev => ({
           ...prev,
-          [selectedTask.id]: 4,
+          [selectedTask.id]: 2,
         }));
-        
+
         setTimeout(() => showAppreciationModal(selectedTask), 300);
       } else {
         setCheckboxStates(prev => ({
@@ -251,7 +255,7 @@ const Home = () => {
     <View style={index === tasks.length - 1 ? styles.lastTaskCard : null}>
       <TaskCard
         item={item}
-        checkboxState={checkboxStates[item.id] || 1} 
+        checkboxState={checkboxStates[item.id] || 1}
         onToggle={() => toggleCheckbox(item.id)}
         onTaskCompleted={markTaskCompleted}
       />
@@ -348,7 +352,9 @@ const Home = () => {
         }}
         taskTitle={completedTask?.title || ''}
         streakCount={taskStreak}
-        isNewBestStreak={completedTask ? isNewBestStreak(completedTask.id, taskStreak) : false}
+        isNewBestStreak={
+          completedTask ? isNewBestStreak(completedTask.id, taskStreak) : false
+        }
         nextAwardDays={7}
       />
     </View>

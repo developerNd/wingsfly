@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { routes } from '../Helper/Contants';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {routes} from '../Helper/Contants';
 
 import CateogerySelection from '../Pages/Home/CateogerySelection';
 import EvaluateProgress from '../Pages/Home/EvaluateProgress';
@@ -38,6 +38,7 @@ import FilterScreen from '../Pages/ChecklistScreens/FilterScreen';
 import SortingScreen from '../Pages/ChecklistScreens/SortingScreen';
 
 import PomodoroTimerScreen from '../Pages/PomodoroScreens/PomodoroScreen';
+import AppBlockerScreen from '../Pages/SettingsScreens/AppBlockerScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -47,18 +48,17 @@ function AppStack() {
       screenOptions={{
         headerShown: false,
       }}
-      initialRouteName={routes.TASKSLECTION_SCREEN}
-    >
+      initialRouteName={routes.TASKSLECTION_SCREEN}>
       {/* Initial screen after login */}
       <Stack.Screen name={routes.TASKSLECTION_SCREEN} component={Task} />
-      
+
       {/* Long-term goal setup screens */}
-      <Stack.Screen name="Category" component={CategoryScreen} />
+      <Stack.Screen name="CategoryLongTerm" component={CategoryScreen} />
       <Stack.Screen name="GoalScreen" component={AddGoalScreen} />
       <Stack.Screen name="SetGoalScreen" component={SetLongTermGoal} />
       <Stack.Screen name="MindMapScreen" component={MindMapScreen} />
       <Stack.Screen name="LandingPage" component={LandingPage} />
-      
+
       {/* Main app navigation */}
       <Stack.Screen name="BottomTab" component={BottomTabNavigator} />
       <Stack.Screen name="CategorySelection" component={CateogerySelection} />
@@ -90,7 +90,7 @@ function AppStack() {
         name="RecurringNumericScreen"
         component={RecurringNumericScreen}
       />
-      
+
       {/* Goal TASK FLOW SCREEN */}
       <Stack.Screen name="GoalTaskScreen" component={GoalScreen} />
 
@@ -124,6 +124,8 @@ function AppStack() {
         name="PomodoroTimerScreen"
         component={PomodoroTimerScreen}
       />
+
+      <Stack.Screen name="AppBlockerScreen" component={AppBlockerScreen} />
     </Stack.Navigator>
   );
 }
