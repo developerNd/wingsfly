@@ -88,6 +88,29 @@ const checkRepetitionConditions = (task, targetDate) => {
     case 'Repeat':
       return checkCustomRepetition(task, targetDate);
       
+    case 'Once':
+      // For one-time tasks, show only on the start date or creation date
+      if (task.startDate) {
+        let taskStartDate;
+        if (typeof task.startDate === 'string') {
+          taskStartDate = new Date(task.startDate);
+        } else {
+          taskStartDate = task.startDate;
+        }
+        
+        if (!isNaN(taskStartDate.getTime())) {
+          const taskStartOfDay = new Date(taskStartDate.getFullYear(), taskStartDate.getMonth(), taskStartDate.getDate());
+          return targetDate.getTime() === taskStartOfDay.getTime();
+        }
+      }
+      // Fallback to creation date if no start date
+      const createdDate = new Date(task.created_at);
+      if (!isNaN(createdDate.getTime())) {
+        const createdStartOfDay = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate());
+        return targetDate.getTime() === createdStartOfDay.getTime();
+      }
+      return true;
+      
     default:
       return true;
   }

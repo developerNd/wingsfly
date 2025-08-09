@@ -226,6 +226,36 @@ export const taskService = {
     }
   },
 
+  // Update checklist task items and completion status
+  async updateChecklistTask(taskId, checklistItems) {
+    try {
+      const completedCount = checklistItems.filter(item => item.completed).length;
+      const totalCount = checklistItems.length;
+      const isCompleted = completedCount === totalCount && totalCount > 0;
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({
+          checklist_items: checklistItems,
+          is_completed: isCompleted,
+          completion_count: isCompleted ? 1 : 0,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', taskId)
+        .select();
+
+      if (error) {
+        console.error('Error updating checklist task:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Error in updateChecklistTask:', error);
+      throw error;
+    }
+  },
+
   // Delete a task
   async deleteTask(taskId) {
     try {

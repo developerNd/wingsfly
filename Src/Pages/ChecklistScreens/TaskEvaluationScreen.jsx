@@ -14,8 +14,9 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import ItemInput from '../../Components/ItemInput';
+import { taskService } from '../../services/api/taskService';
 
 const TaskEvaluationScreen = () => {
   const navigation = useNavigation();
@@ -28,21 +29,26 @@ const TaskEvaluationScreen = () => {
   // state for ItemInput modal
   const [showItemInput, setShowItemInput] = useState(false);
 
-  const [checklistItems, setChecklistItems] = useState([
-    {id: 1, text: 'Get at 3 AM', completed: true},
-    {id: 2, text: '20 sit ups', completed: true},
-    {id: 3, text: '20 Pushups', completed: true},
-    {id: 4, text: '20 Anulom Vilom', completed: true},
-    {id: 5, text: '7 Kapalbhati', completed: true},
-    {id: 6, text: 'Naam jaap 1/2 to 1 Hour', completed: false},
-    {id: 7, text: 'Touch the feet of the Mother Earth', completed: true},
-    {id: 8, text: 'Remember the name of 5 Yogi', completed: true},
-    {
-      id: 9,
-      text: 'Take 1 litre of warm water with Tumeri, naeem & Gooseberry',
-      completed: true,
-    },
-  ]);
+  const [checklistItems, setChecklistItems] = useState([]);
+
+  // Load checklist items from task data
+  useEffect(() => {
+    if (taskData && taskData.checklistItems) {
+      setChecklistItems(taskData.checklistItems);
+    } else {
+      // If no checklist items exist, initialize with empty array
+      setChecklistItems([]);
+    }
+  }, [taskData]);
+
+  // Reload data when screen comes into focus (e.g., returning from FilterScreen)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (taskData && taskData.checklistItems) {
+        setChecklistItems(taskData.checklistItems);
+      }
+    }, [taskData])
+  );
 
   // Animation on mount
   useEffect(() => {
@@ -79,37 +85,65 @@ const TaskEvaluationScreen = () => {
     });
   };
 
-  const toggleChecklistItem = id => {
-    setChecklistItems(prev =>
-      prev.map(item =>
-        item.id === id ? {...item, completed: !item.completed} : item,
-      ),
+  const toggleChecklistItem = async (id) => {
+    const updatedItems = checklistItems.map(item =>
+      item.id === id ? {...item, completed: !item.completed} : item,
     );
+    
+    setChecklistItems(updatedItems);
+    
+    // Save to database
+    try {
+      await taskService.updateChecklistTask(taskId, updatedItems);
+    } catch (error) {
+      console.error('Error updating checklist:', error);
+      // Revert on error
+      setChecklistItems(checklistItems);
+    }
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     const completedCount = checklistItems.filter(item => item.completed).length;
     const totalCount = checklistItems.length;
 
     if (completedCount === totalCount) {
-      animateOut(() => {
-        navigation.goBack();
-      });
+      // Save final completion state to database
+      try {
+        await taskService.updateChecklistTask(taskId, checklistItems);
+        animateOut(() => {
+          navigation.navigate('Home', { completedTaskId: taskId });
+        });
+      } catch (error) {
+        console.error('Error saving final completion state:', error);
+        animateOut(() => {
+          navigation.goBack();
+        });
+      }
     } else {
       setShowItemInput(true);
     }
   };
 
   // Function to handle adding new item
-  const handleAddItem = itemText => {
+  const handleAddItem = async (itemText) => {
     if (itemText.trim()) {
-      const newId = Math.max(...checklistItems.map(item => item.id)) + 1;
+      const newId = checklistItems.length > 0 ? Math.max(...checklistItems.map(item => item.id)) + 1 : 1;
       const newItem = {
         id: newId,
         text: itemText.trim(),
         completed: false,
       };
-      setChecklistItems(prev => [...prev, newItem]);
+      const updatedItems = [...checklistItems, newItem];
+      setChecklistItems(updatedItems);
+      
+      // Save to database
+      try {
+        await taskService.updateChecklistTask(taskId, updatedItems);
+      } catch (error) {
+        console.error('Error adding checklist item:', error);
+        // Revert on error
+        setChecklistItems(checklistItems);
+      }
     }
   };
 
@@ -200,9 +234,9 @@ const TaskEvaluationScreen = () => {
               <View style={styles.header}>
                 <View style={styles.headerContent}>
                   <View style={styles.headerLeft}>
-                    <Text style={styles.headerTitle}>PMj Morning Routine</Text>
+                    <Text style={styles.headerTitle}>{taskData?.title || 'Checklist Task'}</Text>
                     <View style={styles.dateBackground}>
-                      <Text style={styles.headerDate}>3/12/25</Text>
+                      <Text style={styles.headerDate}>{new Date().toLocaleDateString()}</Text>
                     </View>
                   </View>
                   <View style={styles.headerRight}>
@@ -222,6 +256,12 @@ const TaskEvaluationScreen = () => {
                 style={styles.checklistContainer}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.checklistContent}
+                ListEmptyComponent={() => (
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No checklist items yet</Text>
+                    <Text style={styles.emptySubText}>Tap the + button to add items</Text>
+                  </View>
+                )}
               />
 
               {/* Bottom Actions */}
@@ -456,6 +496,25 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 6},
     shadowOpacity: 0.3,
     shadowRadius: 10,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: WP(5),
+    paddingVertical: HP(10),
+  },
+  emptyText: {
+    fontSize: FS(2.2),
+    fontFamily: 'Roboto-Bold',
+    color: '#3B3B3B',
+    marginBottom: HP(1),
+  },
+  emptySubText: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-Regular',
+    color: '#5B5B5B',
+    textAlign: 'center',
   },
 });
 

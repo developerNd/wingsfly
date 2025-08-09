@@ -17,6 +17,7 @@ import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import SuccessConditionModal from '../../Components/SuccessModal';
+import { taskService } from '../../services/api/taskService';
 
 const FilterScreen = () => {
   const navigation = useNavigation();
@@ -34,14 +35,14 @@ const FilterScreen = () => {
   // state for filter toggle
   const [showAllItems, setShowAllItems] = useState(false);
 
-  const [screenItems, setScreenItems] = useState([
-    {id: 1, text: 'Long Term Goal Screen', completed: false},
-    {id: 2, text: 'Recurring Goal', completed: false},
-    {id: 3, text: 'Plan Your Day Screen', completed: false},
-    {id: 4, text: 'Numbering on Screen for Dikesh Sir', completed: false},
-    {id: 5, text: 'Custom Goal Services', completed: false},
-    {id: 6, text: 'Check Missing Details Of Screen', completed: false},
-  ]);
+  const [screenItems, setScreenItems] = useState([]);
+
+  // Load checklist items from route params
+  useEffect(() => {
+    if (route.params?.checklistItems) {
+      setScreenItems(route.params.checklistItems);
+    }
+  }, [route.params]);
 
   // Animation on mount
   useEffect(() => {
@@ -88,13 +89,29 @@ const FilterScreen = () => {
     );
   };
 
-  const deleteScreenItem = id => {
-    setScreenItems(prev => prev.filter(item => item.id !== id));
+  const deleteScreenItem = async (id) => {
+    const updatedItems = screenItems.filter(item => item.id !== id);
+    setScreenItems(updatedItems);
+    
+    // Save to database if taskId exists
+    if (taskId) {
+      try {
+        await taskService.updateChecklistTask(taskId, updatedItems);
+      } catch (error) {
+        console.error('Error deleting checklist item:', error);
+        // Revert on error
+        setScreenItems(screenItems);
+      }
+    }
   };
 
   const handleComplete = () => {
     animateOut(() => {
-      navigation.goBack();
+      // Navigate back with updated checklist items
+      navigation.navigate('TaskEvaluation', {
+        taskData: { ...taskData, checklistItems: screenItems },
+        taskId: taskId,
+      });
     });
   };
 
@@ -169,10 +186,10 @@ const FilterScreen = () => {
                     <View style={styles.headerContent}>
                       <View style={styles.headerLeft}>
                         <Text style={styles.headerTitle}>
-                          WingsFly Screen Management
+                          {taskData?.title || 'Checklist Task'}
                         </Text>
                         <View style={styles.dateBackground}>
-                          <Text style={styles.headerDate}>27/03/25</Text>
+                          <Text style={styles.headerDate}>{new Date().toLocaleDateString()}</Text>
                         </View>
                       </View>
                       <View style={styles.headerRight}>

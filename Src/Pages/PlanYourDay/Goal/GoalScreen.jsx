@@ -8,8 +8,9 @@ import {
   ScrollView,
   Image,
   TextInput,
+  Alert,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
 import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
@@ -19,13 +20,44 @@ import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../Helper/Contants';
+import { taskService } from '../../../services/api/taskService';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const GoalScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
+  const { user } = useAuth();
+
+  // Get category from route params (from CategorySelection screen)
+  const selectedCategory = route.params?.selectedCategory || { title: 'Work and Career' };
+
+  // Helper function to get category icon
+  const getCategoryIcon = (categoryName) => {
+    if (!categoryName) return Icons.Work;
+    
+    const categoryImageMap = {
+      'Work & Career': Icons.Work,
+      'Work and Career': Icons.Work,
+      'Health & Wellness': Icons.Health,
+      'Health and Wellness': Icons.Health,
+      'Love & Relationship': Icons.Love,
+      'Love and Relationship': Icons.Love,
+      'Money & Finances': Icons.Money,
+      'Money and Finances': Icons.Money,
+      'Spirtuality & Faith': Icons.Faith,
+      'Spirtuality and Faith': Icons.Faith,
+      'Personal & Growth': Icons.Growth,
+      'Personal and Growth': Icons.Growth,
+      'Other Goals': Icons.Other,
+      'Other': Icons.Other,
+      'Create a category': Icons.Create,
+    };
+    
+    return categoryImageMap[categoryName] || Icons.Work;
+  };
 
   // Task form states
   const [taskTitle, setTaskTitle] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Work and Career');
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
@@ -81,10 +113,16 @@ const GoalScreen = () => {
 
   const isTaskLabelActive = taskFocused || taskTitle.length > 0;
 
-  // Handle Next button press - UPDATE WITH VALIDATION
-  const handleNextPress = () => {
+  // Handle Next button press - Save task to database
+  const handleNextPress = async () => {
     if (toastVisible) {
       hideToast();
+    }
+
+    // Check if user is authenticated
+    if (!user) {
+      Alert.alert('Error', 'Please log in to create tasks.');
+      return;
     }
 
     if (!taskTitle.trim()) {
@@ -97,23 +135,116 @@ const GoalScreen = () => {
       return;
     }
 
-    const taskData = {
-      taskTitle,
-      selectedCategory,
-      startDate,
-      blockTimeData,
-      addPomodoro,
-      priority,
-      note,
-      isPendingTask,
-      reminderData,
-      addReminder,
-      addToGoogleCalendar,
-    };
+    try {
+      // Prepare task data for database
+      const taskData = {
+        title: taskTitle.trim(),
+        description: note || '',
+        category: selectedCategory?.title || 'Work and Career',
+        taskType: 'Task',
+        evaluationType: 'yesNo', // Default evaluation type for tasks
+        userId: user.id,
+        
+        // Visual and display properties
+        time: blockTimeData?.startTime || null,
+        timeColor: '#E4EBF3',
+        tags: ['Task', priority || 'Must'],
+        image: null,
+        hasFlag: true,
+        priority: priority || 'High',
+        
+        // Task-specific data (minimal for basic tasks)
+        numericValue: 0,
+        numericGoal: null,
+        numericUnit: null,
+        numericCondition: 'At Least',
+        
+        // Timer-specific data (minimal)
+        timerDuration: { hours: 0, minutes: 0, seconds: 0 },
+        timerCondition: 'At Least',
+        
+        // Checklist-specific data (minimal)
+        checklistItems: null,
+        successCondition: 'All Items',
+        customItemsCount: 1,
+        
+        // Repetition and frequency settings (one-time task)
+        frequencyType: 'Once',
+        selectedWeekdays: [],
+        selectedMonthDates: [],
+        selectedYearDates: [],
+        periodDays: 1,
+        periodType: 'Week',
+        isFlexible: false,
+        isMonthFlexible: false,
+        isYearFlexible: false,
+        useDayOfWeek: false,
+        isRepeatFlexible: false,
+        isRepeatAlternateDays: false,
+        
+        // Scheduling settings
+        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        endDate: null,
+        isEndDateEnabled: false,
+        
+        // Block time settings
+        blockTimeEnabled: !!blockTimeData,
+        blockTimeData: blockTimeData,
+        
+        // Duration settings (not applicable for simple tasks)
+        durationEnabled: false,
+        durationData: null,
+        
+        // Reminder settings
+        reminderEnabled: addReminder || false,
+        reminderData: reminderData,
+        
+        // Additional features
+        addPomodoro: addPomodoro || false,
+        addToGoogleCalendar: addToGoogleCalendar || false,
+        isPendingTask: isPendingTask || false,
+        
+        // Goal linking (not applicable)
+        linkedGoalId: null,
+        linkedGoalTitle: null,
+        linkedGoalType: null,
+        
+        // Notes
+        note: note || '',
+        
+        // Progress tracking
+        progress: null,
+      };
 
-    console.log('Task data:', taskData);
-    // Navigate to next screen or save data
-    // navigation.navigate("NextScreen", taskData);
+      console.log('Saving task data:', taskData);
+      
+      // Save to database
+      const newTask = await taskService.createTask(taskData);
+      
+      Alert.alert(
+        'Success', 
+        'Task created successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate back to home with success flag
+              navigation.reset({
+                index: 0,
+                routes: [{ 
+                  name: 'BottomTab', 
+                  params: { newTaskCreated: true } 
+                }]
+              });
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Error creating task:', error);
+      Alert.alert('Error', 'Failed to create task. Please try again.');
+    }
   };
 
   // Handle Link To Goal press - UPDATE WITH VALIDATION
@@ -612,9 +743,9 @@ const GoalScreen = () => {
             </View>
 
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory}</Text>
+              <Text style={styles.categoryText}>{selectedCategory?.title || 'Work and Career'}</Text>
               <Image
-                source={Icons.Taskhome}
+                source={getCategoryIcon(selectedCategory?.title || 'Work and Career')}
                 style={styles.categoryIcon}
                 resizeMode="contain"
               />

@@ -38,11 +38,9 @@ const ChecklistScreen = () => {
   const [toastType, setToastType] = useState('error');
 
   const [checklistItems, setChecklistItems] = useState([
-    {id: 1, text: 'Intraday', completed: false},
-    {id: 2, text: 'Swing Trading', completed: false},
-    {id: 3, text: 'Long term', completed: false},
-    {id: 4, text: 'Short term', completed: false},
+    {id: 1, text: 'Default item', completed: false},
   ]);
+  const [editingItemId, setEditingItemId] = useState(null);
 
   const isHabitLabelActive = habitFocused || habit.length > 0;
   const isDescriptionLabelActive = descriptionFocused || description.length > 0;
@@ -65,11 +63,37 @@ const ChecklistScreen = () => {
     if (checklistItems.length < 10) {
       const newItem = {
         id: Date.now(),
-        text: `New item ${checklistItems.length + 1}`,
+        text: '',
         completed: false,
       };
       setChecklistItems([...checklistItems, newItem]);
+      setEditingItemId(newItem.id); // Immediately edit the new item
     }
+  };
+
+  const handleEditItem = (itemId) => {
+    setEditingItemId(itemId);
+  };
+
+  const handleSaveItem = (itemId, newText) => {
+    if (newText.trim()) {
+      setChecklistItems(checklistItems.map(item => 
+        item.id === itemId ? { ...item, text: newText.trim() } : item
+      ));
+    } else {
+      // If text is empty, remove the item
+      setChecklistItems(checklistItems.filter(item => item.id !== itemId));
+    }
+    setEditingItemId(null);
+  };
+
+  const handleCancelEdit = (itemId) => {
+    // If it's a new item with no text, remove it
+    const item = checklistItems.find(item => item.id === itemId);
+    if (item && !item.text.trim()) {
+      setChecklistItems(checklistItems.filter(item => item.id !== itemId));
+    }
+    setEditingItemId(null);
   };
 
   const handleSuccessConditionChange = condition => {
@@ -161,17 +185,53 @@ const ChecklistScreen = () => {
           {checklistItems.map((item, index) => (
             <View key={item.id} style={styles.checklistItem}>
               <Text style={styles.checklistNumber}>{index + 1}.</Text>
-              <Text style={styles.checklistText}>{item.text}</Text>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => handleDeleteItem(item.id)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                <Image
-                  source={Icons.Trash}
-                  style={styles.deleteIcon}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
+              {editingItemId === item.id ? (
+                <View style={styles.editingContainer}>
+                  <TextInput
+                    style={styles.editingInput}
+                    value={item.text}
+                    onChangeText={(text) => {
+                      setChecklistItems(checklistItems.map(i => 
+                        i.id === item.id ? { ...i, text } : i
+                      ));
+                    }}
+                    placeholder="Enter item text"
+                    autoFocus
+                    onBlur={() => handleSaveItem(item.id, item.text)}
+                    onSubmitEditing={() => handleSaveItem(item.id, item.text)}
+                  />
+                  <View style={styles.editActions}>
+                    <TouchableOpacity
+                      style={styles.saveButton}
+                      onPress={() => handleSaveItem(item.id, item.text)}>
+                      <MaterialIcons name="check" size={WP(4.5)} color={colors.Primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={() => handleCancelEdit(item.id)}>
+                      <MaterialIcons name="close" size={WP(4.5)} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity 
+                    style={styles.checklistTextContainer}
+                    onPress={() => handleEditItem(item.id)}>
+                    <Text style={styles.checklistText}>{item.text || 'Tap to edit'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => handleDeleteItem(item.id)}
+                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                    <Image
+                      source={Icons.Trash}
+                      style={styles.deleteIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           ))}
 
@@ -451,6 +511,38 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-SemiBold',
     color: '#575656',
     marginBottom: HP(0.2),
+  },
+  checklistTextContainer: {
+    flex: 1,
+    paddingVertical: WP(1),
+    paddingHorizontal: WP(1),
+  },
+  editingContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editingInput: {
+    flex: 1,
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#575656',
+    paddingVertical: WP(1),
+    paddingHorizontal: WP(1),
+    borderBottomWidth: 2,
+    borderBottomColor: colors.Primary,
+    marginRight: WP(2),
+  },
+  editActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  saveButton: {
+    padding: WP(1.5),
+    marginRight: WP(1),
+  },
+  cancelButton: {
+    padding: WP(1.5),
   },
   radioOption: {
     flexDirection: 'row',

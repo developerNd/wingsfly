@@ -430,6 +430,14 @@ const Home = () => {
       return;
     }
 
+    if (task && task.type === 'checklist') {
+      navigation.navigate('TaskEvaluation', {
+        taskData: task,
+        taskId: task.id,
+      });
+      return;
+    }
+
     try {
       const currentState = checkboxStates[id] || 1;
       const nextState = currentState >= 4 ? 1 : currentState + 1;
