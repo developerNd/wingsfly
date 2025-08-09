@@ -34,7 +34,6 @@ import LandingPage from '../Pages/LongTermScreens/LandingScreen';
 
 //Checklist screens
 import TaskEvaluationScreen from '../Pages/ChecklistScreens/TaskEvaluationScreen';
-import FilterScreen from '../Pages/ChecklistScreens/FilterScreen';
 import SortingScreen from '../Pages/ChecklistScreens/SortingScreen';
 
 import PomodoroTimerScreen from '../Pages/PomodoroScreens/PomodoroScreen';
@@ -98,17 +97,6 @@ function AppStack() {
       <Stack.Screen
         name="TaskEvaluation"
         component={TaskEvaluationScreen}
-        options={{
-          presentation: 'transparentModal',
-          headerShown: false,
-          cardStyle: {backgroundColor: 'transparent'},
-          cardOverlayEnabled: true,
-          animationTypeForReplace: 'push',
-        }}
-      />
-      <Stack.Screen
-        name="FilterScreen"
-        component={FilterScreen}
         options={{
           presentation: 'transparentModal',
           headerShown: false,

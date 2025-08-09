@@ -16,6 +16,7 @@ import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import ItemInput from '../../Components/ItemInput';
+import SuccessConditionModal from '../../Components/SuccessModal';
 import { taskService } from '../../services/api/taskService';
 
 const TaskEvaluationScreen = () => {
@@ -28,6 +29,15 @@ const TaskEvaluationScreen = () => {
 
   // state for ItemInput modal
   const [showItemInput, setShowItemInput] = useState(false);
+  
+  // state for filter mode toggle
+  const [isFilterMode, setIsFilterMode] = useState(false);
+  
+  // state for success condition modal
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  
+  // state for filter toggle
+  const [showAllItems, setShowAllItems] = useState(false);
 
   const [checklistItems, setChecklistItems] = useState([]);
 
@@ -36,12 +46,11 @@ const TaskEvaluationScreen = () => {
     if (taskData && taskData.checklistItems) {
       setChecklistItems(taskData.checklistItems);
     } else {
-      // If no checklist items exist, initialize with empty array
       setChecklistItems([]);
     }
   }, [taskData]);
 
-  // Reload data when screen comes into focus (e.g., returning from FilterScreen)
+  // Reload data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       if (taskData && taskData.checklistItems) {
@@ -102,27 +111,41 @@ const TaskEvaluationScreen = () => {
     }
   };
 
-  const handleComplete = async () => {
-    const completedCount = checklistItems.filter(item => item.completed).length;
-    const totalCount = checklistItems.length;
-
-    if (completedCount === totalCount) {
-      // Save final completion state to database
-      try {
-        await taskService.updateChecklistTask(taskId, checklistItems);
-        animateOut(() => {
-          navigation.navigate('Home', { completedTaskId: taskId });
-        });
-      } catch (error) {
-        console.error('Error saving final completion state:', error);
-        animateOut(() => {
-          navigation.goBack();
-        });
-      }
-    } else {
-      setShowItemInput(true);
+  // Delete an item (used in filter mode)
+  const deleteChecklistItem = async (id) => {
+    const updatedItems = checklistItems.filter(item => item.id !== id);
+    setChecklistItems(updatedItems);
+    
+    // Save to database
+    try {
+      await taskService.updateChecklistTask(taskId, updatedItems);
+    } catch (error) {
+      console.error('Error deleting checklist item:', error);
+      // Revert on error
+      setChecklistItems(checklistItems);
     }
   };
+
+  const handleComplete = async () => {
+  const completedCount = checklistItems.filter(item => item.completed).length;
+  const totalCount = checklistItems.length;
+
+  if (completedCount === totalCount) {
+    try {
+      await taskService.updateChecklistTask(taskId, checklistItems);
+      animateOut(() => {
+        navigation.goBack();
+      });
+    } catch (error) {
+      console.error('Error saving final completion state:', error);
+      animateOut(() => {
+        navigation.goBack();
+      });
+    }
+  } else {
+    setShowItemInput(true);
+  }
+};
 
   // Function to handle adding new item
   const handleAddItem = async (itemText) => {
@@ -148,6 +171,13 @@ const TaskEvaluationScreen = () => {
   };
 
   const handleOverlayPress = () => {
+    // If in filter mode, exit filter mode
+    if (isFilterMode) {
+      setIsFilterMode(false);
+      setShowAllItems(false);
+      return;
+    }
+    
     animateOut(() => {
       navigation.goBack();
     });
@@ -157,15 +187,28 @@ const TaskEvaluationScreen = () => {
     // Prevent modal from closing when touching inside the modal
   };
 
-  // Function to handle filter icon press
-  const handleFilterIconPress = () => {
-    animateOut(() => {
-      navigation.navigate('FilterScreen', {
-        taskData: taskData,
-        taskId: taskId,
-        checklistItems: checklistItems,
-      });
-    });
+  // Toggle filter mode
+  const handleFilterToggle = () => {
+    setIsFilterMode(!isFilterMode);
+    setShowAllItems(false);
+  };
+
+  // Handle filter button click (in filter mode)
+  const handleFilterPress = () => {
+    setShowAllItems(!showAllItems);
+  };
+
+  const handleAllItems = () => {
+    setShowSuccessModal(true);
+  };
+
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
+  };
+
+  const handleSuccessConditionConfirm = result => {
+    console.log('Success condition result:', result);
+    setShowSuccessModal(false);
   };
 
   // Function to handle sort icon press
@@ -182,6 +225,7 @@ const TaskEvaluationScreen = () => {
   const completedCount = checklistItems.filter(item => item.completed).length;
   const totalCount = checklistItems.length;
 
+  // Normal checklist item render
   const renderChecklistItem = ({item, index}) => (
     <TouchableOpacity
       style={[
@@ -214,6 +258,21 @@ const TaskEvaluationScreen = () => {
     </TouchableOpacity>
   );
 
+  const renderFilterItem = ({item, index}) => (
+    <View style={styles.filterItem}>
+      <View style={styles.itemLeft}>
+        <Text style={styles.numberText}>{index + 1}.</Text>
+        <Text style={styles.filterText}>{item.text}</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => deleteChecklistItem(item.id)}
+        activeOpacity={0.7}>
+        <Image source={Icons.Delete} style={styles.deleteIcon} />
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <TouchableWithoutFeedback onPress={handleOverlayPress}>
       <View style={styles.container}>
@@ -240,10 +299,19 @@ const TaskEvaluationScreen = () => {
                     </View>
                   </View>
                   <View style={styles.headerRight}>
-                    <Image
-                      source={taskData?.image || Icons.Yogo}
-                      style={styles.headerIcon}
-                    />
+                    {isFilterMode ? (
+                      <View style={styles.clockContainer}>
+                        <Image
+                          source={Icons.Moment}
+                          style={styles.clockIcon}
+                        />
+                      </View>
+                    ) : (
+                      <Image
+                        source={taskData?.image || Icons.Yogo}
+                        style={styles.headerIcon}
+                      />
+                    )}
                   </View>
                 </View>
               </View>
@@ -252,7 +320,7 @@ const TaskEvaluationScreen = () => {
               <FlatList
                 data={checklistItems}
                 keyExtractor={item => item.id.toString()}
-                renderItem={renderChecklistItem}
+                renderItem={isFilterMode ? renderFilterItem : renderChecklistItem}
                 style={styles.checklistContainer}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.checklistContent}
@@ -266,25 +334,56 @@ const TaskEvaluationScreen = () => {
 
               {/* Bottom Actions */}
               <View style={styles.bottomActions}>
-                <View style={styles.actionsBackground}>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    activeOpacity={0.6}
-                    onPress={handleFilterIconPress}>
-                    <Image source={Icons.Filter} style={styles.actionIcon} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    activeOpacity={0.6}
-                    onPress={handleSortIconPress}>
-                    <Image source={Icons.Sort} style={styles.actionIcon} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    activeOpacity={0.6}>
-                    <Image source={Icons.Eye} style={styles.actionIcon} />
-                  </TouchableOpacity>
-                </View>
+                {isFilterMode ? (
+                  <View style={styles.actionsRow}>
+                    <TouchableOpacity
+                      style={styles.filterButton}
+                      activeOpacity={0.6}
+                      onPress={handleFilterPress}>
+                      <Image
+                        source={Icons.Filter}
+                        style={styles.actionIcon}
+                      />
+                    </TouchableOpacity>
+
+                    {showAllItems && (
+                      <TouchableOpacity
+                        style={styles.allItemsContainer}
+                        onPress={handleAllItems}
+                        activeOpacity={0.7}>
+                        <View style={styles.allItemsContent}>
+                          <Image
+                            source={Icons.CheckTick}
+                            style={styles.allItemsIcon}
+                          />
+                          <View style={styles.rightLine} />
+                          <Text style={styles.allItemText}>All Items</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ) : (
+                  // Normal mode actions
+                  <View style={styles.actionsBackground}>
+                    <TouchableOpacity
+                      style={styles.actionIconButton}
+                      activeOpacity={0.6}
+                      onPress={handleFilterToggle}>
+                      <Image source={Icons.Filter} style={styles.actionIcon} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionIconButton}
+                      activeOpacity={0.6}
+                      onPress={handleSortIconPress}>
+                      <Image source={Icons.Sort} style={styles.actionIcon} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionIconButton}
+                      activeOpacity={0.6}>
+                      <Image source={Icons.Eye} style={styles.actionIcon} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               {/* Floating Action Button */}
@@ -293,11 +392,11 @@ const TaskEvaluationScreen = () => {
                   styles.fab,
                   completedCount === totalCount && styles.fabActive,
                 ]}
-                onPress={handleComplete}
+                onPress={isFilterMode ? () => setIsFilterMode(false) : handleComplete}
                 activeOpacity={0.8}>
                 <Icon
-                  name={completedCount === totalCount ? 'check' : 'add'}
-                  size={WP(7)}
+                  name={isFilterMode ? 'check' : (completedCount === totalCount ? 'check' : 'add')}
+                  size={WP(6.5)}
                   color={colors.White}
                 />
               </TouchableOpacity>
@@ -311,6 +410,13 @@ const TaskEvaluationScreen = () => {
           onClose={() => setShowItemInput(false)}
           onSave={handleAddItem}
           initialNote=""
+        />
+
+        {/* Success Condition Modal */}
+        <SuccessConditionModal
+          visible={showSuccessModal}
+          onClose={handleSuccessModalClose}
+          onConfirm={handleSuccessConditionConfirm}
         />
       </View>
     </TouchableWithoutFeedback>
@@ -367,6 +473,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
+  },
+  clockContainer: {
+    width: WP(10),
+    height: WP(10),
+    borderRadius: WP(5),
+    backgroundColor: colors.Primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: HP(-0.2),
+    marginRight: WP(1.3),
+  },
+  clockIcon: {
+    width: WP(5),
+    height: WP(5),
+    resizeMode: 'contain',
   },
   dateBackground: {
     backgroundColor: '#E4E6FF',
@@ -452,19 +573,45 @@ const styles = StyleSheet.create({
     borderRadius: WP(2.65),
     backgroundColor: '#E5E5E5',
   },
+  // Filter mode styles
+  filterItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: WP(2.8),
+    paddingVertical: HP(0.8),
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+    backgroundColor: colors.White,
+  },
+  filterText: {
+    fontSize: FS(1.7),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#4D4D4D',
+    flex: 1,
+    marginLeft: WP(1.5),
+  },
+  deleteButton: {
+    padding: WP(2),
+  },
+  deleteIcon: {
+    width: WP(5.3),
+    height: WP(5.3),
+    resizeMode: 'contain',
+  },
   bottomActions: {
-    paddingHorizontal: WP(5),
+    paddingHorizontal: WP(4),
     paddingVertical: HP(2.2),
     backgroundColor: 'white',
-    alignItems: 'flex-start',
   },
   actionsBackground: {
     flexDirection: 'row',
     backgroundColor: '#F4F5FF',
     borderRadius: WP(2),
     padding: WP(1),
+    alignSelf: 'flex-start',
   },
-  actionButton: {
+  actionIconButton: {
     padding: WP(1),
     borderRadius: WP(2),
   },
@@ -472,6 +619,58 @@ const styles = StyleSheet.create({
     width: WP(5),
     height: WP(5),
     resizeMode: 'contain',
+  },
+  // Filter mode bottom actions
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filterButton: {
+    backgroundColor: '#EBEDFF',
+    borderRadius: WP(2),
+    padding: WP(1.5),
+    paddingHorizontal: WP(2),
+    elevation: 2,
+    shadowColor: colors.Shadow,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  allItemsContainer: {
+    backgroundColor: '#EBEDFF',
+    borderRadius: WP(2),
+    paddingHorizontal: WP(2.5),
+    paddingVertical: WP(1.7),
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    marginLeft: WP(2),
+  },
+  allItemsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  allItemsIcon: {
+    width: WP(5),
+    height: WP(5),
+    resizeMode: 'contain',
+    marginLeft: WP(0.5),
+  },
+  rightLine: {
+    width: 1,
+    height: WP(8.2),
+    backgroundColor: '#E5E5E5',
+    marginLeft: WP(1),
+    marginRight: WP(2),
+    marginTop: HP(-2),
+    marginBottom: WP(-4),
+  },
+  allItemText: {
+    fontSize: FS(1.2),
+    fontFamily: 'OpenSans-SemiBold',
+    color: colors.Black,
   },
   fab: {
     position: 'absolute',
