@@ -520,7 +520,7 @@ const RecurringNumericScreen = () => {
     <View style={styles.container}>
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
       <View style={styles.headerWrapper}>
-        <Headers title="Define Your Task">
+        <Headers title="Define Your Task" onBackPress={() => navigation.goBack()}>
           <TouchableOpacity onPress={handleNextPress}>
             <Text style={styles.nextText}>Next</Text>
           </TouchableOpacity>
@@ -638,7 +638,7 @@ const RecurringNumericScreen = () => {
             </View>
 
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory}</Text>
+              <Text style={styles.categoryText}>{selectedCategory?.title || selectedCategory}</Text>
               <Image
                 source={Icons.Taskhome}
                 style={styles.categoryIcon}

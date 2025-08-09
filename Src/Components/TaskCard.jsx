@@ -74,7 +74,7 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
             <Image source={Icons.Numeric} style={styles.iconInsideCircle} />
           </View>
         );
-      case 'yesno':
+      case 'yesNo':
         return <View style={styles.staticCircle}></View>;
       case 'checklist':
         return (
@@ -109,7 +109,7 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
       case 1:
         return getInitialIconInsideRadio();
       case 2:
-        if (item.type === 'yesno') {
+        if (item.type === 'yesNo') {
           return (
             <Icon
               name="check"

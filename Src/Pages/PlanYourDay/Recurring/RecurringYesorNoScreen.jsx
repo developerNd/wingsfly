@@ -10,7 +10,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
 import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
@@ -25,6 +25,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 
 const RecurringYesorNoScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const { user } = useAuth();
 
   // Task form states
@@ -710,7 +711,7 @@ const RecurringYesorNoScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="New Task">
+        <Headers title="New Task" onBackPress={() => navigation.goBack()}>
           <TouchableOpacity onPress={handleNextPress}>
             <Text style={styles.nextText}>Next</Text>
           </TouchableOpacity>
@@ -757,7 +758,7 @@ const RecurringYesorNoScreen = () => {
             </View>
 
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory}</Text>
+              <Text style={styles.categoryText}>{selectedCategory?.title || selectedCategory}</Text>
               <Image
                 source={Icons.Taskhome}
                 style={styles.categoryIcon}

@@ -224,7 +224,7 @@ const RecurringChecklistScreen = () => {
     <View style={styles.container}>
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
       <View style={styles.headerWrapper}>
-        <Headers title="Define Your Task">
+        <Headers title="Define Your Task" onBackPress={() => navigation.goBack()}>
           <TouchableOpacity onPress={handleNextPress}>
             <Text style={styles.nextText}>Next</Text>
           </TouchableOpacity>
