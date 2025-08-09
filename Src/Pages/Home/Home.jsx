@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import {
   Text,
   View,
@@ -7,6 +7,7 @@ import {
   Pressable,
   StatusBar,
   Image,
+  Alert,
 } from 'react-native';
 import Logo from '../../assets/Images/brand.svg';
 import PlusIcon from 'react-native-vector-icons/AntDesign';
@@ -14,14 +15,19 @@ import Calender from '../../Components/Calender';
 import {colors, Icons} from '../../Helper/Contants';
 import Modal from 'react-native-modal';
 import TaskCard from '../../Components/TaskCard';
+import TaskSkeleton from '../../Components/TaskSkeleton';
 import ModalTaskCard from '../../Components/ModalTaskCard';
 import NumericInputModal from '../../Components/NumericModal';
 import AppreciationModal from '../../Components/AppreciationModal';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {HP, WP, FS} from '../../utils/dimentions';
+import { taskService } from '../../services/api/taskService';
+import { useAuth } from '../../contexts/AuthContext';
+import { shouldTaskAppearOnDate } from '../../utils/taskDateHelper';
 
-const tasks = [
+// Sample tasks for demonstration - these will be replaced by data from Supabase
+const sampleTasks = [
   {
     id: '1',
     title: 'Schedule a meeting with Harshit Sir',
@@ -95,27 +101,165 @@ const Home = () => {
   const [selectedTask, setSelectedTask] = useState(null);
   const [completedTask, setCompletedTask] = useState(null);
   const [taskStreak, setTaskStreak] = useState(1);
+  const [tasks, setTasks] = useState([]);
+  const [allTasks, setAllTasks] = useState([]); // Store all tasks for filtering
+  const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(new Date().toDateString());
 
   const navigation = useNavigation();
+  const { user } = useAuth();
+
+  // Load tasks from Supabase
+  const loadTasks = async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const tasksData = await taskService.getTasks(user.id);
+
+      
+      // Transform Supabase data to match the expected format
+      const transformedTasks = tasksData.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        category: task.category,
+        taskType: task.task_type,
+        evaluationType: task.evaluation_type,
+        time: task.time,
+        timeColor: task.time_color,
+        tags: task.tags || [],
+        image: task.image,
+        hasFlag: task.has_flag,
+        priority: task.priority,
+        type: task.evaluation_type, // For backward compatibility
+        progress: task.progress,
+        isCompleted: task.is_completed,
+        completionCount: task.completion_count,
+        streakCount: task.streak_count,
+        numericValue: task.numeric_value,
+        numericGoal: task.numeric_goal,
+        numericUnit: task.numeric_unit,
+        numericCondition: task.numeric_condition,
+        timerDuration: task.timer_duration,
+        timerCondition: task.timer_condition,
+        checklistItems: task.checklist_items,
+        successCondition: task.success_condition,
+        customItemsCount: task.custom_items_count,
+        frequencyType: task.frequency_type,
+        selectedWeekdays: task.selected_weekdays,
+        selectedMonthDates: task.selected_month_dates,
+        selectedYearDates: task.selected_year_dates,
+        periodDays: task.period_days,
+        periodType: task.period_type,
+        isFlexible: task.is_flexible,
+        isMonthFlexible: task.is_month_flexible,
+        isYearFlexible: task.is_year_flexible,
+        useDayOfWeek: task.use_day_of_week,
+        isRepeatFlexible: task.is_repeat_flexible,
+        isRepeatAlternateDays: task.is_repeat_alternate_days,
+        startDate: task.start_date || null,
+        endDate: task.end_date,
+        isEndDateEnabled: task.is_end_date_enabled,
+        blockTimeEnabled: task.block_time_enabled,
+        blockTimeData: task.block_time_data,
+        durationEnabled: task.duration_enabled,
+        durationData: task.duration_data,
+        reminderEnabled: task.reminder_enabled,
+        reminderData: task.reminder_data,
+        addPomodoro: task.add_pomodoro,
+        addToGoogleCalendar: task.add_to_google_calendar,
+        isPendingTask: task.is_pending_task,
+        linkedGoalId: task.linked_goal_id,
+        linkedGoalTitle: task.linked_goal_title,
+        linkedGoalType: task.linked_goal_type,
+        note: task.note,
+        created_at: task.created_at
+      }));
+
+      setAllTasks(transformedTasks);
+      
+      // Initialize checkbox states based on completion status
+      const initialCheckboxStates = {};
+      transformedTasks.forEach(task => {
+        if (task.isCompleted) {
+          initialCheckboxStates[task.id] = 4; // Completed state
+        } else {
+          initialCheckboxStates[task.id] = 1; // Default state
+        }
+      });
+      setCheckboxStates(initialCheckboxStates);
+    } catch (error) {
+      console.error('Error loading tasks:', error);
+      Alert.alert('Error', 'Failed to load tasks. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useFocusEffect(
     React.useCallback(() => {
       setModalVisible(false);
       setNumericModalVisible(false);
-    }, []),
+      loadTasks(); // Reload tasks when screen comes into focus
+    }, [user]),
   );
 
   React.useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       const route = navigation.getState()?.routes?.find(r => r.name === 'Home');
+      
       if (route?.params?.completedTaskId) {
         markTaskCompleted(route.params.completedTaskId);
         navigation.setParams({completedTaskId: undefined});
+      }
+      
+      // Check if a new task was created
+      if (route?.params?.newTaskCreated) {
+        loadTasks();
+        navigation.setParams({ newTaskCreated: undefined });
       }
     });
 
     return unsubscribe;
   }, [navigation]);
+
+  // Filter tasks based on selected date using useMemo for performance
+  const filteredTasks = useMemo(() => {
+    if (!allTasks.length) return [];
+    
+    return allTasks.filter(task => 
+      shouldTaskAppearOnDate(task, selectedDate)
+    );
+  }, [allTasks, selectedDate]);
+
+  // Update tasks when filteredTasks changes
+  useEffect(() => {
+    setTasks(filteredTasks);
+  }, [filteredTasks]);
+
+  // Load tasks on component mount
+  useEffect(() => {
+    loadTasks();
+  }, [user]);
+
+
+
+  // Handle date selection from calendar
+  const handleDateSelect = (dateString) => {
+    setLoading(true);
+    setSelectedDate(dateString);
+    // Brief loading state for better UX
+    setTimeout(() => setLoading(false), 300);
+  };
+
+  // Manual refresh function
+  const refreshTasks = () => {
+    loadTasks();
+  };
 
   const modaltasks = [
     {
@@ -163,16 +307,100 @@ const Home = () => {
     },
   ];
 
-  const calculateTaskStreak = taskId => {
-    const streakMap = {
-      1: 3,
-      2: 15,
-      3: 7,
-      4: 22,
-      5: 1,
-      6: 8,
-    };
-    return streakMap[taskId] || 1;
+  // Function to create a new task
+  const createNewTask = async (taskData) => {
+    if (!user) {
+      Alert.alert('Error', 'Please log in to create tasks.');
+      return;
+    }
+
+    try {
+      const newTask = await taskService.createTask({
+        ...taskData,
+        userId: user.id
+      });
+
+      // Add the new task to the local state
+      const transformedTask = {
+        id: newTask.id,
+        title: newTask.title,
+        description: newTask.description,
+        category: newTask.category,
+        taskType: newTask.task_type,
+        evaluationType: newTask.evaluation_type,
+        time: newTask.time,
+        timeColor: newTask.time_color,
+        tags: newTask.tags || [],
+        image: newTask.image,
+        hasFlag: newTask.has_flag,
+        priority: newTask.priority,
+        type: newTask.evaluation_type, // For backward compatibility
+        progress: newTask.progress,
+        isCompleted: newTask.is_completed,
+        completionCount: newTask.completion_count,
+        streakCount: newTask.streak_count,
+        numericValue: newTask.numeric_value,
+        numericGoal: newTask.numeric_goal,
+        numericUnit: newTask.numeric_unit,
+        numericCondition: newTask.numeric_condition,
+        timerDuration: newTask.timer_duration,
+        timerCondition: newTask.timer_condition,
+        checklistItems: newTask.checklist_items,
+        successCondition: newTask.success_condition,
+        customItemsCount: newTask.custom_items_count,
+        frequencyType: newTask.frequency_type,
+        selectedWeekdays: newTask.selected_weekdays,
+        selectedMonthDates: newTask.selected_month_dates,
+        selectedYearDates: newTask.selected_year_dates,
+        periodDays: newTask.period_days,
+        periodType: newTask.period_type,
+        isFlexible: newTask.is_flexible,
+        isMonthFlexible: newTask.is_month_flexible,
+        isYearFlexible: newTask.is_year_flexible,
+        useDayOfWeek: newTask.use_day_of_week,
+        isRepeatFlexible: newTask.is_repeat_flexible,
+        isRepeatAlternateDays: newTask.is_repeat_alternate_days,
+        startDate: newTask.start_date,
+        endDate: newTask.end_date,
+        isEndDateEnabled: newTask.is_end_date_enabled,
+        blockTimeEnabled: newTask.block_time_enabled,
+        blockTimeData: newTask.block_time_data,
+        durationEnabled: newTask.duration_enabled,
+        durationData: newTask.duration_data,
+        reminderEnabled: newTask.reminder_enabled,
+        reminderData: newTask.reminder_data,
+        addPomodoro: newTask.add_pomodoro,
+        addToGoogleCalendar: newTask.add_to_google_calendar,
+        isPendingTask: newTask.is_pending_task,
+        linkedGoalId: newTask.linked_goal_id,
+        linkedGoalTitle: newTask.linked_goal_title,
+        linkedGoalType: newTask.linked_goal_type,
+        note: newTask.note
+      };
+
+      // Add to all tasks
+      setAllTasks(prev => [transformedTask, ...prev]);
+      
+      // Add to filtered tasks if it should appear on selected date
+      if (shouldTaskAppearOnDate(transformedTask, selectedDate)) {
+        setTasks(prev => [transformedTask, ...prev]);
+      }
+      
+      setCheckboxStates(prev => ({
+        ...prev,
+        [newTask.id]: 1
+      }));
+
+      Alert.alert('Success', 'Task created successfully!');
+    } catch (error) {
+      console.error('Error creating task:', error);
+      Alert.alert('Error', 'Failed to create task. Please try again.');
+    }
+  };
+
+  const calculateTaskStreak = (taskId) => {
+    const task = tasks.find(t => t.id === taskId);
+    return task?.streakCount || 1;
   };
 
   const isNewBestStreak = (taskId, currentStreak) => {
@@ -186,7 +414,7 @@ const Home = () => {
     setAppreciationVisible(true);
   };
 
-  const toggleCheckbox = id => {
+  const toggleCheckbox = async (id) => {
     const task = tasks.find(task => task.id === id);
 
     if (task && task.type === 'numeric') {
@@ -202,19 +430,58 @@ const Home = () => {
       return;
     }
 
-    setCheckboxStates(prev => {
-      const currentState = prev[id] || 1;
-      const nextState = currentState === 1 ? 2 : 1;
-
-      if (nextState === 2 && task) {
-        setTimeout(() => showAppreciationModal(task), 300);
-      }
-
-      return {
+    try {
+      const currentState = checkboxStates[id] || 1;
+      const nextState = currentState >= 4 ? 1 : currentState + 1;
+      
+      // Update local state immediately for better UX
+      setCheckboxStates(prev => ({
         ...prev,
         [id]: nextState,
-      };
-    });
+      }));
+
+      // Save to Supabase
+      if (task) {
+        const isCompleted = nextState === 4;
+        const currentCompletionCount = task.completionCount || 0;
+        const currentStreakCount = task.streakCount || 0;
+        
+        const newCompletionCount = isCompleted ? currentCompletionCount + 1 : currentCompletionCount;
+        const newStreakCount = isCompleted ? currentStreakCount + 1 : currentStreakCount;
+
+        await taskService.updateTaskCompletion(task.id, {
+          isCompleted,
+          completionCount: newCompletionCount,
+          streakCount: newStreakCount
+        });
+
+        // Update local task data in both allTasks and filtered tasks
+        setAllTasks(prev => prev.map(t => 
+          t.id === id 
+            ? { ...t, isCompleted, completionCount: newCompletionCount, streakCount: newStreakCount }
+            : t
+        ));
+        
+        setTasks(prev => prev.map(t => 
+          t.id === id 
+            ? { ...t, isCompleted, completionCount: newCompletionCount, streakCount: newStreakCount }
+            : t
+        ));
+
+        if (isCompleted) {
+          setTimeout(() => showAppreciationModal(task), 300);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating task completion:', error);
+      Alert.alert('Error', 'Failed to update task. Please try again.');
+      
+      // Revert local state on error
+      setCheckboxStates(prev => ({
+        ...prev,
+        [id]: checkboxStates[id] || 1,
+      }));
+    }
   };
 
   const markTaskCompleted = taskId => {
@@ -230,22 +497,56 @@ const Home = () => {
     }
   };
 
-  const handleNumericSave = value => {
+  const handleNumericSave = async (value) => {
     if (selectedTask) {
-      console.log(`Task ${selectedTask.id} updated with value: ${value}`);
-
-      if (value > 0) {
-        setCheckboxStates(prev => ({
-          ...prev,
-          [selectedTask.id]: 2,
-        }));
-
-        setTimeout(() => showAppreciationModal(selectedTask), 300);
-      } else {
-        setCheckboxStates(prev => ({
-          ...prev,
-          [selectedTask.id]: 1,
-        }));
+      try {
+        console.log(`Task ${selectedTask.id} updated with value: ${value}`);
+        
+        // Save to Supabase
+        await taskService.updateNumericTaskValue(selectedTask.id, value);
+        
+        if (value > 0) {
+          setCheckboxStates(prev => ({
+            ...prev,
+            [selectedTask.id]: 4,
+          }));
+          
+          // Update local task data in both allTasks and filtered tasks
+          setAllTasks(prev => prev.map(t => 
+            t.id === selectedTask.id 
+              ? { ...t, isCompleted: true, numericValue: value }
+              : t
+          ));
+          
+          setTasks(prev => prev.map(t => 
+            t.id === selectedTask.id 
+              ? { ...t, isCompleted: true, numericValue: value }
+              : t
+          ));
+          
+          setTimeout(() => showAppreciationModal(selectedTask), 300);
+        } else {
+          setCheckboxStates(prev => ({
+            ...prev,
+            [selectedTask.id]: 1,
+          }));
+          
+          // Update local task data in both allTasks and filtered tasks
+          setAllTasks(prev => prev.map(t => 
+            t.id === selectedTask.id 
+              ? { ...t, isCompleted: false, numericValue: value }
+              : t
+          ));
+          
+          setTasks(prev => prev.map(t => 
+            t.id === selectedTask.id 
+              ? { ...t, isCompleted: false, numericValue: value }
+              : t
+          ));
+        }
+      } catch (error) {
+        console.error('Error updating numeric task:', error);
+        Alert.alert('Error', 'Failed to update task. Please try again.');
       }
     }
     setSelectedTask(null);
@@ -290,7 +591,19 @@ const Home = () => {
         </View>
       </View>
 
-      <Calender />
+      <Calender onDateSelect={handleDateSelect} selectedDate={selectedDate} />
+
+      {/* Selected Date Header */}
+      <View style={styles.dateHeader}>
+        <Text style={styles.dateHeaderText}>
+          Tasks for {new Date(selectedDate).toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })}
+        </Text>
+      </View>
 
       <View style={styles.quoteCard}>
         <Text style={styles.quoteTitle}>Today's Quote</Text>
@@ -304,13 +617,30 @@ const Home = () => {
         </View>
       </View>
 
-      <FlatList
-        data={tasks}
-        keyExtractor={item => item.id}
-        renderItem={renderTask}
-        contentContainerStyle={{marginTop: HP(2.5)}}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <FlatList
+          data={[1, 2, 3, 4, 5]} // Show 5 skeleton items
+          keyExtractor={(item, index) => `skeleton-${index}`}
+          renderItem={() => <TaskSkeleton />}
+          contentContainerStyle={{marginTop: HP(2.5)}}
+          showsVerticalScrollIndicator={false}
+        />
+      ) : tasks.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No tasks for {new Date(selectedDate).toLocaleDateString()}</Text>
+          <Text style={styles.emptySubText}>Select a different date or create a new task!</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={tasks}
+          keyExtractor={item => item.id}
+          renderItem={renderTask}
+          contentContainerStyle={{marginTop: HP(2.5)}}
+          showsVerticalScrollIndicator={false}
+          refreshing={loading}
+          onRefresh={refreshTasks}
+        />
+      )}
 
       <Pressable style={styles.fab} onPress={() => setModalVisible(true)}>
         <PlusIcon name="plus" size={WP(6.4)} color={colors.White} />
@@ -487,6 +817,48 @@ const styles = StyleSheet.create({
     backgroundColor: colors.White,
     borderTopLeftRadius: WP(10.7),
     borderTopRightRadius: WP(10.7),
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: HP(20),
+  },
+  loadingText: {
+    fontSize: FS(1.8),
+    fontFamily: 'OpenSans-SemiBold',
+    color: colors.PRIMARY,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: HP(20),
+    paddingHorizontal: WP(5),
+  },
+  emptyText: {
+    fontSize: FS(2.2),
+    fontFamily: 'Roboto-Bold',
+    color: '#3B3B3B',
+    marginBottom: HP(1),
+  },
+  emptySubText: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-Regular',
+    color: '#5B5B5B',
+    textAlign: 'center',
+  },
+  dateHeader: {
+    width: '92%',
+    alignSelf: 'center',
+    marginTop: HP(1),
+    marginBottom: HP(0.5),
+  },
+  dateHeaderText: {
+    fontSize: FS(1.8),
+    fontFamily: 'Roboto-Bold',
+    color: '#3B3B3B',
+    textAlign: 'center',
   },
 });
 

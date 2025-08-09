@@ -119,6 +119,7 @@ const TimerScreen = () => {
       description: description.trim(),
       selectedDropdownValue,
       selectedTime,
+      type: 'Habit', // Add task type
     };
 
     // Navigate to FrequencyScreen

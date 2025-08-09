@@ -8,6 +8,31 @@ import {useNavigation} from '@react-navigation/native';
 const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
   const navigation = useNavigation();
 
+  // Helper function to get image source from category name
+  const getImageSource = (categoryName) => {
+    if (!categoryName) return Icons.Work;
+    
+    const categoryImageMap = {
+      'Work & Career': Icons.Work,
+      'Work and Career': Icons.Work,
+      'Health & Wellness': Icons.Health,
+      'Health and Wellness': Icons.Health,
+      'Love & Relationship': Icons.Love,
+      'Love and Relationship': Icons.Love,
+      'Money & Finances': Icons.Money,
+      'Money and Finances': Icons.Money,
+      'Spirtuality & Faith': Icons.Faith,
+      'Spirtuality and Faith': Icons.Faith,
+      'Personal & Growth': Icons.Growth,
+      'Personal and Growth': Icons.Growth,
+      'Other Goals': Icons.Other,
+      'Other': Icons.Other,
+      'Create a category': Icons.Create,
+    };
+    
+    return categoryImageMap[categoryName] || Icons.Work;
+  };
+
   const getFlagColor = () => {
     if (item.tags && item.tags.some(tag => tag.toLowerCase() === 'important')) {
       return colors.Primary;
@@ -107,7 +132,7 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
 
   return (
     <View style={styles.taskContainer}>
-      <Image source={item.image} style={styles.taskImage} />
+      <Image source={getImageSource(item.category)} style={styles.taskImage} />
       <View style={styles.taskInfo}>
         <Text style={styles.taskTitle}>{item.title}</Text>
 

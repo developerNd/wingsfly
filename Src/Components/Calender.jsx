@@ -3,7 +3,7 @@ import {FlatList, Text, View, StyleSheet, TouchableOpacity} from 'react-native';
 import {colors} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
 
-const Calender = () => {
+const Calender = ({ onDateSelect, selectedDate: externalSelectedDate }) => {
   const [days, setDays] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
 
@@ -52,12 +52,17 @@ const Calender = () => {
 
     setDays(dates);
 
-    // Auto-select today's date
-    setSelectedDate(today.toDateString());
-  }, []);
+    // Auto-select today's date if no external date is provided
+    if (!externalSelectedDate) {
+      setSelectedDate(today.toDateString());
+    }
+  }, [externalSelectedDate]);
 
   const handleSelect = dateStr => {
     setSelectedDate(dateStr);
+    if (onDateSelect) {
+      onDateSelect(dateStr);
+    }
   };
 
   if (days.length === 0) {
@@ -71,7 +76,7 @@ const Calender = () => {
         data={days}
         keyExtractor={(item, index) => `${item.fullDate}-${index}`}
         renderItem={({item}) => {
-          const isSelected = selectedDate === item.fullDate;
+          const isSelected = (externalSelectedDate || selectedDate) === item.fullDate;
           const isToday = item.isToday;
 
           return (

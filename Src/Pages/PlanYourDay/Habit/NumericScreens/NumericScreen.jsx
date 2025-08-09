@@ -189,6 +189,7 @@ const NumericScreen = () => {
       unit: unit.trim(),
       description: description.trim(),
       selectedDropdownValue,
+      type: 'Habit', // Add task type
     };
 
     // Navigate to next screen

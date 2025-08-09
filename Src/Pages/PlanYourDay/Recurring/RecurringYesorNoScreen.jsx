@@ -8,6 +8,7 @@ import {
   ScrollView,
   Image,
   TextInput,
+  Alert,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
@@ -19,13 +20,20 @@ import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../Helper/Contants';
+import { taskService } from '../../../services/api/taskService';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const RecurringYesorNoScreen = () => {
   const navigation = useNavigation();
+  const { user } = useAuth();
 
   // Task form states
   const [taskTitle, setTaskTitle] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Work and Career');
+  
+  // Get category data from route params
+  const selectedCategoryParam = route.params?.selectedCategory || { title: 'Work and Career', image: Icons.Work };
+  const [selectedCategory, setSelectedCategory] = useState(selectedCategoryParam);
+  
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
@@ -101,7 +109,7 @@ const RecurringYesorNoScreen = () => {
   const isTaskLabelActive = taskFocused || taskTitle.length > 0;
 
   // Handle Next button press - UPDATE WITH VALIDATION
-  const handleNextPress = () => {
+  const handleNextPress = async () => {
     if (toastVisible) {
       hideToast();
     }
@@ -116,23 +124,109 @@ const RecurringYesorNoScreen = () => {
       return;
     }
 
-    const taskData = {
-      taskTitle,
-      selectedCategory,
-      startDate,
-      blockTimeData,
-      addPomodoro,
-      priority,
-      note,
-      isPendingTask,
-      reminderData,
-      addReminder,
-      addToGoogleCalendar,
-    };
+    // Check if user is authenticated
+    if (!user) {
+      Alert.alert('Error', 'Please log in to create tasks.');
+      return;
+    }
 
-    console.log('Task data:', taskData);
-    // Navigate to next screen or save data
-    // navigation.navigate("NextScreen", taskData);
+    try {
+      // Prepare task data for database
+      const taskData = {
+        // Basic task information
+        title: taskTitle.trim(),
+        description: '',
+        category: selectedCategory.title || selectedCategory,
+        taskType: 'Recurring',
+        evaluationType: 'yesNo',
+        userId: user.id,
+        
+        // Visual and display properties
+        time: blockTimeData?.startTime || null,
+        timeColor: '#E4EBF3',
+        tags: ['Recurring', priority || 'Important'],
+        image: null,
+        hasFlag: true,
+        priority: priority || 'Important',
+        
+        // Repetition and frequency settings (default for recurring tasks)
+        frequencyType: 'Every Day',
+        selectedWeekdays: [],
+        selectedMonthDates: [],
+        selectedYearDates: [],
+        periodDays: 1,
+        periodType: 'Week',
+        isFlexible: false,
+        isMonthFlexible: false,
+        isYearFlexible: false,
+        useDayOfWeek: false,
+        isRepeatFlexible: false,
+        isRepeatAlternateDays: false,
+        
+        // Scheduling settings
+        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        endDate: null,
+        isEndDateEnabled: false,
+        
+        // Block time settings
+        blockTimeEnabled: !!blockTimeData,
+        blockTimeData: blockTimeData,
+        
+        // Duration settings
+        durationEnabled: false,
+        durationData: null,
+        
+        // Reminder settings
+        reminderEnabled: addReminder,
+        reminderData: reminderData,
+        
+        // Additional features
+        addPomodoro: addPomodoro,
+        addToGoogleCalendar: addToGoogleCalendar,
+        isPendingTask: isPendingTask,
+        
+        // Goal linking
+        linkedGoalId: null,
+        linkedGoalTitle: null,
+        linkedGoalType: null,
+        
+        // Notes
+        note: note,
+        
+        // Progress tracking
+        progress: null,
+      };
+
+      console.log('Saving recurring Yes/No task data:', taskData);
+      
+      // Save to database
+      const savedTask = await taskService.createTask(taskData);
+      
+      console.log('Recurring Yes/No task saved successfully:', savedTask);
+      
+      Alert.alert(
+        'Success', 
+        'Recurring task created successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ 
+                  name: 'BottomTab',
+                  params: { newTaskCreated: true }
+                }],
+              });
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Error saving recurring Yes/No task:', error);
+      Alert.alert('Error', 'Failed to create recurring task. Please try again.');
+    }
   };
 
   // Handle Link To Goal press - UPDATE WITH VALIDATION

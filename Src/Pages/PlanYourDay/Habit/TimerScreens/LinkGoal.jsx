@@ -6,12 +6,20 @@ import {
   StatusBar,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
 import {HP, WP, FS} from '../../../../utils/dimentions';
 import Headers from '../../../../Components/Headers';
 import {colors} from '../../../../Helper/Contants';
+import { taskService } from '../../../../services/api/taskService';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { prepareTaskData } from '../../../../utils/taskDataHelper';
 
 const LinkGoal = ({initialSelectedGoal = null, onGoalSelect = null}) => {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { user } = useAuth();
   const [selectedGoal, setSelectedGoal] = useState(initialSelectedGoal);
 
   const goalsData = {
@@ -32,8 +40,48 @@ const LinkGoal = ({initialSelectedGoal = null, onGoalSelect = null}) => {
     }
   };
 
-  const handleDone = () => {
-    console.log('Done pressed with selected goal:', selectedGoal);
+  const handleDone = async () => {
+    if (!user) {
+      Alert.alert('Error', 'Please log in to create tasks.');
+      return;
+    }
+
+    const previousData = route.params || {};
+    
+    try {
+      // Prepare task data for database using helper function
+      const taskData = prepareTaskData(previousData, previousData.scheduleData, user.id, selectedGoal);
+
+      console.log('Saving task data with goal:', taskData);
+      
+      // Save to database
+      const savedTask = await taskService.createTask(taskData);
+      
+      console.log('Task saved successfully:', savedTask);
+      
+      Alert.alert(
+        'Success', 
+        'Task created successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ 
+                  name: 'BottomTab',
+                  params: { newTaskCreated: true }
+                }],
+              });
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Error saving task:', error);
+      Alert.alert('Error', 'Failed to create task. Please try again.');
+    }
   };
 
   const handleBack = () => {

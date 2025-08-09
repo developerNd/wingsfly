@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  Alert,
 } from 'react-native';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../../Components/Headers';
@@ -18,10 +19,14 @@ import CustomToast from '../../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../../Helper/Contants';
+import { taskService } from '../../../../services/api/taskService';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { prepareTaskData } from '../../../../utils/taskDataHelper';
 
 const SchedulePreference = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const { user } = useAuth();
 
   const previousData = route.params || {};
 
@@ -93,10 +98,16 @@ const SchedulePreference = () => {
   };
 
   // Handle Done button press with validation
-  const handleDonePress = () => {
+  const handleDonePress = async () => {
     // Hide any existing toast
     if (toastVisible) {
       hideToast();
+    }
+
+    // Check if user is authenticated
+    if (!user) {
+      Alert.alert('Error', 'Please log in to create tasks.');
+      return;
     }
 
     // Validation checks
@@ -130,9 +141,40 @@ const SchedulePreference = () => {
       scheduleData: serializedScheduleData,
     };
 
-    // Navigate to completion screen or save data
-    // replace this with your desired completion flow
-    console.log('Final habit data:', finalData);
+    try {
+      // Prepare task data for database using helper function
+      const taskData = prepareTaskData(finalData, scheduleData, user.id);
+
+      console.log('Saving task data:', taskData);
+      
+      // Save to database
+      const savedTask = await taskService.createTask(taskData);
+      
+      console.log('Task saved successfully:', savedTask);
+      
+      Alert.alert(
+        'Success', 
+        'Task created successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ 
+                  name: 'BottomTab',
+                  params: { newTaskCreated: true }
+                }],
+              });
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Error saving task:', error);
+      Alert.alert('Error', 'Failed to create task. Please try again.');
+    }
   };
 
   // Handle Link To Goal press with validation
