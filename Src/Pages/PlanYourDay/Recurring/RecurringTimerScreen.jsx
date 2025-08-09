@@ -10,7 +10,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Headers from '../../../Components/Headers';
 import CustomDropdown from '../../../Components/Dropdown';
@@ -24,10 +24,11 @@ import {HP, WP, FS} from '../../../utils/dimentions';
 import {colors, Icons} from '../../../Helper/Contants';
 import { taskService } from '../../../services/api/taskService';
 import { useAuth } from '../../../contexts/AuthContext';
-import { prepareTaskData } from '../../../utils/taskDataHelper';
+
 
 const RecurringTimerScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const { user } = useAuth();
 
   // Task form states
@@ -417,7 +418,7 @@ const RecurringTimerScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="Define Your Task">
+        <Headers title="Define Your Task" onBackPress={() => navigation.goBack()}>
           <TouchableOpacity onPress={handleNextPress}>
             <Text style={styles.nextText}>Next</Text>
           </TouchableOpacity>
@@ -505,7 +506,7 @@ const RecurringTimerScreen = () => {
             </View>
 
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory}</Text>
+              <Text style={styles.categoryText}>{selectedCategory?.title || selectedCategory}</Text>
               <Image
                 source={Icons.Taskhome}
                 style={styles.categoryIcon}
