@@ -113,19 +113,19 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
   };
 
   const renderCheckbox = () => {
-    switch (checkboxState) {
-      case 1:
-        return getInitialIconInsideRadio();
-      case 2:
-        return (
-          <Image
-            source={Icons.Tick}
-            style={{width: WP(5.3), height: WP(5.3)}}
-          />
-        );
-      default:
-        return getInitialIconInsideRadio();
+    // For all completed states (2, 3, 4), use consistent green checklist styling
+    if (checkboxState === 2 || checkboxState === 3 || checkboxState === 4) {
+      return (
+        <View style={styles.completedContainer}>
+          <View style={styles.checkedBox}>
+            <Icon name="check" size={WP(3.2)} color="#00754B" />
+          </View>
+        </View>
+      );
     }
+    
+    // For uncompleted state (1), show original type-specific icon for all task types
+    return getInitialIconInsideRadio();
   };
 
   return (
@@ -313,6 +313,21 @@ const styles = StyleSheet.create({
     width: WP(5.3),
     height: WP(5.3),
     resizeMode: 'contain',
+  },
+  completedContainer: {
+    width: WP(5.3),
+    height: WP(5.3),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  checkedBox: {
+    width: WP(5.3),
+    height: WP(5.3),
+    backgroundColor: '#BCE1D3',
+    borderRadius: WP(2.65),
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

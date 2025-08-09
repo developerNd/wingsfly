@@ -438,6 +438,80 @@ const Home = () => {
       return;
     }
 
+    // Handle Yes/No tasks - simple toggle between completed and not completed
+    if (task && task.type === 'yesNo') {
+      try {
+        const isCurrentlyCompleted = checkboxStates[id] === 4 || task.isCompleted;
+        const newIsCompleted = !isCurrentlyCompleted;
+        
+        // Update local state with animation if completing
+        if (newIsCompleted) {
+          // Show tick animation first
+          setCheckboxStates(prev => ({
+            ...prev,
+            [id]: 2,
+          }));
+          
+          // Then show completed state after animation
+          setTimeout(() => {
+            setCheckboxStates(prev => ({
+              ...prev,
+              [id]: 4,
+            }));
+          }, 200);
+        } else {
+          // Directly set to not completed state
+          setCheckboxStates(prev => ({
+            ...prev,
+            [id]: 1,
+          }));
+        }
+
+        // Save to database
+        const currentCompletionCount = task.completionCount || 0;
+        const currentStreakCount = task.streakCount || 0;
+        
+        const newCompletionCount = newIsCompleted ? currentCompletionCount + 1 : Math.max(0, currentCompletionCount - 1);
+        const newStreakCount = newIsCompleted ? currentStreakCount + 1 : Math.max(0, currentStreakCount - 1);
+
+        await taskService.updateTaskCompletion(task.id, {
+          isCompleted: newIsCompleted,
+          completionCount: newCompletionCount,
+          streakCount: newStreakCount
+        });
+
+        // Update local task data in both allTasks and filtered tasks
+        setAllTasks(prev => prev.map(t => 
+          t.id === id 
+            ? { ...t, isCompleted: newIsCompleted, completionCount: newCompletionCount, streakCount: newStreakCount }
+            : t
+        ));
+        
+        setTasks(prev => prev.map(t => 
+          t.id === id 
+            ? { ...t, isCompleted: newIsCompleted, completionCount: newCompletionCount, streakCount: newStreakCount }
+            : t
+        ));
+
+        if (newIsCompleted) {
+          setTimeout(() => showAppreciationModal(task), 300);
+        }
+        
+        return;
+      } catch (error) {
+        console.error('Error updating Yes/No task completion:', error);
+        Alert.alert('Error', 'Failed to update task. Please try again.');
+        
+        // Revert local state on error
+        setCheckboxStates(prev => ({
+          ...prev,
+          [id]: checkboxStates[id] || 1,
+        }));
+        return;
+      }
+    }
+
+    // Handle other task types (fallback for any undefined types)
     try {
       const currentState = checkboxStates[id] || 1;
       const nextState = currentState >= 4 ? 1 : currentState + 1;
@@ -492,16 +566,60 @@ const Home = () => {
     }
   };
 
-  const markTaskCompleted = taskId => {
+  const markTaskCompleted = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
 
-    setCheckboxStates(prev => ({
-      ...prev,
-      [taskId]: 2,
-    }));
+    if (!task) return;
 
-    if (task) {
+    try {
+      // Set intermediate animation state (tick icon)
+      setCheckboxStates(prev => ({
+        ...prev,
+        [taskId]: 2,
+      }));
+
+      // Update database
+      const currentCompletionCount = task.completionCount || 0;
+      const currentStreakCount = task.streakCount || 0;
+      const newCompletionCount = currentCompletionCount + 1;
+      const newStreakCount = currentStreakCount + 1;
+
+      await taskService.updateTaskCompletion(task.id, {
+        isCompleted: true,
+        completionCount: newCompletionCount,
+        streakCount: newStreakCount
+      });
+
+      // Update local task data
+      setAllTasks(prev => prev.map(t => 
+        t.id === taskId 
+          ? { ...t, isCompleted: true, completionCount: newCompletionCount, streakCount: newStreakCount }
+          : t
+      ));
+      
+      setTasks(prev => prev.map(t => 
+        t.id === taskId 
+          ? { ...t, isCompleted: true, completionCount: newCompletionCount, streakCount: newStreakCount }
+          : t
+      ));
+
+      // After a brief animation, set to completed state
+      setTimeout(() => {
+        setCheckboxStates(prev => ({
+          ...prev,
+          [taskId]: 4, // Final completed state
+        }));
+      }, 200);
+
+      // Show appreciation modal
       setTimeout(() => showAppreciationModal(task), 300);
+    } catch (error) {
+      console.error('Error marking task as completed:', error);
+      // Revert state on error
+      setCheckboxStates(prev => ({
+        ...prev,
+        [taskId]: task.isCompleted ? 4 : 1,
+      }));
     }
   };
 
