@@ -57,6 +57,7 @@ const YesorNoScreen = () => {
       evaluationType,
       habit: habit.trim(),
       description: description.trim(),
+      type: 'Habit', // Add task type
     };
 
     navigation.navigate('FrequencyScreen', navigationData);

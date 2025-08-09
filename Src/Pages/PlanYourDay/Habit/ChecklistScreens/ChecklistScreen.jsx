@@ -113,6 +113,7 @@ const ChecklistScreen = () => {
       checklistItems,
       selectedSuccessCondition,
       customItems,
+      type: 'Habit', // Add task type
     };
 
     // Navigate to FrequencyScreen

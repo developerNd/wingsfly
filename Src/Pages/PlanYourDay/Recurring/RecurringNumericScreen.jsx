@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  Alert,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useNavigation, useRoute} from '@react-navigation/native';
@@ -19,6 +20,8 @@ import NoteModal from '../../../Components/NoteModal';
 import CustomToast from '../../../Components/CustomToast';
 import {colors, Icons} from '../../../Helper/Contants';
 import {HP, WP, FS} from '../../../utils/dimentions';
+import { taskService } from '../../../services/api/taskService';
+import { useAuth } from '../../../contexts/AuthContext';
 
 // Custom Dropdown Component
 const CustomDropdown = ({
@@ -93,16 +96,11 @@ const CustomDropdown = ({
 const RecurringNumericScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const { user } = useAuth();
 
-  // FIXED: Handle selectedCategory as object or string
-  const selectedCategoryParam =
-    route.params?.selectedCategory || 'Work and Career';
-  const selectedCategory =
-    typeof selectedCategoryParam === 'object'
-      ? selectedCategoryParam.title ||
-        selectedCategoryParam.name ||
-        'Work and Career'
-      : selectedCategoryParam;
+  // Get category data from route params
+  const selectedCategoryParam = route.params?.selectedCategory || { title: 'Work and Career', image: Icons.Work };
+  const selectedCategory = selectedCategoryParam;
 
   const evaluationType = route.params?.evaluationType;
 
@@ -315,32 +313,126 @@ const RecurringNumericScreen = () => {
     }
   };
 
-  const handleNextPress = () => {
+  const handleNextPress = async () => {
     if (!validateForm()) {
       return;
     }
 
-    const navigationData = {
-      selectedCategory,
-      evaluationType,
-      habit: habit.trim(),
-      goal: goal.trim(),
-      unit: unit.trim(),
-      description: description.trim(),
-      selectedDropdownValue,
-      startDate,
-      blockTimeData,
-      addPomodoro,
-      priority,
-      note,
-      isPendingTask,
-      reminderData,
-      addReminder,
-      addToGoogleCalendar,
-    };
+    // Check if user is authenticated
+    if (!user) {
+      Alert.alert('Error', 'Please log in to create tasks.');
+      return;
+    }
 
-    // Navigate to next screen
-    navigation.navigate('FrequencyScreen', navigationData);
+    // Check if block time is selected
+    if (!blockTimeData) {
+      showToast('Select a block time');
+      return;
+    }
+
+    try {
+      // Prepare task data for database
+      const taskData = {
+        // Basic task information
+        title: habit.trim(),
+        description: description.trim(),
+        category: selectedCategory.title || selectedCategory,
+        taskType: 'Recurring',
+        evaluationType: 'numeric',
+        userId: user.id,
+        
+        // Visual and display properties
+        time: blockTimeData?.startTime || null,
+        timeColor: '#E4EBF3',
+        tags: ['Recurring', priority || 'Important'],
+        image: null,
+        hasFlag: true,
+        priority: priority || 'Important',
+        
+        // Numeric-specific data
+        numericValue: 0,
+        numericGoal: goal ? parseInt(goal.toString()) : null,
+        numericUnit: unit || null,
+        numericCondition: selectedDropdownValue || 'At Least',
+        
+        // Repetition and frequency settings (default for recurring tasks)
+        frequencyType: 'Every Day',
+        selectedWeekdays: [],
+        selectedMonthDates: [],
+        selectedYearDates: [],
+        periodDays: 1,
+        periodType: 'Week',
+        isFlexible: false,
+        isMonthFlexible: false,
+        isYearFlexible: false,
+        useDayOfWeek: false,
+        isRepeatFlexible: false,
+        isRepeatAlternateDays: false,
+        
+        // Scheduling settings
+        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        endDate: null,
+        isEndDateEnabled: false,
+        
+        // Block time settings
+        blockTimeEnabled: !!blockTimeData,
+        blockTimeData: blockTimeData,
+        
+        // Duration settings
+        durationEnabled: false,
+        durationData: null,
+        
+        // Reminder settings
+        reminderEnabled: addReminder,
+        reminderData: reminderData,
+        
+        // Additional features
+        addPomodoro: addPomodoro,
+        addToGoogleCalendar: addToGoogleCalendar,
+        isPendingTask: isPendingTask,
+        
+        // Goal linking
+        linkedGoalId: null,
+        linkedGoalTitle: null,
+        linkedGoalType: null,
+        
+        // Notes
+        note: note,
+        
+        // Progress tracking
+        progress: null,
+      };
+
+      console.log('Saving recurring numeric task data:', taskData);
+      
+      // Save to database
+      const savedTask = await taskService.createTask(taskData);
+      
+      console.log('Recurring numeric task saved successfully:', savedTask);
+      
+      Alert.alert(
+        'Success', 
+        'Recurring numeric task created successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ 
+                  name: 'BottomTab',
+                  params: { newTaskCreated: true }
+                }],
+              });
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Error saving recurring numeric task:', error);
+      Alert.alert('Error', 'Failed to create recurring numeric task. Please try again.');
+    }
   };
 
   const handleLinkToGoalPress = () => {
