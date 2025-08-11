@@ -14,10 +14,15 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
-import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from '@react-navigation/native';
 import ItemInput from '../../Components/ItemInput';
 import SuccessConditionModal from '../../Components/SuccessModal';
-import { taskService } from '../../services/api/taskService';
+import {taskService} from '../../services/api/taskService';
+import AppreciationModal from '../../Components/AppreciationModal';
 
 const TaskEvaluationScreen = () => {
   const navigation = useNavigation();
@@ -29,17 +34,19 @@ const TaskEvaluationScreen = () => {
 
   // state for ItemInput modal
   const [showItemInput, setShowItemInput] = useState(false);
-  
+
   // state for filter mode toggle
   const [isFilterMode, setIsFilterMode] = useState(false);
-  
+
   // state for success condition modal
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  
+
   // state for filter toggle
   const [showAllItems, setShowAllItems] = useState(false);
 
   const [checklistItems, setChecklistItems] = useState([]);
+
+  const [isAppreciationVisible, setAppreciationVisible] = useState(false);
 
   // Load checklist items from task data
   useEffect(() => {
@@ -56,7 +63,7 @@ const TaskEvaluationScreen = () => {
       if (taskData && taskData.checklistItems) {
         setChecklistItems(taskData.checklistItems);
       }
-    }, [taskData])
+    }, [taskData]),
   );
 
   // Animation on mount
@@ -94,13 +101,13 @@ const TaskEvaluationScreen = () => {
     });
   };
 
-  const toggleChecklistItem = async (id) => {
+  const toggleChecklistItem = async id => {
     const updatedItems = checklistItems.map(item =>
       item.id === id ? {...item, completed: !item.completed} : item,
     );
-    
+
     setChecklistItems(updatedItems);
-    
+
     // Save to database
     try {
       await taskService.updateChecklistTask(taskId, updatedItems);
@@ -112,10 +119,10 @@ const TaskEvaluationScreen = () => {
   };
 
   // Delete an item (used in filter mode)
-  const deleteChecklistItem = async (id) => {
+  const deleteChecklistItem = async id => {
     const updatedItems = checklistItems.filter(item => item.id !== id);
     setChecklistItems(updatedItems);
-    
+
     // Save to database
     try {
       await taskService.updateChecklistTask(taskId, updatedItems);
@@ -127,30 +134,33 @@ const TaskEvaluationScreen = () => {
   };
 
   const handleComplete = async () => {
-  const completedCount = checklistItems.filter(item => item.completed).length;
-  const totalCount = checklistItems.length;
+    const completedCount = checklistItems.filter(item => item.completed).length;
+    const totalCount = checklistItems.length;
 
-  if (completedCount === totalCount) {
-    try {
-      await taskService.updateChecklistTask(taskId, checklistItems);
-      animateOut(() => {
-        navigation.goBack();
-      });
-    } catch (error) {
-      console.error('Error saving final completion state:', error);
-      animateOut(() => {
-        navigation.goBack();
-      });
+    if (completedCount === totalCount && totalCount > 0) {
+      try {
+        await taskService.updateChecklistTask(taskId, checklistItems);
+
+        // Show appreciation modal first
+        setAppreciationVisible(true);
+      } catch (error) {
+        console.error('Error saving final completion state:', error);
+        animateOut(() => {
+          navigation.goBack();
+        });
+      }
+    } else {
+      setShowItemInput(true);
     }
-  } else {
-    setShowItemInput(true);
-  }
-};
+  };
 
   // Function to handle adding new item
-  const handleAddItem = async (itemText) => {
+  const handleAddItem = async itemText => {
     if (itemText.trim()) {
-      const newId = checklistItems.length > 0 ? Math.max(...checklistItems.map(item => item.id)) + 1 : 1;
+      const newId =
+        checklistItems.length > 0
+          ? Math.max(...checklistItems.map(item => item.id)) + 1
+          : 1;
       const newItem = {
         id: newId,
         text: itemText.trim(),
@@ -158,7 +168,7 @@ const TaskEvaluationScreen = () => {
       };
       const updatedItems = [...checklistItems, newItem];
       setChecklistItems(updatedItems);
-      
+
       // Save to database
       try {
         await taskService.updateChecklistTask(taskId, updatedItems);
@@ -177,7 +187,7 @@ const TaskEvaluationScreen = () => {
       setShowAllItems(false);
       return;
     }
-    
+
     animateOut(() => {
       navigation.goBack();
     });
@@ -191,6 +201,14 @@ const TaskEvaluationScreen = () => {
   const handleFilterToggle = () => {
     setIsFilterMode(!isFilterMode);
     setShowAllItems(false);
+  };
+
+  const handleAppreciationClose = () => {
+    setAppreciationVisible(false);
+    // Navigate back after closing appreciation modal
+    animateOut(() => {
+      navigation.goBack();
+    });
   };
 
   // Handle filter button click (in filter mode)
@@ -293,18 +311,19 @@ const TaskEvaluationScreen = () => {
               <View style={styles.header}>
                 <View style={styles.headerContent}>
                   <View style={styles.headerLeft}>
-                    <Text style={styles.headerTitle}>{taskData?.title || 'Checklist Task'}</Text>
+                    <Text style={styles.headerTitle}>
+                      {taskData?.title || 'Checklist Task'}
+                    </Text>
                     <View style={styles.dateBackground}>
-                      <Text style={styles.headerDate}>{new Date().toLocaleDateString()}</Text>
+                      <Text style={styles.headerDate}>
+                        {new Date().toLocaleDateString()}
+                      </Text>
                     </View>
                   </View>
                   <View style={styles.headerRight}>
                     {isFilterMode ? (
                       <View style={styles.clockContainer}>
-                        <Image
-                          source={Icons.Moment}
-                          style={styles.clockIcon}
-                        />
+                        <Image source={Icons.Moment} style={styles.clockIcon} />
                       </View>
                     ) : (
                       <Image
@@ -320,14 +339,18 @@ const TaskEvaluationScreen = () => {
               <FlatList
                 data={checklistItems}
                 keyExtractor={item => item.id.toString()}
-                renderItem={isFilterMode ? renderFilterItem : renderChecklistItem}
+                renderItem={
+                  isFilterMode ? renderFilterItem : renderChecklistItem
+                }
                 style={styles.checklistContainer}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.checklistContent}
                 ListEmptyComponent={() => (
                   <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>No checklist items yet</Text>
-                    <Text style={styles.emptySubText}>Tap the + button to add items</Text>
+                    <Text style={styles.emptySubText}>
+                      Tap the + button to add items
+                    </Text>
                   </View>
                 )}
               />
@@ -340,10 +363,7 @@ const TaskEvaluationScreen = () => {
                       style={styles.filterButton}
                       activeOpacity={0.6}
                       onPress={handleFilterPress}>
-                      <Image
-                        source={Icons.Filter}
-                        style={styles.actionIcon}
-                      />
+                      <Image source={Icons.Filter} style={styles.actionIcon} />
                     </TouchableOpacity>
 
                     {showAllItems && (
@@ -392,10 +412,18 @@ const TaskEvaluationScreen = () => {
                   styles.fab,
                   completedCount === totalCount && styles.fabActive,
                 ]}
-                onPress={isFilterMode ? () => setIsFilterMode(false) : handleComplete}
+                onPress={
+                  isFilterMode ? () => setIsFilterMode(false) : handleComplete
+                }
                 activeOpacity={0.8}>
                 <Icon
-                  name={isFilterMode ? 'check' : (completedCount === totalCount ? 'check' : 'add')}
+                  name={
+                    isFilterMode
+                      ? 'check'
+                      : completedCount === totalCount
+                      ? 'check'
+                      : 'add'
+                  }
                   size={WP(6.5)}
                   color={colors.White}
                 />
@@ -417,6 +445,15 @@ const TaskEvaluationScreen = () => {
           visible={showSuccessModal}
           onClose={handleSuccessModalClose}
           onConfirm={handleSuccessConditionConfirm}
+        />
+
+        <AppreciationModal
+          isVisible={isAppreciationVisible}
+          onClose={handleAppreciationClose}
+          taskTitle={taskData?.title || 'Checklist Task'}
+          streakCount={taskData?.streakCount || 1}
+          isNewBestStreak={false}
+          nextAwardDays={7}
         />
       </View>
     </TouchableWithoutFeedback>

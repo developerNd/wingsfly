@@ -168,8 +168,18 @@ class AppLockService : Service() {
             
             // Check if Pomodoro is active for initial notification
             val isPomodoroActive = isPomodoroModeActive()
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
             val title = if (isPomodoroActive) "Pomodoro Focus Mode Active" else "App Lock Active"
-            val text = if (isPomodoroActive) "All apps are blocked during focus session" else "Monitoring apps for your security"
+            val text = if (isPomodoroActive) {
+                if (excludedApps.isNotEmpty()) {
+                    "Most apps blocked • ${excludedApps.size} apps excluded"
+                } else {
+                    "All apps are blocked during focus session"
+                }
+            } else {
+                "Monitoring apps for your security"
+            }
             val icon = if (isPomodoroActive) android.R.drawable.ic_media_pause else android.R.drawable.ic_lock_lock
             
             // Create a more robust notification
@@ -250,7 +260,64 @@ class AppLockService : Service() {
         }
     }
 
-    // POMODORO METHODS - Added from first document
+    private fun isPomodoroModeActive(): Boolean {
+        val isPomodoroMode = sharedPreferences.getBoolean("pomodoro_mode", false)
+        val isPaused = sharedPreferences.getBoolean("pomodoro_paused", false)
+        return isPomodoroMode && !isPaused
+    }
+
+    // Updated shouldBlockAllAppsForPomodoro method with exclusions
+    private fun shouldBlockAllAppsForPomodoro(packageName: String): Boolean {
+        if (!isPomodoroModeActive()) {
+            return false
+        }
+        
+        // List of apps that should NEVER be blocked (system critical apps)
+        val neverBlockApps = setOf(
+            "com.android.systemui",
+            "com.android.launcher",
+            "com.android.launcher2",
+            "com.android.launcher3",
+            "com.google.android.dialer",
+            "com.android.dialer",
+            "com.android.phone",
+            "com.android.emergency",
+            "com.android.settings",
+            "com.wingsfly", // Your own app
+            applicationContext.packageName // Ensure your app is never blocked
+        )
+        
+        // Don't block system apps or essential apps
+        if (neverBlockApps.contains(packageName)) {
+            Log.d(TAG, "App $packageName is in never-block list for Pomodoro")
+            return false
+        }
+        
+        // Check if app is excluded from Pomodoro blocking
+        val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+        if (excludedApps.contains(packageName)) {
+            Log.d(TAG, "App $packageName is excluded from Pomodoro blocking by user preference")
+            return false
+        }
+        
+        // Don't block system apps
+        try {
+            val packageManager = applicationContext.packageManager
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            if ((appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) {
+                Log.d(TAG, "App $packageName is system app, not blocking in Pomodoro mode")
+                return false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking if app is system app: ${e.message}", e)
+            return false
+        }
+        
+        Log.d(TAG, "App $packageName should be blocked in Pomodoro mode")
+        return true
+    }
+
+    // Updated handlePomodoroCommands method
     private fun handlePomodoroCommands(intent: Intent) {
         val command = intent.getStringExtra("command")
         Log.d(TAG, "Received Pomodoro command: $command")
@@ -284,16 +351,31 @@ class AppLockService : Service() {
                 Log.d(TAG, "Resuming Pomodoro blocking mode")
                 updateNotificationForPomodoro(true)
             }
+            "refresh_exclusion_list" -> {
+                Log.d(TAG, "Refreshing Pomodoro exclusion list")
+                refreshPomodoroExclusionList()
+            }
         }
     }
 
+    // Updated updateNotificationForPomodoro method with exclusion info
     private fun updateNotificationForPomodoro(isPomodoroActive: Boolean) {
         try {
             val channelId = "AppLockService"
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
             val title = if (isPomodoroActive) "Pomodoro Focus Mode Active" else "App Lock Active"
-            val text = if (isPomodoroActive) "All apps are blocked during focus session" else "Monitoring apps for your security"
+            val text = if (isPomodoroActive) {
+                if (excludedApps.isNotEmpty()) {
+                    "Most apps blocked • ${excludedApps.size} apps excluded"
+                } else {
+                    "All apps are blocked during focus session"
+                }
+            } else {
+                "Monitoring apps for your security"
+            }
             
             val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, channelId)
@@ -324,59 +406,75 @@ class AppLockService : Service() {
             }.build()
             
             notificationManager.notify(NOTIFICATION_ID, notification)
-            Log.d(TAG, "Notification updated for Pomodoro mode: $isPomodoroActive")
+            Log.d(TAG, "Notification updated for Pomodoro mode: $isPomodoroActive (${excludedApps.size} excluded apps)")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating notification for Pomodoro: ${e.message}", e)
         }
     }
 
-    private fun isPomodoroModeActive(): Boolean {
-        val isPomodoroMode = sharedPreferences.getBoolean("pomodoro_mode", false)
-        val isPaused = sharedPreferences.getBoolean("pomodoro_paused", false)
-        return isPomodoroMode && !isPaused
-    }
-
-    private fun shouldBlockAllAppsForPomodoro(packageName: String): Boolean {
-        if (!isPomodoroModeActive()) {
-            return false
-        }
-        
-        // List of apps that should NEVER be blocked (system critical apps)
-        val neverBlockApps = setOf(
-            "com.android.systemui",
-            "com.android.launcher",
-            "com.android.launcher2",
-            "com.android.launcher3",
-            "com.google.android.dialer",
-            "com.android.dialer",
-            "com.android.phone",
-            "com.android.emergency",
-            "com.android.settings",
-            "com.wingsfly", // Your own app
-            applicationContext.packageName // Ensure your app is never blocked
-        )
-        
-        // Don't block system apps or essential apps
-        if (neverBlockApps.contains(packageName)) {
-            Log.d(TAG, "App $packageName is in never-block list for Pomodoro")
-            return false
-        }
-        
-        // Don't block system apps
+    // Add method to update notification when exclusion settings change
+    private fun updateNotificationForExcludedApps() {
         try {
-            val packageManager = applicationContext.packageManager
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            if ((appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) {
-                Log.d(TAG, "App $packageName is system app, not blocking in Pomodoro mode")
-                return false
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            val isPomodoroActive = isPomodoroModeActive()
+            
+            if (isPomodoroActive && excludedApps.isNotEmpty()) {
+                Log.d(TAG, "Updating notification to reflect ${excludedApps.size} excluded apps during Pomodoro")
+                
+                val channelId = "AppLockService"
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                val title = "Pomodoro Focus Mode Active"
+                val text = "Most apps blocked • ${excludedApps.size} apps excluded"
+                
+                val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Notification.Builder(this, channelId)
+                } else {
+                    Notification.Builder(this)
+                }.apply {
+                    setContentTitle(title)
+                    setContentText(text)
+                    setSmallIcon(android.R.drawable.ic_media_pause)
+                    setOngoing(true)
+                    
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                        setPriority(Notification.PRIORITY_MAX)
+                    }
+                    
+                    setWhen(System.currentTimeMillis())
+                    setCategory(Notification.CATEGORY_SERVICE)
+                    setVisibility(Notification.VISIBILITY_PUBLIC)
+                    
+                    val pendingIntent = PendingIntent.getActivity(
+                        this@AppLockService,
+                        0,
+                        Intent(this@AppLockService, MainActivity::class.java),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    setContentIntent(pendingIntent)
+                    setAutoCancel(false)
+                }.build()
+                
+                notificationManager.notify(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking if app is system app: ${e.message}", e)
-            return false
+            Log.e(TAG, "Error updating notification for excluded apps: ${e.message}", e)
         }
-        
-        Log.d(TAG, "App $packageName should be blocked in Pomodoro mode")
-        return true
+    }
+
+    // Add method to refresh exclusion list when preferences change
+    fun refreshPomodoroExclusionList() {
+        try {
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            Log.d(TAG, "Refreshed Pomodoro exclusion list: ${excludedApps.joinToString()}")
+            
+            // Update notification if Pomodoro is active
+            if (isPomodoroModeActive()) {
+                updateNotificationForExcludedApps()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error refreshing Pomodoro exclusion list: ${e.message}", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -588,9 +686,9 @@ class AppLockService : Service() {
         }
     }
 
-    // Updated isAppLocked method to include Pomodoro check
+    // Updated isAppLocked method to include Pomodoro check with exclusions
     private fun isAppLocked(packageName: String): Boolean {
-        // First check if Pomodoro mode is active and should block all apps
+        // First check if Pomodoro mode is active and should block all apps (with exclusions)
         if (shouldBlockAllAppsForPomodoro(packageName)) {
             Log.d(TAG, "$packageName is blocked due to Pomodoro mode")
             return true
@@ -801,10 +899,15 @@ class AppLockService : Service() {
         }
     }
 
-    // Updated showLockScreen method to show Pomodoro message
+    // Updated showLockScreen method to show better messages for excluded apps
     private fun showLockScreen(packageName: String) {
         try {
             Log.d("AppLock", "Showing lock screen for $packageName")
+            
+            // Check if this is a Pomodoro exclusion case
+            val isPomodoroActive = isPomodoroModeActive()
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            val isExcludedFromPomodoro = excludedApps.contains(packageName)
             
             // If we already have a lock view showing, remove it first
             if (isLockViewShowing()) {
@@ -843,8 +946,11 @@ class AppLockService : Service() {
             timerText.visibility = View.GONE
             
             // Show different message based on blocking reason
-            if (isPomodoroModeActive()) {
+            if (isPomodoroActive && !isExcludedFromPomodoro) {
                 lockMessage.text = "Focus Mode Active!\n$appNameLabel is blocked during your Pomodoro session"
+            } else if (isPomodoroActive && isExcludedFromPomodoro) {
+                // This case shouldn't happen since excluded apps shouldn't be blocked, but just in case
+                lockMessage.text = "This app is excluded from Pomodoro blocking but has other restrictions"
             } else {
                 lockMessage.text = "This app is blocked and has been closed"
             }
@@ -894,7 +1000,7 @@ class AppLockService : Service() {
             }, 100)
             
             // Auto-dismiss lock screen after showing the message
-            val dismissDelay = if (isPomodoroModeActive()) 3000L else 2000L // 3 seconds for Pomodoro, 2 for regular
+            val dismissDelay = if (isPomodoroActive) 3000L else 2000L // 3 seconds for Pomodoro, 2 for regular
             mainHandler.postDelayed({
                 try {
                     if (isLockViewShowing()) {
@@ -1062,7 +1168,6 @@ class AppLockService : Service() {
         return false
     }
 
-    // Add this method after the startForeground method
     /**
      * Update the notification manually
      * This can be called from other components to ensure the notification is visible
@@ -1075,8 +1180,18 @@ class AppLockService : Service() {
             
             // Check if Pomodoro is active for notification update
             val isPomodoroActive = isPomodoroModeActive()
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
             val title = if (isPomodoroActive) "Pomodoro Focus Mode Active" else "App Lock Active"
-            val text = if (isPomodoroActive) "All apps are blocked during focus session" else "Monitoring apps for your security"
+            val text = if (isPomodoroActive) {
+                if (excludedApps.isNotEmpty()) {
+                    "Most apps blocked • ${excludedApps.size} apps excluded"
+                } else {
+                    "All apps are blocked during focus session"
+                }
+            } else {
+                "Monitoring apps for your security"
+            }
             val icon = if (isPomodoroActive) android.R.drawable.ic_media_pause else android.R.drawable.ic_lock_lock
             
             // Create a refreshed notification

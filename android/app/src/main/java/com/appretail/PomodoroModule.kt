@@ -4,6 +4,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.WritableNativeArray
+import com.facebook.react.bridge.WritableNativeMap
 import android.content.Intent
 import android.util.Log
 import android.content.Context
@@ -185,16 +187,139 @@ class PomodoroModule(reactContext: ReactApplicationContext) : ReactContextBaseJa
         try {
             val isPomodoroMode = sharedPreferences.getBoolean("pomodoro_mode", false)
             val isPaused = sharedPreferences.getBoolean("pomodoro_paused", false)
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
             
-            val stateMap = mutableMapOf<String, Any>()
-            stateMap["pomodoroMode"] = isPomodoroMode
-            stateMap["paused"] = isPaused
-            stateMap["activelyBlocking"] = isPomodoroMode && !isPaused
+            val stateMap = WritableNativeMap()
+            stateMap.putBoolean("pomodoroMode", isPomodoroMode)
+            stateMap.putBoolean("paused", isPaused)
+            stateMap.putBoolean("activelyBlocking", isPomodoroMode && !isPaused)
+            stateMap.putInt("excludedAppsCount", excludedApps.size)
+            
+            val excludedAppsArray = WritableNativeArray()
+            excludedApps.forEach { packageName ->
+                excludedAppsArray.pushString(packageName)
+            }
+            stateMap.putArray("excludedApps", excludedAppsArray)
             
             promise.resolve(stateMap)
         } catch (e: Exception) {
             Log.e(TAG, "Error getting Pomodoro state: ${e.message}", e)
             promise.reject("ERROR", "Failed to get Pomodoro state: ${e.message}")
+        }
+    }
+    
+    // NEW METHODS FOR POMODORO EXCLUSION
+    
+    @ReactMethod
+    fun setAppPomodoroExclusion(packageName: String, excluded: Boolean, promise: Promise) {
+        try {
+            Log.d(TAG, "Setting Pomodoro exclusion for $packageName: $excluded")
+            
+            // Get existing excluded apps
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", mutableSetOf()) ?: mutableSetOf()
+            val updatedExcludedApps = excludedApps.toMutableSet()
+            
+            if (excluded) {
+                // Add app to excluded list
+                updatedExcludedApps.add(packageName)
+                Log.d(TAG, "Added $packageName to Pomodoro exclusion list")
+            } else {
+                // Remove app from excluded list
+                updatedExcludedApps.remove(packageName)
+                Log.d(TAG, "Removed $packageName from Pomodoro exclusion list")
+            }
+            
+            // Save updated exclusion list
+            sharedPreferences.edit()
+                .putStringSet("pomodoro_excluded_apps", updatedExcludedApps)
+                .apply()
+            
+            Log.d(TAG, "Pomodoro exclusion list updated: ${updatedExcludedApps.joinToString()}")
+            
+            // Notify the service to refresh its exclusion list
+            try {
+                val serviceIntent = Intent(reactApplicationContext, AppLockService::class.java)
+                serviceIntent.putExtra("command", "refresh_exclusion_list")
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    reactApplicationContext.startForegroundService(serviceIntent)
+                } else {
+                    reactApplicationContext.startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not notify service of exclusion list change: ${e.message}")
+                // This is not a critical error, continue
+            }
+            
+            promise.resolve("Success")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting Pomodoro exclusion: ${e.message}", e)
+            promise.reject("ERROR", "Failed to set Pomodoro exclusion: ${e.message}")
+        }
+    }
+    
+    @ReactMethod
+    fun getAppPomodoroExclusion(packageName: String, promise: Promise) {
+        try {
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
+            val isExcluded = excludedApps.contains(packageName)
+            Log.d(TAG, "Pomodoro exclusion status for $packageName: $isExcluded")
+            
+            promise.resolve(isExcluded)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting Pomodoro exclusion: ${e.message}", e)
+            promise.reject("ERROR", "Failed to get Pomodoro exclusion: ${e.message}")
+        }
+    }
+    
+    @ReactMethod
+    fun getPomodoroExcludedApps(promise: Promise) {
+        try {
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
+            Log.d(TAG, "Getting all Pomodoro excluded apps: ${excludedApps.joinToString()}")
+            
+            val resultArray = WritableNativeArray()
+            excludedApps.forEach { packageName ->
+                resultArray.pushString(packageName)
+            }
+            
+            promise.resolve(resultArray)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting Pomodoro excluded apps: ${e.message}", e)
+            promise.reject("ERROR", "Failed to get Pomodoro excluded apps: ${e.message}")
+        }
+    }
+    
+    @ReactMethod
+    fun clearAllPomodoroExclusions(promise: Promise) {
+        try {
+            Log.d(TAG, "Clearing all Pomodoro exclusions")
+            
+            sharedPreferences.edit()
+                .remove("pomodoro_excluded_apps")
+                .apply()
+            
+            // Notify the service
+            try {
+                val serviceIntent = Intent(reactApplicationContext, AppLockService::class.java)
+                serviceIntent.putExtra("command", "refresh_exclusion_list")
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    reactApplicationContext.startForegroundService(serviceIntent)
+                } else {
+                    reactApplicationContext.startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not notify service of exclusion list clear: ${e.message}")
+            }
+            
+            promise.resolve("All exclusions cleared")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing Pomodoro exclusions: ${e.message}", e)
+            promise.reject("ERROR", "Failed to clear Pomodoro exclusions: ${e.message}")
         }
     }
     

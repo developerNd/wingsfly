@@ -143,6 +143,10 @@ enum class TimeFilter {
 
 @ReactModule(name = "InstalledApps")
 class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+    companion object {
+        private const val TAG = "InstalledAppsModule"
+    }
+    
     override fun getName() = "InstalledApps"
 
     @ReactMethod
@@ -199,18 +203,18 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun lockApp(packageName: String, promise: Promise) {
         try {
-            Log.d("AppLock", "Locking app: $packageName")
+            Log.d(TAG, "Locking app: $packageName")
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             val lockedApps = prefs.getStringSet("locked_apps", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
             lockedApps.add(packageName)
             prefs.edit().putStringSet("locked_apps", lockedApps).apply()
             
             // Log the current set of locked apps
-            Log.d("AppLock", "Current locked apps: ${lockedApps.joinToString()}")
+            Log.d(TAG, "Current locked apps: ${lockedApps.joinToString()}")
             
             promise.resolve(true)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error locking app: ${e.message}", e)
+            Log.e(TAG, "Error locking app: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -231,13 +235,13 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun setLockPin(pin: String, promise: Promise) {
         try {
-            Log.d("AppLock", "Setting PIN...")
+            Log.d(TAG, "Setting PIN...")
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             prefs.edit().putString("lock_pin", pin).apply()
-            Log.d("AppLock", "PIN set successfully")
+            Log.d(TAG, "PIN set successfully")
             promise.resolve(true)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error setting PIN: ${e.message}", e)
+            Log.e(TAG, "Error setting PIN: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -245,19 +249,19 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun startLockService(promise: Promise) {
         try {
-            Log.d("AppLock", "Starting lock service...")
+            Log.d(TAG, "Starting lock service...")
             val intent = Intent(reactApplicationContext, AppLockService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Log.d("AppLock", "Using startForegroundService")
+                Log.d(TAG, "Using startForegroundService")
                 reactApplicationContext.startForegroundService(intent)
             } else {
-                Log.d("AppLock", "Using startService")
+                Log.d(TAG, "Using startService")
                 reactApplicationContext.startService(intent)
             }
-            Log.d("AppLock", "Lock service started successfully")
+            Log.d(TAG, "Lock service started successfully")
             promise.resolve(true)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error starting service: ${e.message}", e)
+            Log.e(TAG, "Error starting service: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -268,7 +272,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             val hasOverlayPermission = Settings.canDrawOverlays(reactApplicationContext)
             val hasUsagePermission = hasUsageStatsPermission()
             
-            Log.d("AppLock", "Permissions check - Overlay: $hasOverlayPermission, Usage: $hasUsagePermission")
+            Log.d(TAG, "Permissions check - Overlay: $hasOverlayPermission, Usage: $hasUsagePermission")
             
             val result = WritableNativeMap().apply {
                 putBoolean("overlay", hasOverlayPermission)
@@ -277,7 +281,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             
             promise.resolve(result)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error checking permissions: ${e.message}", e)
+            Log.e(TAG, "Error checking permissions: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -329,7 +333,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun setAppSchedule(packageName: String, schedulesArray: ReadableArray, promise: Promise) {
         try {
-            Log.d("AppLock", "Setting schedule for app: $packageName")
+            Log.d(TAG, "Setting schedule for app: $packageName")
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             
             // Convert ReadableArray to JSON string for storage
@@ -341,10 +345,10 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             schedulesPrefs.putString("schedule_$packageName", schedulesJson)
             schedulesPrefs.apply()
             
-            Log.d("AppLock", "Schedule saved: $schedulesJson")
+            Log.d(TAG, "Schedule saved: $schedulesJson")
             promise.resolve(true)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error setting app schedule: ${e.message}", e)
+            Log.e(TAG, "Error setting app schedule: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -414,7 +418,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun getAppSchedule(packageName: String, promise: Promise) {
         try {
-            Log.d("AppLock", "Getting schedule for app: $packageName")
+            Log.d(TAG, "Getting schedule for app: $packageName")
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             
             // Get the schedule JSON string
@@ -422,7 +426,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             
             if (schedulesJson == null) {
                 // No schedules found
-                Log.d("AppLock", "No schedules found for: $packageName")
+                Log.d(TAG, "No schedules found for: $packageName")
                 promise.resolve(WritableNativeArray())
                 return
             }
@@ -471,10 +475,10 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                 result.pushMap(schedule)
             }
             
-            Log.d("AppLock", "Returning schedules: $schedulesJson")
+            Log.d(TAG, "Returning schedules: $schedulesJson")
             promise.resolve(result)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error getting app schedule: ${e.message}", e)
+            Log.e(TAG, "Error getting app schedule: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -512,7 +516,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun shouldAppBeLocked(packageName: String, promise: Promise) {
         try {
-            Log.d("AppLock", "Checking if app should be locked: $packageName")
+            Log.d(TAG, "Checking if app should be locked: $packageName")
             
             // Get the app schedules if any
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
@@ -528,7 +532,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             // No schedules, so not locked
             promise.resolve(false)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error checking if app should be locked: ${e.message}", e)
+            Log.e(TAG, "Error checking if app should be locked: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -543,8 +547,8 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             val currentMinute = calendar.get(Calendar.MINUTE)
             val currentDay = calendar.get(Calendar.DAY_OF_WEEK) - 1 // Convert to 0-6 format
             
-            Log.d("AppLock", "Checking schedules for $packageName: $schedulesJson")
-            Log.d("AppLock", "Current time: $currentHour:$currentMinute, Day: $currentDay")
+            Log.d(TAG, "Checking schedules for $packageName: $schedulesJson")
+            Log.d(TAG, "Current time: $currentHour:$currentMinute, Day: $currentDay")
             
             // First check if there are any UNLOCK schedules - these take absolute priority
             var hasUnlockSchedule = false
@@ -566,7 +570,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             
             // If there are UNLOCK schedules, they take absolute priority
             if (hasUnlockSchedule) {
-                Log.d("AppLock", "$packageName has UNLOCK schedules - checking if in any UNLOCK time range")
+                Log.d(TAG, "$packageName has UNLOCK schedules - checking if in any UNLOCK time range")
                 
                 // Check if we're in any UNLOCK time range
                 var isInUnlockRange = false
@@ -594,10 +598,10 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                         }
                         
                         val inRange = isInTimeRange(startHour, startMinute, endHour, endMinute, daysList)
-                        Log.d("AppLock", "Checking UNLOCK range $startHour:$startMinute-$endHour:$endMinute, inRange=$inRange")
+                        Log.d(TAG, "Checking UNLOCK range $startHour:$startMinute-$endHour:$endMinute, inRange=$inRange")
                         
                         if (inRange) {
-                            Log.d("AppLock", "$packageName is in UNLOCK time range: $startHour:$startMinute-$endHour:$endMinute")
+                            Log.d(TAG, "$packageName is in UNLOCK time range: $startHour:$startMinute-$endHour:$endMinute")
                             isInUnlockRange = true
                             break
                         }
@@ -610,12 +614,12 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                 // - If in an UNLOCK range, do not lock
                 // - If not in an UNLOCK range, lock
                 val shouldLock = !isInUnlockRange
-                Log.d("AppLock", "UNLOCK schedule decision for $packageName: isInUnlockRange=$isInUnlockRange, shouldLock=$shouldLock")
+                Log.d(TAG, "UNLOCK schedule decision for $packageName: isInUnlockRange=$isInUnlockRange, shouldLock=$shouldLock")
                 return shouldLock
             }
             
             // No UNLOCK schedules, check LOCK schedules
-            Log.d("AppLock", "$packageName has no UNLOCK schedules - checking LOCK schedules")
+            Log.d(TAG, "$packageName has no UNLOCK schedules - checking LOCK schedules")
             var hasLockSchedule = false
             var isInLockRange = false
             
@@ -647,10 +651,10 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                         }
                         
                         val inRange = isInTimeRange(startHour, startMinute, endHour, endMinute, daysList)
-                        Log.d("AppLock", "Checking LOCK range $startHour:$startMinute-$endHour:$endMinute, inRange=$inRange")
+                        Log.d(TAG, "Checking LOCK range $startHour:$startMinute-$endHour:$endMinute, inRange=$inRange")
                         
                         if (inRange) {
-                            Log.d("AppLock", "$packageName is in LOCK time range: $startHour:$startMinute-$endHour:$endMinute")
+                            Log.d(TAG, "$packageName is in LOCK time range: $startHour:$startMinute-$endHour:$endMinute")
                             isInLockRange = true
                             break
                         }
@@ -667,10 +671,10 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                 shouldLock = true
             }
             
-            Log.d("AppLock", "LOCK schedule decision for $packageName: hasLockSchedule=$hasLockSchedule, isInLockRange=$isInLockRange, shouldLock=$shouldLock")
+            Log.d(TAG, "LOCK schedule decision for $packageName: hasLockSchedule=$hasLockSchedule, isInLockRange=$isInLockRange, shouldLock=$shouldLock")
             return shouldLock
         } catch (e: Exception) {
-            Log.e("AppLock", "Error checking schedule: ${e.message}", e)
+            Log.e(TAG, "Error checking schedule: ${e.message}", e)
             return false
         }
     }
@@ -678,7 +682,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun setAllSchedulesEnabled(packageName: String, enabled: Boolean, promise: Promise) {
         try {
-            Log.d("AppLock", "Setting all schedules for $packageName to enabled=$enabled")
+            Log.d(TAG, "Setting all schedules for $packageName to enabled=$enabled")
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             
             // Get the existing schedules
@@ -686,7 +690,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             
             if (schedulesJson == null) {
                 // No schedules found
-                Log.d("AppLock", "No schedules found for: $packageName")
+                Log.d(TAG, "No schedules found for: $packageName")
                 promise.resolve(false)
                 return
             }
@@ -712,10 +716,10 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             schedulesPrefs.putString("schedule_$packageName", updatedJsonArray.toString())
             schedulesPrefs.apply()
             
-            Log.d("AppLock", "Schedules updated for $packageName: enabled=$enabled")
+            Log.d(TAG, "Schedules updated for $packageName: enabled=$enabled")
             promise.resolve(true)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error setting schedule enabled state: ${e.message}", e)
+            Log.e(TAG, "Error setting schedule enabled state: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -781,11 +785,11 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                 else -> endTime - 7 * 24 * 3600_000
             }
 
-            Log.d("AppLock", "Fetching usage from ${Date(startTime)} to ${Date(endTime)}")
+            Log.d(TAG, "Fetching usage from ${Date(startTime)} to ${Date(endTime)}")
 
             // Get all installed apps first
             val installedApps = context.packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-            Log.d("AppLock", "Found ${installedApps.size} installed apps")
+            Log.d(TAG, "Found ${installedApps.size} installed apps")
 
             // Get usage stats
             val usageStats = usageStatsManager.queryUsageStats(
@@ -794,11 +798,11 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                 endTime
             )
 
-            Log.d("AppLock", "Found ${usageStats?.size ?: 0} usage stats entries")
+            Log.d(TAG, "Found ${usageStats?.size ?: 0} usage stats entries")
 
             // Log WhatsApp specific stats
             usageStats?.filter { it.packageName == "com.whatsapp" }?.forEach { stat ->
-                Log.d("AppLock", "WhatsApp stats - Total time: ${stat.totalTimeInForeground}ms, Last used: ${stat.lastTimeUsed}")
+                Log.d(TAG, "WhatsApp stats - Total time: ${stat.totalTimeInForeground}ms, Last used: ${stat.lastTimeUsed}")
             }
 
             val appUsageMap = WritableNativeMap()
@@ -813,7 +817,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             }
 
             // Log WhatsApp aggregated stats
-            Log.d("AppLock", "WhatsApp aggregated time: ${aggregatedStats["com.whatsapp"] ?: 0}ms")
+            Log.d(TAG, "WhatsApp aggregated time: ${aggregatedStats["com.whatsapp"] ?: 0}ms")
 
             // Process all installed apps
             var appCount = 0
@@ -824,7 +828,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                     // Skip system apps that are not in allowedSystemApps
                     val isSystemApp = (appInfo.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
                     if (isSystemApp && pkg !in allowedSystemApps) {
-                        Log.d("AppLock", "Filtered system app: $pkg")
+                        Log.d(TAG, "Filtered system app: $pkg")
                         return@forEach
                     }
 
@@ -834,7 +838,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
 
                     // Log detailed usage for WhatsApp and YouTube
                     if (pkg == "com.whatsapp" || pkg == "com.google.android.youtube") {
-                        Log.d("AppLock", "$pkg usage - Total ms: $totalMs, Minutes: $timeMinutes")
+                        Log.d(TAG, "$pkg usage - Total ms: $totalMs, Minutes: $timeMinutes")
                     }
 
                     WritableNativeMap().apply {
@@ -850,16 +854,88 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                         appCount++
                     }
                 } catch (e: Exception) {
-                    Log.e("AppLock", "Error processing app: ${appInfo.packageName}", e)
+                    Log.e(TAG, "Error processing app: ${appInfo.packageName}", e)
                 }
             }
 
-            Log.d("AppLock", "Found ${usageStats?.count() ?: 0} usage stats entries")
-            Log.d("AppLock", "Returning $appCount apps in usage data")
+            Log.d(TAG, "Found ${usageStats?.count() ?: 0} usage stats entries")
+            Log.d(TAG, "Returning $appCount apps in usage data")
             promise.resolve(appUsageMap)
         } catch (e: Exception) {
-            Log.e("AppLock", "Error: ${e.message}", e)
+            Log.e(TAG, "Error: ${e.message}", e)
             promise.reject("ERROR", "Failed: ${e.message}")
         }
     }
-} 
+
+    // Pomodoro Exclusion Methods
+    @ReactMethod
+    fun setAppPomodoroExclusion(packageName: String, excluded: Boolean, promise: Promise) {
+        try {
+            Log.d(TAG, "Setting Pomodoro exclusion for $packageName: $excluded")
+            
+            val sharedPreferences = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            
+            // Get existing excluded apps
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", mutableSetOf()) ?: mutableSetOf()
+            val updatedExcludedApps = excludedApps.toMutableSet()
+            
+            if (excluded) {
+                // Add app to excluded list
+                updatedExcludedApps.add(packageName)
+                Log.d(TAG, "Added $packageName to Pomodoro exclusion list")
+            } else {
+                // Remove app from excluded list
+                updatedExcludedApps.remove(packageName)
+                Log.d(TAG, "Removed $packageName from Pomodoro exclusion list")
+            }
+            
+            // Save updated exclusion list
+            sharedPreferences.edit()
+                .putStringSet("pomodoro_excluded_apps", updatedExcludedApps)
+                .apply()
+            
+            Log.d(TAG, "Pomodoro exclusion list updated: ${updatedExcludedApps.joinToString()}")
+            promise.resolve("Success")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting Pomodoro exclusion: ${e.message}", e)
+            promise.reject("ERROR", "Failed to set Pomodoro exclusion: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun getAppPomodoroExclusion(packageName: String, promise: Promise) {
+        try {
+            val sharedPreferences = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
+            val isExcluded = excludedApps.contains(packageName)
+            Log.d(TAG, "Pomodoro exclusion status for $packageName: $isExcluded")
+            
+            promise.resolve(isExcluded)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting Pomodoro exclusion: ${e.message}", e)
+            promise.reject("ERROR", "Failed to get Pomodoro exclusion: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun getPomodoroExcludedApps(promise: Promise) {
+        try {
+            val sharedPreferences = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val excludedApps = sharedPreferences.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
+            Log.d(TAG, "Getting all Pomodoro excluded apps: ${excludedApps.joinToString()}")
+            
+            val resultArray = WritableNativeArray()
+            excludedApps.forEach { packageName ->
+                resultArray.pushString(packageName)
+            }
+            
+            promise.resolve(resultArray)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting Pomodoro excluded apps: ${e.message}", e)
+            promise.reject("ERROR", "Failed to get Pomodoro excluded apps: ${e.message}")
+        }
+    }
+}

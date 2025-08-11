@@ -24,70 +24,82 @@ const {PomodoroModule} = NativeModules;
 const PomodoroTimerScreen = () => {
   const navigation = useNavigation();
 
-  const [timeElapsed, setTimeElapsed] = useState(0);
-  const [targetTime, setTargetTime] = useState(25 * 60);
+  const [totalTaskDuration, setTotalTaskDuration] = useState(120 * 60); 
+  const [currentSessionTime, setCurrentSessionTime] = useState(0);
+  const [currentSessionTarget, setCurrentSessionTarget] = useState(25 * 60); 
+  const [isOnBreak, setIsOnBreak] = useState(false);
+  const [completedPomodoros, setCompletedPomodoros] = useState(0);
+  const [totalPomodoros, setTotalPomodoros] = useState(4); 
+  const [completedBreaks, setCompletedBreaks] = useState(0);
+  const [totalBreaks, setTotalBreaks] = useState(4); 
+  const [remainingTaskTime, setRemainingTaskTime] = useState(120 * 60);
+  
   const [isRunning, setIsRunning] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [currentTag, setCurrentTag] = useState('Focus');
-  const [activeMode, setActiveMode] = useState('Pomodoro');
   const [isPomodoroBlocking, setIsPomodoroBlocking] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
-  const [showSettings, setShowSettings] = useState(false);
-  const [timedReminder, setTimedReminder] = useState(true);
-  const [reminderInterval, setReminderInterval] = useState(25);
+  // App exclusion tracking
+  const [excludedAppsCount, setExcludedAppsCount] = useState(0);
+  const [pomodoroState, setPomodoroState] = useState(null);
 
   const focusIndicatorRotate = useRef(new Animated.Value(0)).current;
   const completionScale = useRef(new Animated.Value(0)).current;
-
   const timerRef = useRef(null);
 
-  const tags = ['Focus', 'Study', 'Work', 'Sport', 'Play', 'Muse'];
+  useEffect(() => {
+    const usedTime = (completedPomodoros * 25 * 60) + (completedBreaks * 5 * 60);
+    setRemainingTaskTime(Math.max(0, totalTaskDuration - usedTime));
+  }, [completedPomodoros, completedBreaks, totalTaskDuration]);
 
-  // Check Pomodoro blocking status on component mount
   useEffect(() => {
     checkPomodoroStatus();
+    loadPomodoroState();
   }, []);
 
+  // Load Pomodoro state including app exclusion information
+  const loadPomodoroState = async () => {
+    try {
+      if (PomodoroModule && PomodoroModule.getPomodoroState) {
+        const state = await PomodoroModule.getPomodoroState();
+        console.log('Loaded Pomodoro state with exclusions:', state);
+        setPomodoroState(state);
+        setExcludedAppsCount(state.excludedAppsCount || 0);
+      }
+    } catch (error) {
+      console.error('Error loading Pomodoro state:', error);
+    }
+  };
+
+  // Check current Pomodoro blocking status
   const checkPomodoroStatus = async () => {
     try {
       if (PomodoroModule) {
         const isBlocking = await PomodoroModule.isPomodoroBlocking();
         setIsPomodoroBlocking(isBlocking);
         console.log('Pomodoro blocking status:', isBlocking);
-        
-        // Debug: Get detailed state
-        try {
-          const state = await PomodoroModule.getPomodoroState();
-          console.log('Detailed Pomodoro state:', state);
-        } catch (e) {
-          console.log('getPomodoroState not available or failed:', e);
-        }
+        await loadPomodoroState();
       }
     } catch (error) {
       console.error('Error checking Pomodoro status:', error);
     }
   };
 
+  // Start app blocking for work sessions
   const startPomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
         await PomodoroModule.startPomodoroBlocking();
         setIsPomodoroBlocking(true);
         console.log('Pomodoro blocking started');
-        
-        // Show confirmation alert
-        Alert.alert(
-          "Focus Mode Activated",
-          "All apps are now blocked during your focus session. Only essential system apps will remain accessible.",
-          [{ text: "OK" }]
-        );
+        await loadPomodoroState();
       }
     } catch (error) {
       console.error('Error starting Pomodoro blocking:', error);
-      Alert.alert("Error", "Failed to start app blocking. Please try again.");
     }
   };
 
+  // Stop app blocking
   const stopPomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
@@ -100,15 +112,14 @@ const PomodoroTimerScreen = () => {
     }
   };
 
+  // Pause app blocking (temporary)
   const pausePomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
         await PomodoroModule.pausePomodoroBlocking();
-        // Update state immediately to reflect pause
         setIsPomodoroBlocking(false);
         console.log('Pomodoro blocking paused');
         
-        // Verify the state after pause
         setTimeout(async () => {
           const isBlocking = await PomodoroModule.isPomodoroBlocking();
           setIsPomodoroBlocking(isBlocking);
@@ -120,15 +131,14 @@ const PomodoroTimerScreen = () => {
     }
   };
 
+  // Resume app blocking
   const resumePomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
         await PomodoroModule.resumePomodoroBlocking();
-        // Update state immediately to reflect resume
         setIsPomodoroBlocking(true);
         console.log('Pomodoro blocking resumed');
         
-        // Verify the state after resume
         setTimeout(async () => {
           const isBlocking = await PomodoroModule.isPomodoroBlocking();
           setIsPomodoroBlocking(isBlocking);
@@ -137,7 +147,6 @@ const PomodoroTimerScreen = () => {
       }
     } catch (error) {
       console.error('Error resuming Pomodoro blocking:', error);
-      // If resume fails, make sure we reflect the actual state
       setTimeout(async () => {
         const isBlocking = await PomodoroModule.isPomodoroBlocking();
         setIsPomodoroBlocking(isBlocking);
@@ -145,24 +154,85 @@ const PomodoroTimerScreen = () => {
     }
   };
 
-  useEffect(() => {
-    if (isRunning && timeElapsed < targetTime) {
-      timerRef.current = setTimeout(() => {
-        setTimeElapsed(prev => prev + 1);
-      }, 1000);
-    } else if (timeElapsed >= targetTime && !isCompleted) {
-      setIsCompleted(true);
-      setIsRunning(false);
-      
-      // Stop app blocking when session completes
-      stopPomodoroBlocking();
+  const startNextSession = async () => {
+    console.log('Session transition - Current state:', {
+      completedPomodoros,
+      completedBreaks,
+      isOnBreak,
+      totalPomodoros,
+      totalBreaks
+    });
 
-      Animated.spring(completionScale, {
-        toValue: 1,
-        tension: 100,
-        friction: 8,
-        useNativeDriver: true,
-      }).start();
+    setIsTransitioning(true);
+    setIsRunning(false);
+
+    if (isOnBreak) {
+      const newCompletedBreaks = completedBreaks + 1;
+      console.log('Break completed, completed breaks will be:', newCompletedBreaks);
+      setCompletedBreaks(newCompletedBreaks);
+      
+      if (completedPomodoros >= totalPomodoros) {
+        console.log('All work sessions completed after this break - finishing cycle');
+        setIsCompleted(true);
+        setIsTransitioning(false);
+        await stopPomodoroBlocking();
+        
+        Animated.spring(completionScale, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }).start();
+        return;
+      }
+      
+      
+      console.log('Starting next work session');
+      setIsOnBreak(false);
+      setCurrentSessionTarget(25 * 60); 
+      setCurrentSessionTime(0);
+      await startPomodoroBlocking();
+      
+    } else {
+      const newCompletedPomodoros = completedPomodoros + 1;
+      console.log(`Work session ${newCompletedPomodoros} completed`);
+      setCompletedPomodoros(newCompletedPomodoros);
+      
+      if (newCompletedPomodoros >= totalPomodoros) {
+        console.log('Last work session completed - starting final break');
+        setIsOnBreak(true);
+        setCurrentSessionTarget(5 * 60);
+        setCurrentSessionTime(0);
+        await stopPomodoroBlocking();
+      } else {
+        console.log(`Starting break ${completedBreaks + 1} of ${totalBreaks}`);
+        setIsOnBreak(true);
+        setCurrentSessionTarget(5 * 60); // 5-minute break
+        setCurrentSessionTime(0);
+        await stopPomodoroBlocking();
+      }
+    }
+
+    setTimeout(() => {
+      if (!isCompleted) {
+        setIsTransitioning(false);
+        setIsRunning(true); 
+      }
+    }, 2000);
+  };
+
+  useEffect(() => {
+    if (isTransitioning) {
+      return;
+    }
+
+    if (isRunning && currentSessionTime < currentSessionTarget) {
+      timerRef.current = setTimeout(() => {
+        setCurrentSessionTime(prev => prev + 1);
+      }, 1000);
+    } else if (currentSessionTime >= currentSessionTarget && !isCompleted && !isTransitioning) {
+      // Session completed - start transition
+      startNextSession();
     }
 
     return () => {
@@ -170,10 +240,11 @@ const PomodoroTimerScreen = () => {
         clearTimeout(timerRef.current);
       }
     };
-  }, [isRunning, timeElapsed, targetTime]);
+  }, [isRunning, currentSessionTime, currentSessionTarget, isOnBreak, completedPomodoros, totalPomodoros, isTransitioning]);
 
+  // Focus indicator animation during work sessions
   useEffect(() => {
-    if (isRunning) {
+    if (isRunning && !isOnBreak && !isTransitioning) {
       const rotateAnimation = Animated.loop(
         Animated.timing(focusIndicatorRotate, {
           toValue: 1,
@@ -188,113 +259,144 @@ const PomodoroTimerScreen = () => {
     } else {
       focusIndicatorRotate.setValue(0);
     }
-  }, [isRunning]);
+  }, [isRunning, isOnBreak, isTransitioning]);
 
+  // Handle start/pause/restart functionality
   const handleStartPause = async () => {
+    if (isTransitioning) {
+      return;
+    }
+
     if (isCompleted) {
-      // Reset session
+      // Reset entire cycle
+      console.log('Restarting complete Pomodoro cycle');
       setIsCompleted(false);
-      setTimeElapsed(0);
+      setCurrentSessionTime(0);
+      setCurrentSessionTarget(25 * 60);
+      setIsOnBreak(false);
+      setCompletedPomodoros(0);
+      setCompletedBreaks(0);
+      setRemainingTaskTime(totalTaskDuration);
+      setIsTransitioning(false);
       completionScale.setValue(0);
+      setIsRunning(true);
+      if (!isOnBreak) {
+        await startPomodoroBlocking();
+      }
     } else {
       const newRunningState = !isRunning;
       setIsRunning(newRunningState);
 
       console.log('Timer state changing to:', newRunningState, 'Current blocking state:', isPomodoroBlocking);
 
-      // Handle app blocking based on timer state
-      if (newRunningState) {
-        // Starting timer - start blocking
-        console.log('Starting timer - initiating app blocking');
+      if (newRunningState && !isOnBreak) {
+        console.log('Starting work session - initiating app blocking');
         await startPomodoroBlocking();
+      } else if (newRunningState && isOnBreak) {
+        console.log('Starting break - no blocking needed');
       } else {
-        // Pausing timer - pause blocking (don't stop completely)
         console.log('Pausing timer - pausing app blocking');
         await pausePomodoroBlocking();
       }
       
-      // Verify state after operation
       setTimeout(async () => {
-        const currentBlockingState = await PomodoroModule.isPomodoroBlocking();
-        console.log('Final blocking state after start/pause:', currentBlockingState);
-        setIsPomodoroBlocking(currentBlockingState);
+        if (PomodoroModule) {
+          const currentBlockingState = await PomodoroModule.isPomodoroBlocking();
+          console.log('Final blocking state after start/pause:', currentBlockingState);
+          setIsPomodoroBlocking(currentBlockingState);
+        }
       }, 200);
     }
   };
 
+  // Stop and reset current cycle
   const handleStop = async () => {
+    console.log('Stopping and resetting Pomodoro timer');
     setIsRunning(false);
-    setTimeElapsed(0);
+    setIsTransitioning(false);
+    setCurrentSessionTime(0);
+    setCurrentSessionTarget(25 * 60);
+    setIsOnBreak(false);
+    setCompletedPomodoros(0);
+    setCompletedBreaks(0);
+    setRemainingTaskTime(totalTaskDuration);
     setIsCompleted(false);
     completionScale.setValue(0);
     
-    // Stop app blocking when manually stopping
     await stopPomodoroBlocking();
   };
 
+  // Close screen and cleanup
   const handleClose = async () => {
-    // Stop blocking if active when closing
     if (isPomodoroBlocking) {
       await stopPomodoroBlocking();
     }
     navigation.goBack();
   };
 
-  const handleMusicSettings = () => {
-    console.log('Music settings pressed');
-    setShowSettings(true);
-  };
-
+  // Format seconds to MM:SS
   const formatTime = seconds => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Calculate progress percentage
   const getProgress = () => {
-    return (timeElapsed / targetTime) * 100;
+    return (currentSessionTime / currentSessionTarget) * 100;
   };
 
-  const handleTimeChange = minutes => {
-    const newTime = minutes * 60;
-    setTargetTime(newTime);
-    if (!isRunning) {
-      setTimeElapsed(0);
-    }
-    setReminderInterval(minutes);
-  };
-
-  const handleSliderPress = event => {
-    const {locationX} = event.nativeEvent;
-    const sliderWidth = WP(85);
-    const percentage = Math.max(0, Math.min(1, locationX / sliderWidth));
-    const minutes = Math.max(1, Math.min(60, Math.round(percentage * 59 + 1)));
-    setReminderInterval(minutes);
-    if (!isRunning) {
-      setTargetTime(minutes * 60);
-    }
-  };
-
+  // Animation interpolation for rotating focus indicator
   const rotateInterpolate = focusIndicatorRotate.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
 
-  // Get status text based on blocking and timer state
+  // FIXED: Dynamic status text with correct transition messages
   const getStatusText = () => {
-    if (isRunning && isPomodoroBlocking) {
-      return 'Focus mode active - Apps blocked';
-    } else if (isRunning && !isPomodoroBlocking) {
+    if (isTransitioning) {
+      return !isOnBreak ? 
+        'Focus session complete! Starting break in a moment...' : 
+        'Break session ending... Preparing for next focus session';
+    }
+    
+    if (isOnBreak && isRunning) {
+      return `Break ${completedBreaks + 1} of ${totalBreaks} - Relax and recharge`;
+    } else if (isOnBreak && !isRunning) {
+      return `Break ${completedBreaks + 1} of ${totalBreaks} - Paused`;
+    } else if (isRunning && isPomodoroBlocking) {
+      const excludedText = excludedAppsCount > 0 ? ` • ${excludedAppsCount} apps excluded` : '';
+      return `Focus session ${completedPomodoros + 1} of ${totalPomodoros} - Apps blocked${excludedText}`;
+    } else if (isRunning && !isPomodoroBlocking && !isOnBreak) {
       return 'Focus session paused - Apps accessible';
     } else if (isRunning) {
-      return 'Focus session in progress...';
+      return `Session ${completedPomodoros + 1} of ${totalPomodoros} in progress...`;
     } else if (isPomodoroBlocking) {
       return 'Apps blocked - Session paused';
     } else {
-      return 'Ready to focus';
+      return `Professional Pomodoro Technique - 4 sessions + 4 breaks (120 min total)`;
     }
+  };
+
+  const getSessionTypeText = () => {
+    if (isTransitioning) {
+      return !isOnBreak ? 'Session Complete!' : 'Break Ending...';
+    }
+    
+    if (isOnBreak) {
+      return `Break ${completedBreaks + 1} of ${totalBreaks}`;
+    } else {
+      return `Focus Session ${completedPomodoros + 1} of ${totalPomodoros}`;
+    }
+  };
+
+  const getProgressSummary = () => {
+    const workProgress = `Sessions: ${completedPomodoros}/${totalPomodoros}`;
+    const breakProgress = `Breaks: ${completedBreaks}/${totalBreaks}`;
+    const totalMinutes = Math.floor((totalTaskDuration - remainingTaskTime) / 60);
+    const timeProgress = `Time: ${totalMinutes}/120 min`;
+    
+    return `${workProgress} • ${breakProgress} • ${timeProgress}`;
   };
 
   return (
@@ -304,52 +406,73 @@ const PomodoroTimerScreen = () => {
       <View style={styles.mainContent}>
         {!isCompleted ? (
           <>
+            {/* Header with status indicators */}
             <View style={styles.header}>
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.closeButton}>
+              <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                 <Icon name="close" size={WP(6)} color={colors.Black} />
               </TouchableOpacity>
               
               <View style={styles.headerCenter}>
-                {isPomodoroBlocking && (
-                  <View style={styles.blockingIndicator}>
-                    <Icon name="block" size={WP(4)} color="#FF6B35" />
-                    <Text style={styles.blockingText}>Apps Blocked</Text>
+                {isTransitioning && (
+                  <View style={[styles.blockingIndicator, {backgroundColor: '#F0F8FF'}]}>
+                    <Icon name="sync" size={WP(4)} color="#2196F3" />
+                    <Text style={[styles.blockingText, {color: '#2196F3'}]}>Transitioning...</Text>
                   </View>
                 )}
-                {isRunning && !isPomodoroBlocking && (
+                {!isTransitioning && isPomodoroBlocking && !isOnBreak && (
+                  <View style={styles.blockingIndicator}>
+                    <Icon name="block" size={WP(4)} color="#FF6B35" />
+                    <Text style={styles.blockingText}>
+                      Apps Blocked{excludedAppsCount > 0 ? ` (${excludedAppsCount} excluded)` : ''}
+                    </Text>
+                  </View>
+                )}
+                {!isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && (
                   <View style={[styles.blockingIndicator, {backgroundColor: '#FFF8E1'}]}>
                     <Icon name="pause" size={WP(4)} color="#FFA726" />
                     <Text style={[styles.blockingText, {color: '#FFA726'}]}>Session Paused</Text>
                   </View>
                 )}
+                {!isTransitioning && isOnBreak && (
+                  <View style={[styles.blockingIndicator, {backgroundColor: '#E8F5E8'}]}>
+                    <Icon name="free-breakfast" size={WP(4)} color="#4CAF50" />
+                    <Text style={[styles.blockingText, {color: '#4CAF50'}]}>Break Time</Text>
+                  </View>
+                )}
               </View>
 
-              <TouchableOpacity
-                onPress={handleMusicSettings}
-                style={styles.musicButton}>
-                <Icon name="music-note" size={WP(6)} color={colors.Black} />
-              </TouchableOpacity>
+              <View style={styles.sessionCounter}>
+                <Text style={styles.sessionCounterText}>
+                  {isOnBreak ? `B${completedBreaks + 1}/4` : `S${completedPomodoros + 1}/4`}
+                </Text>
+              </View>
             </View>
 
+            {/* Main timer display */}
             <View style={styles.timerContainer}>
+              <Text style={styles.sessionTypeText}>{getSessionTypeText()}</Text>
+              
               <Animated.View
                 style={[
                   styles.focusIndicatorContainer,
-                  {
-                    transform: [{rotate: rotateInterpolate}],
-                  },
+                  {transform: [{rotate: rotateInterpolate}]},
                 ]}>
                 <View style={[
                   styles.focusIcon,
-                  isPomodoroBlocking && styles.focusIconBlocked,
-                  isRunning && !isPomodoroBlocking && styles.focusIconPaused
+                  isTransitioning && styles.focusIconTransition,
+                  !isTransitioning && isPomodoroBlocking && !isOnBreak && styles.focusIconBlocked,
+                  !isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && styles.focusIconPaused,
+                  !isTransitioning && isOnBreak && styles.focusIconBreak
                 ]}>
                   <Icon
-                    name="center-focus-strong"
+                    name={
+                      isTransitioning ? "sync" :
+                      isOnBreak ? "free-breakfast" : "center-focus-strong"
+                    }
                     size={WP(15)}
                     color={
+                      isTransitioning ? '#2196F3' :
+                      isOnBreak ? '#4CAF50' :
                       isPomodoroBlocking ? '#FF6B35' : 
                       (isRunning && !isPomodoroBlocking) ? '#FFA726' : 
                       colors.Black
@@ -358,64 +481,83 @@ const PomodoroTimerScreen = () => {
                 </View>
               </Animated.View>
 
-              <Text style={styles.timerText}>{formatTime(timeElapsed)}</Text>
+              <Text style={styles.timerText}>
+                {isTransitioning ? '00:00' : formatTime(currentSessionTarget - currentSessionTime)}
+              </Text>
+              
               <Text style={[
                 styles.statusText,
-                isPomodoroBlocking && styles.statusTextBlocked,
-                isRunning && !isPomodoroBlocking && styles.statusTextPaused
+                isTransitioning && styles.statusTextTransition,
+                !isTransitioning && isPomodoroBlocking && styles.statusTextBlocked,
+                !isTransitioning && isRunning && !isPomodoroBlocking && styles.statusTextPaused,
+                !isTransitioning && isOnBreak && styles.statusTextBreak
               ]}>
                 {getStatusText()}
               </Text>
 
+              {/* Progress bar */}
               <View style={styles.progressContainer}>
                 <View
                   style={[
                     styles.progressBar,
-                    {width: `${getProgress()}%`},
-                    isPomodoroBlocking && styles.progressBarBlocked,
-                    isRunning && !isPomodoroBlocking && styles.progressBarPaused
+                    {width: isTransitioning ? '100%' : `${getProgress()}%`},
+                    isTransitioning && styles.progressBarTransition,
+                    !isTransitioning && isPomodoroBlocking && !isOnBreak && styles.progressBarBlocked,
+                    !isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && styles.progressBarPaused,
+                    !isTransitioning && isOnBreak && styles.progressBarBreak
                   ]}
                 />
               </View>
+              
+              <Text style={styles.remainingTimeText}>
+                Remaining total time: {formatTime(remainingTaskTime)}
+              </Text>
+
+              {/* Progress Summary */}
+              <View style={styles.progressSummary}>
+                <Text style={styles.progressSummaryText}>
+                  {getProgressSummary()}
+                </Text>
+              </View>
             </View>
 
+            {/* Control buttons */}
             <View style={styles.controlsContainer}>
               <TouchableOpacity
-                style={styles.stopButton}
+                style={[styles.stopButton, isTransitioning && styles.buttonDisabled]}
                 onPress={handleStop}
-                activeOpacity={0.8}>
-                <Icon
-                  name="stop"
-                  size={WP(6)}
-                  color={colors.Black}
-                />
+                activeOpacity={0.8}
+                disabled={isTransitioning}>
+                <Icon name="stop" size={WP(6)} color={isTransitioning ? '#CCCCCC' : colors.Black} />
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
                   styles.controlButton,
-                  isPomodoroBlocking && styles.controlButtonBlocked,
-                  isRunning && !isPomodoroBlocking && styles.controlButtonPaused
+                  isTransitioning && styles.buttonDisabled,
+                  !isTransitioning && isPomodoroBlocking && !isOnBreak && styles.controlButtonBlocked,
+                  !isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && styles.controlButtonPaused,
+                  !isTransitioning && isOnBreak && styles.controlButtonBreak
                 ]}
                 onPress={handleStartPause}
-                activeOpacity={0.8}>
+                activeOpacity={0.8}
+                disabled={isTransitioning}>
                 <Icon
                   name={isRunning ? 'pause' : 'play-arrow'}
                   size={WP(8)}
-                  color={colors.White}
+                  color={isTransitioning ? '#CCCCCC' : colors.White}
                 />
               </TouchableOpacity>
             </View>
           </>
         ) : (
           <>
+            {/* Completion celebration screen */}
             <View style={styles.celebrationContainer}>
               <Animated.View
                 style={[
                   styles.completionIndicator,
-                  {
-                    transform: [{scale: completionScale}],
-                  },
+                  {transform: [{scale: completionScale}]},
                 ]}>
                 <View style={styles.completedFocusIcon}>
                   <Icon name="emoji-events" size={WP(20)} color="#FF6B35" />
@@ -426,9 +568,9 @@ const PomodoroTimerScreen = () => {
               </Animated.View>
 
               <Text style={styles.congratsText}>
-                Congratulations!{'\n'}You focused for{' '}
-                {Math.floor(targetTime / 60)} minutes{'\n'}and completed your
-                session
+                Outstanding Work!{'\n'}You completed the full Pomodoro cycle:{'\n'}
+                4 Focus Sessions + 4 Breaks{'\n'}
+                Total productive time: 120 minutes
               </Text>
 
               <View style={styles.celebrationDots}>
@@ -470,256 +612,12 @@ const PomodoroTimerScreen = () => {
                 style={styles.continueButton}
                 onPress={handleStartPause}
                 activeOpacity={0.8}>
-                <Icon name="check" size={WP(8)} color={colors.White} />
+                <Text style={styles.continueButtonText}>Start New Cycle</Text>
               </TouchableOpacity>
             </View>
           </>
         )}
       </View>
-
-      {showSettings && (
-        <View style={styles.settingsOverlay}>
-          <View style={styles.settingsModal}>
-            <View style={styles.settingsHeader}>
-              <TouchableOpacity
-                onPress={() => setShowSettings(false)}
-                style={styles.closeButton}>
-                <Icon name="close" size={WP(6)} color={colors.Black} />
-              </TouchableOpacity>
-
-              <View style={styles.headerTitles}>
-                <View style={styles.modeSelector}>
-                  <TouchableOpacity
-                    style={[
-                      styles.modeButton,
-                      activeMode === 'Pomodoro' && styles.modeButtonActive,
-                    ]}
-                    onPress={() => setActiveMode('Pomodoro')}>
-                    <Text
-                      style={[
-                        styles.modeText,
-                        activeMode === 'Pomodoro' && styles.modeTextActive,
-                      ]}>
-                      Pomodoro
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.modeButton,
-                      activeMode === 'AddTime' && styles.modeButtonActive,
-                    ]}
-                    onPress={() => setActiveMode('AddTime')}>
-                    <Text
-                      style={[
-                        styles.modeText,
-                        activeMode === 'AddTime' && styles.modeTextActive,
-                      ]}>
-                      AddTime
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.settingItem}>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>Timed reminder</Text>
-                <TouchableOpacity
-                  style={[styles.toggle, timedReminder && styles.toggleActive]}
-                  onPress={() => setTimedReminder(!timedReminder)}>
-                  <View
-                    style={[
-                      styles.toggleThumb,
-                      timedReminder && styles.toggleThumbActive,
-                    ]}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.settingItem}>
-              <Text style={styles.settingLabel}>
-                Remind every : {reminderInterval}min
-              </Text>
-              <View style={styles.sliderSection}>
-                <TouchableOpacity
-                  style={styles.sliderTrack}
-                  onPress={handleSliderPress}
-                  activeOpacity={1}>
-                  <View
-                    style={[
-                      styles.sliderFill,
-                      {width: `${((reminderInterval - 1) / 59) * 100}%`},
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.sliderThumb,
-                      {left: `${((reminderInterval - 1) / 59) * 100}%`},
-                    ]}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* App Blocking Setting */}
-            <View style={styles.settingItem}>
-              <View style={styles.settingRow}>
-                <View style={styles.blockingSettingInfo}>
-                  <Text style={styles.settingLabel}>Block Apps During Focus</Text>
-                  <Text style={styles.settingDescription}>
-                    Prevent access to distracting apps during your session
-                  </Text>
-                </View>
-                <View style={styles.blockingStatus}>
-                  <Icon 
-                    name={isPomodoroBlocking ? "block" : (isRunning ? "pause" : "check-circle-outline")} 
-                    size={WP(5)} 
-                    color={isPomodoroBlocking ? "#FF6B35" : (isRunning && !isPomodoroBlocking ? "#FFA726" : "#00754B")} 
-                  />
-                  <Text style={[
-                    styles.blockingStatusText,
-                    {color: isPomodoroBlocking ? "#FF6B35" : (isRunning && !isPomodoroBlocking ? "#FFA726" : "#00754B")}
-                  ]}>
-                    {isPomodoroBlocking ? "Active" : (isRunning && !isPomodoroBlocking ? "Paused" : "Inactive")}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.settingItem}>
-              <View style={styles.tagHeader}>
-                <Text style={styles.settingLabel}>Tag</Text>
-                <View style={styles.tagActions}>
-                  <TouchableOpacity style={styles.tagMoreButton}>
-                    <Icon name="more-horiz" size={WP(5)} color={colors.Black} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.addTagButton}>
-                    <Icon name="add" size={WP(4)} color={colors.Black} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.tagsContainer}>
-                <View style={styles.tagsRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.tagButton,
-                      currentTag === 'Focus' && styles.tagButtonActive,
-                    ]}
-                    onPress={() => setCurrentTag('Focus')}>
-                    <Text
-                      style={[
-                        styles.tagText,
-                        currentTag === 'Focus' && styles.tagTextActive,
-                      ]}>
-                      Focus
-                    </Text>
-                    {currentTag === 'Focus' && (
-                      <Icon name="check" size={WP(4)} color={colors.White} />
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.tagButton,
-                      currentTag === 'Study' && styles.tagButtonActive,
-                    ]}
-                    onPress={() => setCurrentTag('Study')}>
-                    <Text
-                      style={[
-                        styles.tagText,
-                        currentTag === 'Study' && styles.tagTextActive,
-                      ]}>
-                      Study
-                    </Text>
-                    {currentTag === 'Study' && (
-                      <Icon name="check" size={WP(4)} color={colors.White} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.tagsRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.tagButton,
-                      currentTag === 'Work' && styles.tagButtonActive,
-                    ]}
-                    onPress={() => setCurrentTag('Work')}>
-                    <Text
-                      style={[
-                        styles.tagText,
-                        currentTag === 'Work' && styles.tagTextActive,
-                      ]}>
-                      Work
-                    </Text>
-                    {currentTag === 'Work' && (
-                      <Icon name="check" size={WP(4)} color={colors.White} />
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.tagButton,
-                      currentTag === 'Sport' && styles.tagButtonActive,
-                    ]}
-                    onPress={() => setCurrentTag('Sport')}>
-                    <Text
-                      style={[
-                        styles.tagText,
-                        currentTag === 'Sport' && styles.tagTextActive,
-                      ]}>
-                      Sport
-                    </Text>
-                    {currentTag === 'Sport' && (
-                      <Icon name="check" size={WP(4)} color={colors.White} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.tagsRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.tagButton,
-                      currentTag === 'Play' && styles.tagButtonActive,
-                    ]}
-                    onPress={() => setCurrentTag('Play')}>
-                    <Text
-                      style={[
-                        styles.tagText,
-                        currentTag === 'Play' && styles.tagTextActive,
-                      ]}>
-                      Play
-                    </Text>
-                    {currentTag === 'Play' && (
-                      <Icon name="check" size={WP(4)} color={colors.White} />
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.tagButton,
-                      currentTag === 'Muse' && styles.tagButtonActive,
-                    ]}
-                    onPress={() => setCurrentTag('Muse')}>
-                    <Text
-                      style={[
-                        styles.tagText,
-                        currentTag === 'Muse' && styles.tagTextActive,
-                      ]}>
-                      Muse
-                    </Text>
-                    {currentTag === 'Muse' && (
-                      <Icon name="check" size={WP(4)} color={colors.White} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-      )}
     </View>
   );
 };
@@ -765,14 +663,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  musicButton: {
+  sessionCounter: {
     padding: WP(2),
+    backgroundColor: '#F5F5F5',
+    borderRadius: WP(4),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sessionCounterText: {
+    fontSize: FS(1.6),
+    fontFamily: 'Inter-SemiBold',
+    color: colors.Black,
   },
   timerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: WP(5),
+  },
+  sessionTypeText: {
+    fontSize: FS(2.2),
+    fontFamily: 'Inter-SemiBold',
+    color: colors.Black,
+    marginBottom: HP(2),
   },
   focusIndicatorContainer: {
     marginBottom: HP(3),
@@ -800,6 +713,16 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FFA726',
   },
+  focusIconBreak: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  focusIconTransition: {
+    backgroundColor: '#F0F8FF',
+    borderWidth: 2,
+    borderColor: '#2196F3',
+  },
   timerText: {
     fontSize: FS(6),
     fontFamily: 'Inter-Bold',
@@ -821,12 +744,21 @@ const styles = StyleSheet.create({
     color: '#FFA726',
     fontFamily: 'OpenSans-SemiBold',
   },
+  statusTextBreak: {
+    color: '#4CAF50',
+    fontFamily: 'OpenSans-SemiBold',
+  },
+  statusTextTransition: {
+    color: '#2196F3',
+    fontFamily: 'OpenSans-SemiBold',
+  },
   progressContainer: {
     width: '80%',
     height: HP(0.5),
     backgroundColor: '#E5E5E5',
     borderRadius: HP(0.25),
     overflow: 'hidden',
+    marginBottom: HP(2),
   },
   progressBar: {
     height: '100%',
@@ -838,6 +770,28 @@ const styles = StyleSheet.create({
   },
   progressBarPaused: {
     backgroundColor: '#FFA726',
+  },
+  progressBarBreak: {
+    backgroundColor: '#4CAF50',
+  },
+  progressBarTransition: {
+    backgroundColor: '#2196F3',
+  },
+  remainingTimeText: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-Regular',
+    color: '#999999',
+    textAlign: 'center',
+    marginBottom: HP(1),
+  },
+  progressSummary: {
+    marginTop: HP(1),
+  },
+  progressSummaryText: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Medium',
+    color: '#666666',
+    textAlign: 'center',
   },
   controlsContainer: {
     flexDirection: 'row',
@@ -854,6 +808,10 @@ const styles = StyleSheet.create({
     borderRadius: WP(6),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#E5E5E5',
+    opacity: 0.6,
   },
   controlButton: {
     width: WP(16),
@@ -873,6 +831,12 @@ const styles = StyleSheet.create({
   },
   controlButtonPaused: {
     backgroundColor: '#FFA726',
+  },
+  controlButtonBreak: {
+    backgroundColor: '#4CAF50',
+  },
+  controlButtonTransition: {
+    backgroundColor: '#2196F3',
   },
   celebrationContainer: {
     flex: 1,
@@ -947,213 +911,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  settingsOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  settingsModal: {
-    backgroundColor: colors.White,
-    borderTopLeftRadius: WP(6),
-    borderTopRightRadius: WP(6),
-    height: HP(90),
-    paddingBottom: HP(3),
-  },
-  settingsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: WP(5),
-    paddingVertical: HP(2.5),
-  },
-  headerTitles: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modeSelector: {
-    flexDirection: 'row',
-    backgroundColor: '#F5F5F5',
-    borderRadius: WP(4),
-    padding: WP(1),
-  },
-  modeButton: {
-    paddingHorizontal: WP(4),
-    paddingVertical: HP(1),
-    borderRadius: WP(5),
-    minWidth: WP(20),
-    alignItems: 'center',
-  },
-  modeButtonActive: {
-    backgroundColor: colors.White,
-    borderRadius: WP(3),
-    elevation: 1,
-    shadowColor: colors.Shadow,
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  modeText: {
+  continueButtonText: {
     fontSize: FS(1.8),
-    fontFamily: 'Inter-Medium',
-    color: '#666666',
-  },
-  modeTextActive: {
-    color: colors.Black,
-  },
-  settingItem: {
-    paddingHorizontal: WP(5),
-    paddingVertical: HP(2),
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  settingLabel: {
-    fontSize: FS(1.9),
-    fontFamily: 'Inter-Medium',
-    color: colors.Black,
-    marginBottom: HP(1.5),
-    marginLeft: WP(1),
-  },
-  settingDescription: {
-    fontSize: FS(1.4),
-    fontFamily: 'OpenSans-Regular',
-    color: '#666666',
-    marginTop: HP(0.5),
-  },
-  blockingSettingInfo: {
-    flex: 1,
-  },
-  blockingStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: WP(1),
-  },
-  blockingStatusText: {
-    fontSize: FS(1.6),
-    fontFamily: 'Inter-Medium',
-  },
-  toggle: {
-    width: WP(12),
-    height: WP(6.5),
-    backgroundColor: '#E8E8E8',
-    borderRadius: WP(3.25),
-    justifyContent: 'center',
-    padding: WP(0.5),
-    marginTop: HP(-1.5),
-  },
-  toggleActive: {
-    backgroundColor: colors.Black,
-  },
-  toggleThumb: {
-    width: WP(5.5),
-    height: WP(5.5),
-    backgroundColor: 'white',
-    borderRadius: WP(2.75),
-    elevation: 2,
-    shadowColor: colors.Shadow,
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  toggleThumbActive: {
-    transform: [{translateX: WP(5.5)}],
-  },
-  sliderSection: {
-    paddingVertical: HP(2),
-    paddingHorizontal: WP(1),
-  },
-  sliderTrack: {
-    width: WP(85),
-    height: HP(1.2),
-    backgroundColor: '#E8E8E8',
-    borderRadius: HP(0.6),
-    position: 'relative',
-    justifyContent: 'center',
-    alignSelf: 'center',
-  },
-  sliderFill: {
-    height: '100%',
-    backgroundColor: colors.Black,
-    borderRadius: HP(0.6),
-  },
-  sliderThumb: {
-    position: 'absolute',
-    width: WP(6),
-    height: WP(6),
-    backgroundColor: colors.Black,
-    borderRadius: WP(3),
-    top: -WP(2.4),
-    marginLeft: -WP(3),
-    elevation: 4,
-    shadowColor: colors.Shadow,
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    borderWidth: 2,
-    borderColor: 'white',
-  },
-  tagHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: HP(2),
-  },
-  tagActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: WP(3),
-  },
-  tagMoreButton: {
-    padding: WP(1),
-    width: WP(7),
-    height: WP(7),
-    backgroundColor: '#F5F5F5',
-    borderRadius: WP(3.5),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addTagButton: {
-    width: WP(7),
-    height: WP(7),
-    backgroundColor: '#F5F5F5',
-    borderRadius: WP(3.5),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tagsContainer: {
-    gap: HP(1.5),
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: WP(3),
-  },
-  tagButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: HP(2),
-    paddingHorizontal: WP(4),
-    backgroundColor: '#F5F5F5',
-    borderRadius: WP(3),
-    gap: WP(2),
-  },
-  tagButtonActive: {
-    backgroundColor: colors.Black,
-  },
-  tagText: {
-    fontSize: FS(1.7),
-    fontFamily: 'Inter-Medium',
-    color: colors.Black,
-  },
-  tagTextActive: {
+    fontFamily: 'Inter-SemiBold',
     color: colors.White,
   },
 });

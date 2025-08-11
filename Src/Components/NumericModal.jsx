@@ -1,12 +1,22 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, Image} from 'react-native';
 import Modal from 'react-native-modal';
 import {colors, Icons} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
 
-const NumericInputModal = ({isVisible, onClose, onSave, taskTitle}) => {
+const NumericInputModal = ({isVisible, onClose, onSave, taskTitle, taskData}) => {
   const [currentValue, setCurrentValue] = useState(0);
-  const targetValue = 2;
+  
+  // Get target value and current value from task data
+  const targetValue = taskData?.numericGoal || 0;
+  const numericUnit = taskData?.numericUnit || '';
+  
+  // Initialize current value from task data when modal opens
+  useEffect(() => {
+    if (isVisible && taskData) {
+      setCurrentValue(taskData?.numericValue || 0);
+    }
+  }, [isVisible, taskData]);
 
   const getCurrentDate = () => {
     const today = new Date();
@@ -25,13 +35,41 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle}) => {
   };
 
   const handleCancel = () => {
-    setCurrentValue(0);
+    setCurrentValue(taskData?.numericValue || 0);
     onClose();
   };
 
+  // Function to check if task is completed based on condition
+  const isTaskCompleted = (value) => {
+    // Zero always means not complete regardless of condition
+    if (value === 0) {
+      return false;
+    }
+
+    const condition = taskData?.numericCondition?.toLowerCase();
+    const target = targetValue;
+
+    switch (condition) {
+      case 'any value':
+      case 'any':
+        return value > 0;
+      case 'less than':
+      case 'lessthan':
+        return value < target;
+      case 'exactly':
+      case 'exact':
+        return value === target;
+      case 'at least':
+      case 'atleast':
+        return value >= target;
+      default:
+        return value > 0;
+    }
+  };
+
   const handleOK = () => {
-    onSave(currentValue);
-    setCurrentValue(0);
+    const isCompleted = isTaskCompleted(currentValue);
+    onSave(currentValue, isCompleted);
     onClose();
   };
 
@@ -55,7 +93,7 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle}) => {
           </View>
           <View style={styles.habitIcon}>
             <Image
-              source={Icons.Habit || Icons.Taskhome}
+              source={taskData?.image || Icons.Habit || Icons.Taskhome}
               style={styles.iconImage}
             />
           </View>
@@ -73,6 +111,9 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle}) => {
 
           <View style={styles.counterValueContainer}>
             <Text style={styles.counterValue}>{currentValue}</Text>
+            {numericUnit && (
+              <Text style={styles.unitText}>{numericUnit}</Text>
+            )}
           </View>
 
           <View style={styles.counterDivider} />
@@ -90,6 +131,7 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle}) => {
             <Text style={styles.progressLabel}>Today</Text>
             <Text style={styles.progressValue}>
               {currentValue} / {targetValue}
+              {numericUnit && ` ${numericUnit}`}
             </Text>
           </View>
         </View>
@@ -170,6 +212,16 @@ const styles = StyleSheet.create({
     tintColor: colors.White,
     resizeMode: 'contain',
   },
+  taskTitleContainer: {
+    paddingHorizontal: WP(4),
+    paddingBottom: HP(1),
+  },
+  taskTitle: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#666666',
+    textAlign: 'center',
+  },
   counterContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -210,6 +262,12 @@ const styles = StyleSheet.create({
     color: '#333333',
     textAlign: 'center',
   },
+  unitText: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(0.2),
+  },
   progressContainer: {
     paddingHorizontal: WP(5),
     marginBottom: HP(2.5),
@@ -231,6 +289,43 @@ const styles = StyleSheet.create({
     fontSize: FS(1.55),
     fontFamily: 'OpenSans-Regular',
     color: '#333333',
+  },
+  conditionText: {
+    fontSize: FS(1.2),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(0.3),
+    fontStyle: 'italic',
+  },
+  completionStatusContainer: {
+    paddingHorizontal: WP(5),
+    marginTop: HP(1),
+  },
+  completionIndicator: {
+    paddingVertical: HP(0.7),
+    paddingHorizontal: WP(3),
+    borderRadius: WP(2),
+    alignItems: 'center',
+  },
+  completionIndicatorActive: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  completionIndicatorInactive: {
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1,
+    borderColor: '#FF9800',
+  },
+  completionText: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-SemiBold',
+  },
+  completionTextActive: {
+    color: '#2E7D32',
+  },
+  completionTextInactive: {
+    color: '#F57C00',
   },
   actionButtonsContainer: {
     borderTopWidth: 0.7,

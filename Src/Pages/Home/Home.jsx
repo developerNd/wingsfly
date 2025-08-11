@@ -623,60 +623,80 @@ const Home = () => {
     }
   };
 
-  const handleNumericSave = async (value) => {
-    if (selectedTask) {
-      try {
-        console.log(`Task ${selectedTask.id} updated with value: ${value}`);
+  // Replace the handleNumericSave function in your Home.js with this updated version
+
+const handleNumericSave = async (value, isCompleted) => {
+  if (selectedTask) {
+    try {
+      console.log(`Task ${selectedTask.id} updated with value: ${value}, completed: ${isCompleted}`);
+      
+      // Save to Supabase with the completion status
+      await taskService.updateNumericTaskValue(selectedTask.id, value, isCompleted);
+      
+      // Update local state based on completion status
+      if (isCompleted) {
+        setCheckboxStates(prev => ({
+          ...prev,
+          [selectedTask.id]: 4, // Completed state
+        }));
         
-        // Save to Supabase
-        await taskService.updateNumericTaskValue(selectedTask.id, value);
+        // Update local task data in both allTasks and filtered tasks
+        const currentCompletionCount = selectedTask.completionCount || 0;
+        const currentStreakCount = selectedTask.streakCount || 0;
+        const newCompletionCount = currentCompletionCount + 1;
+        const newStreakCount = currentStreakCount + 1;
         
-        if (value > 0) {
-          setCheckboxStates(prev => ({
-            ...prev,
-            [selectedTask.id]: 4,
-          }));
-          
-          // Update local task data in both allTasks and filtered tasks
-          setAllTasks(prev => prev.map(t => 
-            t.id === selectedTask.id 
-              ? { ...t, isCompleted: true, numericValue: value }
-              : t
-          ));
-          
-          setTasks(prev => prev.map(t => 
-            t.id === selectedTask.id 
-              ? { ...t, isCompleted: true, numericValue: value }
-              : t
-          ));
-          
-          setTimeout(() => showAppreciationModal(selectedTask), 300);
-        } else {
-          setCheckboxStates(prev => ({
-            ...prev,
-            [selectedTask.id]: 1,
-          }));
-          
-          // Update local task data in both allTasks and filtered tasks
-          setAllTasks(prev => prev.map(t => 
-            t.id === selectedTask.id 
-              ? { ...t, isCompleted: false, numericValue: value }
-              : t
-          ));
-          
-          setTasks(prev => prev.map(t => 
-            t.id === selectedTask.id 
-              ? { ...t, isCompleted: false, numericValue: value }
-              : t
-          ));
-        }
-      } catch (error) {
-        console.error('Error updating numeric task:', error);
-        Alert.alert('Error', 'Failed to update task. Please try again.');
+        setAllTasks(prev => prev.map(t => 
+          t.id === selectedTask.id 
+            ? { 
+                ...t, 
+                isCompleted: true, 
+                numericValue: value,
+                completionCount: newCompletionCount,
+                streakCount: newStreakCount
+              }
+            : t
+        ));
+        
+        setTasks(prev => prev.map(t => 
+          t.id === selectedTask.id 
+            ? { 
+                ...t, 
+                isCompleted: true, 
+                numericValue: value,
+                completionCount: newCompletionCount,
+                streakCount: newStreakCount
+              }
+            : t
+        ));
+        
+        setTimeout(() => showAppreciationModal(selectedTask), 300);
+      } else {
+        setCheckboxStates(prev => ({
+          ...prev,
+          [selectedTask.id]: 1, // Not completed state
+        }));
+        
+        // Update local task data in both allTasks and filtered tasks
+        setAllTasks(prev => prev.map(t => 
+          t.id === selectedTask.id 
+            ? { ...t, isCompleted: false, numericValue: value }
+            : t
+        ));
+        
+        setTasks(prev => prev.map(t => 
+          t.id === selectedTask.id 
+            ? { ...t, isCompleted: false, numericValue: value }
+            : t
+        ));
       }
+    } catch (error) {
+      console.error('Error updating numeric task:', error);
+      Alert.alert('Error', 'Failed to update task. Please try again.');
     }
-    setSelectedTask(null);
-  };
+  }
+  setSelectedTask(null);
+};
 
   const renderTask = ({item, index}) => (
     <View style={index === tasks.length - 1 ? styles.lastTaskCard : null}>
@@ -798,6 +818,7 @@ const Home = () => {
         }}
         onSave={handleNumericSave}
         taskTitle={selectedTask?.title}
+        taskData={selectedTask}
       />
 
       <AppreciationModal

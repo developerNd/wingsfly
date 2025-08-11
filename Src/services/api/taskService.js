@@ -200,17 +200,78 @@ export const taskService = {
     }
   },
 
-  // Update numeric task value
-  async updateNumericTaskValue(taskId, value) {
+  // Helper function to check numeric completion based on condition
+  checkNumericCompletion(value, target, condition) {
+    const normalizedCondition = condition?.toLowerCase() || 'any value';
+    
+    switch (normalizedCondition) {
+      case 'any value':
+      case 'any':
+        return value > 0;
+      case 'less than':
+      case 'lessthan':
+        return value < target;
+      case 'exactly':
+      case 'exact':
+        return value === target;
+      case 'at least':
+      case 'atleast':
+        return value >= target;
+      default:
+        return value > 0; // Default to any value
+    }
+  },
+
+  // Update numeric task value with completion logic
+  async updateNumericTaskValue(taskId, value, isCompleted = null) {
     try {
+      // If isCompleted is not provided, calculate it based on the task's condition
+      let finalIsCompleted = isCompleted;
+      
+      if (finalIsCompleted === null) {
+        // Fetch the task to get its condition if not provided
+        const { data: taskData, error: fetchError } = await supabase
+          .from('tasks')
+          .select('numeric_goal, numeric_condition')
+          .eq('id', taskId)
+          .single();
+          
+        if (fetchError) {
+          console.error('Error fetching task for completion check:', fetchError);
+          finalIsCompleted = value > 0; // Default fallback
+        } else {
+          finalIsCompleted = this.checkNumericCompletion(value, taskData.numeric_goal, taskData.numeric_condition);
+        }
+      }
+
+      const updateData = {
+        numeric_value: value,
+        is_completed: finalIsCompleted,
+        updated_at: new Date().toISOString()
+      };
+
+      // Update completion count and streak if completed
+      if (finalIsCompleted) {
+        // Get current completion data
+        const { data: currentTask, error: getCurrentError } = await supabase
+          .from('tasks')
+          .select('completion_count, streak_count')
+          .eq('id', taskId)
+          .single();
+
+        if (!getCurrentError) {
+          updateData.completion_count = (currentTask.completion_count || 0) + 1;
+          updateData.streak_count = (currentTask.streak_count || 0) + 1;
+          updateData.last_completed_at = new Date().toISOString();
+        }
+      } else {
+        updateData.completion_count = 0;
+        updateData.last_completed_at = null;
+      }
+
       const { data, error } = await supabase
         .from('tasks')
-        .update({
-          numeric_value: value,
-          is_completed: value > 0,
-          completion_count: value > 0 ? 1 : 0,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', taskId)
         .select();
 
@@ -233,14 +294,34 @@ export const taskService = {
       const totalCount = checklistItems.length;
       const isCompleted = completedCount === totalCount && totalCount > 0;
 
+      const updateData = {
+        checklist_items: checklistItems,
+        is_completed: isCompleted,
+        updated_at: new Date().toISOString()
+      };
+
+      // Update completion count and streak if completed
+      if (isCompleted) {
+        // Get current completion data
+        const { data: currentTask, error: getCurrentError } = await supabase
+          .from('tasks')
+          .select('completion_count, streak_count')
+          .eq('id', taskId)
+          .single();
+
+        if (!getCurrentError) {
+          updateData.completion_count = (currentTask.completion_count || 0) + 1;
+          updateData.streak_count = (currentTask.streak_count || 0) + 1;
+          updateData.last_completed_at = new Date().toISOString();
+        }
+      } else {
+        updateData.completion_count = 0;
+        updateData.last_completed_at = null;
+      }
+
       const { data, error } = await supabase
         .from('tasks')
-        .update({
-          checklist_items: checklistItems,
-          is_completed: isCompleted,
-          completion_count: isCompleted ? 1 : 0,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', taskId)
         .select();
 
@@ -252,6 +333,99 @@ export const taskService = {
       return data[0];
     } catch (error) {
       console.error('Error in updateChecklistTask:', error);
+      throw error;
+    }
+  },
+
+  // Update timer task completion
+  async updateTimerTaskCompletion(taskId, timerData) {
+    try {
+      const { duration, condition, isCompleted } = timerData;
+      
+      const updateData = {
+        timer_duration: duration,
+        is_completed: isCompleted,
+        updated_at: new Date().toISOString()
+      };
+
+      // Update completion count and streak if completed
+      if (isCompleted) {
+        // Get current completion data
+        const { data: currentTask, error: getCurrentError } = await supabase
+          .from('tasks')
+          .select('completion_count, streak_count')
+          .eq('id', taskId)
+          .single();
+
+        if (!getCurrentError) {
+          updateData.completion_count = (currentTask.completion_count || 0) + 1;
+          updateData.streak_count = (currentTask.streak_count || 0) + 1;
+          updateData.last_completed_at = new Date().toISOString();
+        }
+      } else {
+        updateData.completion_count = 0;
+        updateData.last_completed_at = null;
+      }
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(updateData)
+        .eq('id', taskId)
+        .select();
+
+      if (error) {
+        console.error('Error updating timer task:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Error in updateTimerTaskCompletion:', error);
+      throw error;
+    }
+  },
+
+  // Get single task by ID
+  async getTaskById(taskId) {
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching task by ID:', error);
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getTaskById:', error);
+      throw error;
+    }
+  },
+
+  // Update task
+  async updateTask(taskId, taskData) {
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({
+          ...taskData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', taskId)
+        .select();
+
+      if (error) {
+        console.error('Error updating task:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Error in updateTask:', error);
       throw error;
     }
   },
@@ -274,5 +448,98 @@ export const taskService = {
       console.error('Error in deleteTask:', error);
       throw error;
     }
+  },
+
+  // Get tasks for a specific date
+  async getTasksForDate(userId, date) {
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching tasks for date:', error);
+        throw error;
+      }
+
+      // Filter tasks based on date logic (this would need to be implemented based on your date filtering logic)
+      // For now, returning all tasks - you can add date filtering logic here
+      return data;
+    } catch (error) {
+      console.error('Error in getTasksForDate:', error);
+      throw error;
+    }
+  },
+
+  // Get task statistics
+  async getTaskStatistics(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error fetching task statistics:', error);
+        throw error;
+      }
+
+      const totalTasks = data.length;
+      const completedTasks = data.filter(task => task.is_completed).length;
+      const pendingTasks = totalTasks - completedTasks;
+      const completionRate = totalTasks > 0 ? (completedTasks / totalTasks * 100).toFixed(1) : 0;
+
+      const tasksByType = data.reduce((acc, task) => {
+        acc[task.task_type] = (acc[task.task_type] || 0) + 1;
+        return acc;
+      }, {});
+
+      const tasksByCategory = data.reduce((acc, task) => {
+        acc[task.category] = (acc[task.category] || 0) + 1;
+        return acc;
+      }, {});
+
+      return {
+        totalTasks,
+        completedTasks,
+        pendingTasks,
+        completionRate,
+        tasksByType,
+        tasksByCategory,
+        totalStreakCount: data.reduce((sum, task) => sum + (task.streak_count || 0), 0),
+        averageStreakCount: totalTasks > 0 ? (data.reduce((sum, task) => sum + (task.streak_count || 0), 0) / totalTasks).toFixed(1) : 0
+      };
+    } catch (error) {
+      console.error('Error in getTaskStatistics:', error);
+      throw error;
+    }
+  },
+
+  // Reset task completion (for new day/period)
+  async resetTaskCompletion(taskId) {
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({
+          is_completed: false,
+          numeric_value: 0,
+          last_completed_at: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', taskId)
+        .select();
+
+      if (error) {
+        console.error('Error resetting task completion:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Error in resetTaskCompletion:', error);
+      throw error;
+    }
   }
-}; 
+};
