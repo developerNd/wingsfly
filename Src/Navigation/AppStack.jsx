@@ -36,7 +36,11 @@ import LandingPage from '../Pages/LongTermScreens/LandingScreen';
 import TaskEvaluationScreen from '../Pages/ChecklistScreens/TaskEvaluationScreen';
 import SortingScreen from '../Pages/ChecklistScreens/SortingScreen';
 
+//Pomodoro Timer & Settings Screens
+import PomoScreen from '../Pages/PomodoroScreens/PomoScreen';
 import PomodoroTimerScreen from '../Pages/PomodoroScreens/PomodoroScreen';
+import PomodoroSettings from '../Pages/PomodoroScreens/PomodoroSettings';
+
 import AppBlockerScreen from '../Pages/SettingsScreens/AppBlockerScreen';
 
 const Stack = createNativeStackNavigator();
@@ -107,13 +111,16 @@ function AppStack() {
       />
       <Stack.Screen name="SortingScreen" component={SortingScreen} />
 
-      {/* Pomodoro Timer Screen */}
+      {/* Pomodoro Timer & Settings Screen */}
       <Stack.Screen
         name="PomodoroTimerScreen"
         component={PomodoroTimerScreen}
       />
+      <Stack.Screen name="PomodoroSettings" component={PomodoroSettings} />
 
       <Stack.Screen name="AppBlockerScreen" component={AppBlockerScreen} />
+
+      <Stack.Screen name="PomoScreen" component={PomoScreen} />
     </Stack.Navigator>
   );
 }

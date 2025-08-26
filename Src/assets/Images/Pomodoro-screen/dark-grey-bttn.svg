@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 73 73">
+  <!-- Generator: Adobe Illustrator 29.0.1, SVG Export Plug-In . SVG Version: 2.1.0 Build 192)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: url(#linear-gradient);
+        filter: url(#drop-shadow-1);
+      }
+    </style>
+    <linearGradient id="linear-gradient" x1="36.02" y1="19.65" x2="35.47" y2="78.65" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#333"/>
+      <stop offset=".46" stop-color="#2a2a2a"/>
+      <stop offset="1" stop-color="#1a1a1a"/>
+    </linearGradient>
+    <filter id="drop-shadow-1" x="2.39" y="1.89" width="71" height="71" filterUnits="userSpaceOnUse">
+      <feOffset dx="1.13" dy="1.13"/>
+      <feGaussianBlur result="blur" stdDeviation="1.7"/>
+      <feFlood flood-color="#000" flood-opacity=".75"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <circle class="st0" cx="35.87" cy="35.59" r="29.5"/>
+</svg>

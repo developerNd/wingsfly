@@ -15,17 +15,38 @@ const RepeatSelector = ({
   isVisible,
   onFlexibleToggle,
   onAlternateDaysToggle,
+  onRepeatDataChange,
 }) => {
   const [selectedTab, setSelectedTab] = useState('Activity');
   const [repeatValue, setRepeatValue] = useState('2');
-  const [isFlexible, setIsFlexible] = useState(false);
+  const [activityValue, setActivityValue] = useState('');
+  const [restValue, setRestValue] = useState('');
+  const [isFlexible, setIsFlexible] = useState(true);
   const [isAlternateDays, setIsAlternateDays] = useState(false);
 
   // Animation values
   const containerOpacity = useRef(new Animated.Value(0)).current;
   const containerTranslateY = useRef(new Animated.Value(-10)).current;
-  const flexibleTickAnimation = useRef(new Animated.Value(0)).current;
+  const flexibleTickAnimation = useRef(new Animated.Value(1)).current;
   const alternateTickAnimation = useRef(new Animated.Value(0)).current;
+
+  // Helper function to send data to parent
+  const sendDataToParent = (overrides = {}) => {
+    const data = {
+      everyDays: isAlternateDays ? null : parseInt(repeatValue) || null,
+      activityDays: isAlternateDays ? parseInt(activityValue) || null : null,
+      restDays: isAlternateDays ? parseInt(restValue) || null : null,
+      isRepeatFlexible: isFlexible,
+      isRepeatAlternateDays: isAlternateDays,
+      ...overrides,
+    };
+
+    console.log('Sending repeat data to parent:', data); // Debug log
+
+    if (onRepeatDataChange) {
+      onRepeatDataChange(data);
+    }
+  };
 
   useEffect(() => {
     if (isVisible) {
@@ -41,6 +62,9 @@ const RepeatSelector = ({
           useNativeDriver: true,
         }),
       ]).start();
+
+      // Send initial data when component becomes visible
+      sendDataToParent();
     } else {
       Animated.parallel([
         Animated.timing(containerOpacity, {
@@ -56,6 +80,20 @@ const RepeatSelector = ({
       ]).start();
     }
   }, [isVisible]);
+
+  // Send data whenever any value changes
+  useEffect(() => {
+    if (isVisible) {
+      sendDataToParent();
+    }
+  }, [
+    repeatValue,
+    activityValue,
+    restValue,
+    isFlexible,
+    isAlternateDays,
+    isVisible,
+  ]);
 
   const animateFlexibleTick = isSelected => {
     Animated.timing(flexibleTickAnimation, {
@@ -81,6 +119,7 @@ const RepeatSelector = ({
     const newFlexibleState = !isFlexible;
     setIsFlexible(newFlexibleState);
     animateFlexibleTick(newFlexibleState);
+
     if (onFlexibleToggle) {
       onFlexibleToggle(newFlexibleState);
     }
@@ -90,13 +129,48 @@ const RepeatSelector = ({
     const newAlternateState = !isAlternateDays;
     setIsAlternateDays(newAlternateState);
     animateAlternateTick(newAlternateState);
+
+    let updatedFlexible = isFlexible;
+
+    if (newAlternateState && isFlexible) {
+      setIsFlexible(false);
+      animateFlexibleTick(false);
+      updatedFlexible = false;
+      if (onFlexibleToggle) {
+        onFlexibleToggle(false);
+      }
+    } else if (!newAlternateState && !isFlexible) {
+      setIsFlexible(true);
+      animateFlexibleTick(true);
+      updatedFlexible = true;
+      if (onFlexibleToggle) {
+        onFlexibleToggle(true);
+      }
+    }
+
     if (onAlternateDaysToggle) {
       onAlternateDaysToggle(newAlternateState);
     }
   };
 
   const handleRepeatValueChange = value => {
-    setRepeatValue(value);
+    // Only allow numeric input
+    const numericValue = value.replace(/[^0-9]/g, '');
+    setRepeatValue(numericValue);
+  };
+
+  const handleActivityValueChange = value => {
+    // Only allow numeric input
+    const numericValue = value.replace(/[^0-9]/g, '');
+    setActivityValue(numericValue);
+    console.log('Activity value changed:', numericValue); // Debug log
+  };
+
+  const handleRestValueChange = value => {
+    // Only allow numeric input
+    const numericValue = value.replace(/[^0-9]/g, '');
+    setRestValue(numericValue);
+    console.log('Rest value changed:', numericValue); // Debug log
   };
 
   if (!isVisible) {
@@ -112,7 +186,8 @@ const RepeatSelector = ({
           transform: [{translateY: containerTranslateY}],
         },
       ]}>
-      {isFlexible && isAlternateDays ? (
+      {/* Show "Every X Days" when flexible is active OR when both options are inactive */}
+      {(isFlexible && !isAlternateDays) || (!isFlexible && !isAlternateDays) ? (
         <View style={styles.repeatContainer}>
           <View style={styles.repeatSection}>
             <Text style={styles.repeatLabel}>Every</Text>
@@ -133,61 +208,80 @@ const RepeatSelector = ({
           </View>
         </View>
       ) : (
+        /* Show Activity X Rest inputs when alternate days is active */
         <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={styles.tab}
-            onPress={() => handleTabPress('Activity')}
-            activeOpacity={0.7}>
-            <Text style={styles.tabText}>Activity</Text>
+          <View style={styles.tab}>
+            <TextInput
+              style={styles.tabInput}
+              value={activityValue}
+              onChangeText={handleActivityValueChange}
+              placeholder="Activity"
+              placeholderTextColor="#868686"
+              keyboardType="numeric"
+              maxLength={2}
+              textAlign="center"
+              multiline={false}
+              numberOfLines={1}
+            />
             <View style={styles.underline} />
-          </TouchableOpacity>
+          </View>
 
           <View style={styles.centerXContainer}>
             <Text style={styles.centerX}>X</Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.tab}
-            onPress={() => handleTabPress('Rest')}
-            activeOpacity={0.7}>
-            <Text style={styles.tabText}>Rest</Text>
+          <View style={styles.tab}>
+            <TextInput
+              style={styles.tabInput}
+              value={restValue}
+              onChangeText={handleRestValueChange}
+              placeholder="Rest"
+              placeholderTextColor="#868686"
+              keyboardType="numeric"
+              maxLength={2}
+              textAlign="center"
+              multiline={false}
+              numberOfLines={1}
+            />
             <View style={styles.underline} />
-          </TouchableOpacity>
+          </View>
         </View>
       )}
 
       {/* Flexible Option */}
-      <View style={styles.optionContainer}>
-        <TouchableOpacity
-          style={styles.optionTouchable}
-          onPress={handleFlexibleToggle}
-          activeOpacity={0.7}>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Flexible</Text>
-            <Text style={styles.optionSubtitle}>
-              It will be shown each day until completed
-            </Text>
-          </View>
+      {!isAlternateDays && (
+        <View style={styles.optionContainer}>
+          <TouchableOpacity
+            style={styles.optionTouchable}
+            onPress={handleFlexibleToggle}
+            activeOpacity={0.7}>
+            <View style={styles.optionContent}>
+              <Text style={styles.optionTitle}>Flexible</Text>
+              <Text style={styles.optionSubtitle}>
+                It will be shown each day until completed
+              </Text>
+            </View>
 
-          <View
-            style={[
-              styles.optionCheckbox,
-              isFlexible
-                ? styles.optionCheckboxSelected
-                : styles.optionCheckboxUnselected,
-            ]}>
-            <Animated.View
+            <View
               style={[
-                styles.checkmarkContainer,
-                {
-                  transform: [{scale: flexibleTickAnimation}],
-                },
+                styles.optionCheckbox,
+                isFlexible
+                  ? styles.optionCheckboxSelected
+                  : styles.optionCheckboxUnselected,
               ]}>
-              <MaterialIcons name="check" size={WP(3.2)} color="#018B5A" />
-            </Animated.View>
-          </View>
-        </TouchableOpacity>
-      </View>
+              <Animated.View
+                style={[
+                  styles.checkmarkContainer,
+                  {
+                    transform: [{scale: flexibleTickAnimation}],
+                  },
+                ]}>
+                <MaterialIcons name="check" size={WP(3.2)} color="#018B5A" />
+              </Animated.View>
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Alternate Days Option */}
       <View style={styles.optionContainer}>
@@ -245,16 +339,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
     borderRadius: WP(3),
-    paddingVertical: HP(1.3),
+    paddingVertical: HP(1.5),
     paddingHorizontal: WP(2),
     width: '68%',
     alignSelf: 'center',
+    height: HP(5.8),
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    minHeight: HP(4),
   },
   tabText: {
     fontSize: FS(1.5),
@@ -262,9 +358,23 @@ const styles = StyleSheet.create({
     color: '#868686',
     marginBottom: HP(0.7),
   },
+  tabInput: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#868686',
+    minWidth: WP(15),
+    maxWidth: WP(20),
+    textAlign: 'center',
+    paddingVertical: HP(0.5),
+    paddingHorizontal: WP(1),
+    height: HP(3),
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
   centerXContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: WP(2),
   },
   centerX: {
     fontSize: FS(1.4),
@@ -273,9 +383,9 @@ const styles = StyleSheet.create({
   },
   underline: {
     position: 'absolute',
-    bottom: 0,
-    left: WP(6.4),
-    right: WP(2),
+    bottom: HP(0.5),
+    left: '50%',
+    marginLeft: -WP(7.5),
     height: HP(0.2),
     width: WP(15),
     backgroundColor: '#C5C5C5',

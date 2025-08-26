@@ -3,27 +3,118 @@ import {View, Text, StyleSheet, TouchableOpacity, Image} from 'react-native';
 import Modal from 'react-native-modal';
 import {colors, Icons} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
+import {taskCompletionsService} from '../services/api/taskCompletionsService';
+import {useAuth} from '../contexts/AuthContext';
+import {getCompletionDateString} from '../utils/dateUtils';
 
-const NumericInputModal = ({isVisible, onClose, onSave, taskTitle, taskData}) => {
+const NumericInputModal = ({
+  isVisible,
+  onClose,
+  onSave,
+  taskTitle,
+  taskData,
+  selectedDate, // Add selectedDate prop from Home component
+}) => {
   const [currentValue, setCurrentValue] = useState(0);
-  
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasLoadedData, setHasLoadedData] = useState(false);
+  const {user} = useAuth();
+
   // Get target value and current value from task data
   const targetValue = taskData?.numericGoal || 0;
   const numericUnit = taskData?.numericUnit || '';
-  
-  // Initialize current value from task data when modal opens
-  useEffect(() => {
-    if (isVisible && taskData) {
-      setCurrentValue(taskData?.numericValue || 0);
-    }
-  }, [isVisible, taskData]);
 
+  // FIXED: Load completion data for the selected date when modal opens
+  useEffect(() => {
+    const loadCompletionData = async () => {
+      if (isVisible && taskData && user && selectedDate && !hasLoadedData) {
+        setIsLoading(true);
+        setHasLoadedData(false);
+
+        try {
+          // FIXED: Use consistent date conversion
+          const completionDate = getCompletionDateString(selectedDate);
+          console.log(
+            'Loading numeric completion for date:',
+            completionDate,
+            'from selectedDate:',
+            selectedDate,
+            'Task ID:',
+            taskData.id,
+          );
+
+          const completion = await taskCompletionsService.getTaskCompletion(
+            taskData.id,
+            user.id,
+            completionDate,
+          );
+
+          console.log('Loaded numeric completion:', completion);
+
+          if (
+            completion &&
+            completion.numeric_value !== null &&
+            completion.numeric_value !== undefined
+          ) {
+            // Load the saved numeric value
+            console.log('Setting current value to:', completion.numeric_value);
+            setCurrentValue(completion.numeric_value);
+          } else {
+            // Use 0 as default if no completion data exists
+            console.log('No completion found, setting to 0');
+            setCurrentValue(0);
+          }
+
+          setHasLoadedData(true);
+        } catch (error) {
+          console.error('Error loading numeric completion data:', error);
+          // Fallback to 0
+          setCurrentValue(0);
+          setHasLoadedData(true);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadCompletionData();
+  }, [isVisible, taskData?.id, user?.id, selectedDate]); // More specific dependencies
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!isVisible) {
+      setHasLoadedData(false);
+      setIsLoading(false);
+    }
+  }, [isVisible]);
+
+  // FIXED: Improved date formatting for display
   const getCurrentDate = () => {
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const year = String(today.getFullYear()).slice(-2);
-    return `${day}/${month}/${year}`;
+    try {
+      if (selectedDate) {
+        const date =
+          typeof selectedDate === 'string'
+            ? new Date(selectedDate)
+            : selectedDate;
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2);
+        return `${day}/${month}/${year}`;
+      }
+
+      const today = new Date();
+      const day = String(today.getDate()).padStart(2, '0');
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const year = String(today.getFullYear()).slice(-2);
+      return `${day}/${month}/${year}`;
+    } catch (error) {
+      console.error('Error formatting date for display:', error);
+      const today = new Date();
+      const day = String(today.getDate()).padStart(2, '0');
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const year = String(today.getFullYear()).slice(-2);
+      return `${day}/${month}/${year}`;
+    }
   };
 
   const incrementValue = () => {
@@ -35,12 +126,12 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle, taskData}) =>
   };
 
   const handleCancel = () => {
-    setCurrentValue(taskData?.numericValue || 0);
+    // Don't reset the value on cancel, keep the loaded completion data
     onClose();
   };
 
   // Function to check if task is completed based on condition
-  const isTaskCompleted = (value) => {
+  const isTaskCompleted = value => {
     // Zero always means not complete regardless of condition
     if (value === 0) {
       return false;
@@ -67,11 +158,46 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle, taskData}) =>
     }
   };
 
-  const handleOK = () => {
+  const handleOK = async () => {
     const isCompleted = isTaskCompleted(currentValue);
-    onSave(currentValue, isCompleted);
+
+    try {
+      // FIXED: Use consistent date conversion
+      const completionDate = getCompletionDateString(selectedDate);
+      console.log(
+        'Saving numeric completion for date:',
+        completionDate,
+        'from selectedDate:',
+        selectedDate,
+      );
+
+      // Save to database
+      await taskCompletionsService.upsertNumericCompletion(
+        taskData.id,
+        user.id,
+        completionDate,
+        currentValue,
+        numericUnit,
+        isCompleted,
+      );
+
+      console.log('Saved numeric completion:', {
+        value: currentValue,
+        isCompleted,
+        date: completionDate,
+      });
+
+      // Call parent callback
+      onSave(currentValue, isCompleted);
+    } catch (error) {
+      console.error('Error saving numeric completion:', error);
+    }
+
     onClose();
   };
+
+  // Show completion status
+  const taskCompleted = isTaskCompleted(currentValue);
 
   return (
     <Modal
@@ -99,31 +225,37 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle, taskData}) =>
           </View>
         </View>
 
-        {/* Counter Section */}
-        <View style={styles.counterContainer}>
-          <TouchableOpacity
-            style={styles.counterButton}
-            onPress={decrementValue}>
-            <Text style={styles.counterButtonText}>−</Text>
-          </TouchableOpacity>
-
-          <View style={styles.counterDivider} />
-
-          <View style={styles.counterValueContainer}>
-            <Text style={styles.counterValue}>{currentValue}</Text>
-            {numericUnit && (
-              <Text style={styles.unitText}>{numericUnit}</Text>
-            )}
+        {/* Loading or Counter Section */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading...</Text>
           </View>
+        ) : (
+          <View style={styles.counterContainer}>
+            <TouchableOpacity
+              style={styles.counterButton}
+              onPress={decrementValue}>
+              <Text style={styles.counterButtonText}>−</Text>
+            </TouchableOpacity>
 
-          <View style={styles.counterDivider} />
+            <View style={styles.counterDivider} />
 
-          <TouchableOpacity
-            style={styles.counterButton}
-            onPress={incrementValue}>
-            <Text style={styles.counterButtonText}>+</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.counterValueContainer}>
+              <Text style={styles.counterValue}>{currentValue}</Text>
+              {numericUnit && (
+                <Text style={styles.unitText}>{numericUnit}</Text>
+              )}
+            </View>
+
+            <View style={styles.counterDivider} />
+
+            <TouchableOpacity
+              style={styles.counterButton}
+              onPress={incrementValue}>
+              <Text style={styles.counterButtonText}>+</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Progress Section */}
         <View style={styles.progressContainer}>
@@ -147,7 +279,10 @@ const NumericInputModal = ({isVisible, onClose, onSave, taskTitle, taskData}) =>
 
             <View style={styles.verticalDivider} />
 
-            <TouchableOpacity style={styles.okButton} onPress={handleOK}>
+            <TouchableOpacity
+              style={styles.okButton}
+              onPress={handleOK}
+              disabled={isLoading}>
               <Text style={styles.okButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
@@ -212,15 +347,14 @@ const styles = StyleSheet.create({
     tintColor: colors.White,
     resizeMode: 'contain',
   },
-  taskTitleContainer: {
-    paddingHorizontal: WP(4),
-    paddingBottom: HP(1),
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: HP(3),
   },
-  taskTitle: {
+  loadingText: {
     fontSize: FS(1.6),
     fontFamily: 'OpenSans-SemiBold',
     color: '#666666',
-    textAlign: 'center',
   },
   counterContainer: {
     flexDirection: 'row',
@@ -270,7 +404,7 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     paddingHorizontal: WP(5),
-    marginBottom: HP(2.5),
+    marginBottom: HP(1.5),
   },
   progressSection: {
     alignItems: 'center',
@@ -289,43 +423,6 @@ const styles = StyleSheet.create({
     fontSize: FS(1.55),
     fontFamily: 'OpenSans-Regular',
     color: '#333333',
-  },
-  conditionText: {
-    fontSize: FS(1.2),
-    fontFamily: 'OpenSans-Regular',
-    color: '#666666',
-    marginTop: HP(0.3),
-    fontStyle: 'italic',
-  },
-  completionStatusContainer: {
-    paddingHorizontal: WP(5),
-    marginTop: HP(1),
-  },
-  completionIndicator: {
-    paddingVertical: HP(0.7),
-    paddingHorizontal: WP(3),
-    borderRadius: WP(2),
-    alignItems: 'center',
-  },
-  completionIndicatorActive: {
-    backgroundColor: '#E8F5E8',
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-  },
-  completionIndicatorInactive: {
-    backgroundColor: '#FFF3E0',
-    borderWidth: 1,
-    borderColor: '#FF9800',
-  },
-  completionText: {
-    fontSize: FS(1.4),
-    fontFamily: 'OpenSans-SemiBold',
-  },
-  completionTextActive: {
-    color: '#2E7D32',
-  },
-  completionTextInactive: {
-    color: '#F57C00',
   },
   actionButtonsContainer: {
     borderTopWidth: 0.7,

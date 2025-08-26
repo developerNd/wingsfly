@@ -82,10 +82,10 @@ public class RunningAppsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void requestUsageStatsPermission(Promise promise) {
         try {
-            Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+      /*      Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             reactContext.startActivity(intent);
-            promise.resolve(true);
+            promise.resolve(true);  */
         } catch (Exception e) {
             Log.e(TAG, "Error opening usage stats settings", e);
             promise.reject("PERMISSION_ERROR", "Failed to open usage stats settings", e);

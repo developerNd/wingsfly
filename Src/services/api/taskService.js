@@ -1,10 +1,10 @@
-import { supabase } from '../../../supabase';
+import {supabase} from '../../../supabase';
 
 export const taskService = {
   // Create a new task
   async createTask(taskData) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .insert([
           {
@@ -14,7 +14,7 @@ export const taskService = {
             category: taskData.category,
             task_type: taskData.taskType,
             evaluation_type: taskData.evaluationType,
-            
+
             // Visual and display properties
             time: taskData.time,
             time_color: taskData.timeColor,
@@ -22,22 +22,22 @@ export const taskService = {
             image: taskData.image,
             has_flag: taskData.hasFlag,
             priority: taskData.priority,
-            
+
             // Task-specific data
             numeric_value: taskData.numericValue || 0,
             numeric_goal: taskData.numericGoal,
             numeric_unit: taskData.numericUnit,
             numeric_condition: taskData.numericCondition,
-            
+
             // Timer-specific data
             timer_duration: taskData.timerDuration,
             timer_condition: taskData.timerCondition,
-            
+
             // Checklist-specific data
             checklist_items: taskData.checklistItems,
             success_condition: taskData.successCondition,
             custom_items_count: taskData.customItemsCount || 1,
-            
+
             // Repetition and frequency settings
             frequency_type: taskData.frequencyType,
             selected_weekdays: taskData.selectedWeekdays,
@@ -51,48 +51,62 @@ export const taskService = {
             use_day_of_week: taskData.useDayOfWeek || false,
             is_repeat_flexible: taskData.isRepeatFlexible || false,
             is_repeat_alternate_days: taskData.isRepeatAlternateDays || false,
-            
+
+            // NEW: Repeat-specific fields for database integration
+            every_days: taskData.everyDays || null,
+            activity_days: taskData.activityDays || null,
+            rest_days: taskData.restDays || null,
+
             // Scheduling settings
             start_date: taskData.startDate,
             end_date: taskData.endDate,
             is_end_date_enabled: taskData.isEndDateEnabled || false,
-            
+
             // Block time settings
             block_time_enabled: taskData.blockTimeEnabled || false,
             block_time_data: taskData.blockTimeData,
-            
+
             // Duration settings
             duration_enabled: taskData.durationEnabled || false,
             duration_data: taskData.durationData,
-            
+
             // Reminder settings
             reminder_enabled: taskData.reminderEnabled || false,
             reminder_data: taskData.reminderData,
-            
+
             // Additional features
             add_pomodoro: taskData.addPomodoro || false,
             add_to_google_calendar: taskData.addToGoogleCalendar || false,
             is_pending_task: taskData.isPendingTask || false,
-            
+
+            // Pomodoro settings with duration fields
+            focus_duration: taskData.focusDuration || null,
+            short_break_duration: taskData.shortBreakDuration || null,
+            long_break_duration: taskData.longBreakDuration || null,
+            auto_start_short_breaks: taskData.autoStartShortBreaks || false,
+            auto_start_focus_sessions: taskData.autoStartFocusSessions || false,
+            focus_sessions_per_round: taskData.focusSessionsPerRound || null,
+            pomodoro_duration: taskData.pomodoroDuration || null,
+
             // Goal linking
             linked_goal_id: taskData.linkedGoalId,
             linked_goal_title: taskData.linkedGoalTitle,
             linked_goal_type: taskData.linkedGoalType,
-            
+
             // Notes
             note: taskData.note,
-            
+
             // Progress tracking
             progress: taskData.progress,
             is_completed: false,
             completion_count: 0,
             streak_count: 0,
-            
+
             // User and timestamps
             user_id: taskData.userId,
             created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
+            updated_at: new Date().toISOString(),
+          },
         ])
         .select();
 
@@ -111,11 +125,11 @@ export const taskService = {
   // Get all tasks for a user
   async getTasks(userId) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', {ascending: false});
 
       if (error) {
         console.error('Error fetching tasks:', error);
@@ -132,12 +146,12 @@ export const taskService = {
   // Get tasks by type (Habit, Recurring, Task, Goal)
   async getTasksByType(userId, taskType) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', userId)
         .eq('task_type', taskType)
-        .order('created_at', { ascending: false });
+        .order('created_at', {ascending: false});
 
       if (error) {
         console.error('Error fetching tasks by type:', error);
@@ -154,12 +168,12 @@ export const taskService = {
   // Get tasks by category
   async getTasksByCategory(userId, category) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', userId)
         .eq('category', category)
-        .order('created_at', { ascending: false });
+        .order('created_at', {ascending: false});
 
       if (error) {
         console.error('Error fetching tasks by category:', error);
@@ -176,14 +190,16 @@ export const taskService = {
   // Update task completion status
   async updateTaskCompletion(taskId, completionData) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .update({
           is_completed: completionData.isCompleted,
           completion_count: completionData.completionCount,
           streak_count: completionData.streakCount,
-          last_completed_at: completionData.isCompleted ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString()
+          last_completed_at: completionData.isCompleted
+            ? new Date().toISOString()
+            : null,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', taskId)
         .select();
@@ -203,7 +219,7 @@ export const taskService = {
   // Helper function to check numeric completion based on condition
   checkNumericCompletion(value, target, condition) {
     const normalizedCondition = condition?.toLowerCase() || 'any value';
-    
+
     switch (normalizedCondition) {
       case 'any value':
       case 'any':
@@ -227,33 +243,40 @@ export const taskService = {
     try {
       // If isCompleted is not provided, calculate it based on the task's condition
       let finalIsCompleted = isCompleted;
-      
+
       if (finalIsCompleted === null) {
         // Fetch the task to get its condition if not provided
-        const { data: taskData, error: fetchError } = await supabase
+        const {data: taskData, error: fetchError} = await supabase
           .from('tasks')
           .select('numeric_goal, numeric_condition')
           .eq('id', taskId)
           .single();
-          
+
         if (fetchError) {
-          console.error('Error fetching task for completion check:', fetchError);
+          console.error(
+            'Error fetching task for completion check:',
+            fetchError,
+          );
           finalIsCompleted = value > 0; // Default fallback
         } else {
-          finalIsCompleted = this.checkNumericCompletion(value, taskData.numeric_goal, taskData.numeric_condition);
+          finalIsCompleted = this.checkNumericCompletion(
+            value,
+            taskData.numeric_goal,
+            taskData.numeric_condition,
+          );
         }
       }
 
       const updateData = {
         numeric_value: value,
         is_completed: finalIsCompleted,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       };
 
       // Update completion count and streak if completed
       if (finalIsCompleted) {
         // Get current completion data
-        const { data: currentTask, error: getCurrentError } = await supabase
+        const {data: currentTask, error: getCurrentError} = await supabase
           .from('tasks')
           .select('completion_count, streak_count')
           .eq('id', taskId)
@@ -269,7 +292,7 @@ export const taskService = {
         updateData.last_completed_at = null;
       }
 
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .update(updateData)
         .eq('id', taskId)
@@ -290,20 +313,22 @@ export const taskService = {
   // Update checklist task items and completion status
   async updateChecklistTask(taskId, checklistItems) {
     try {
-      const completedCount = checklistItems.filter(item => item.completed).length;
+      const completedCount = checklistItems.filter(
+        item => item.completed,
+      ).length;
       const totalCount = checklistItems.length;
       const isCompleted = completedCount === totalCount && totalCount > 0;
 
       const updateData = {
         checklist_items: checklistItems,
         is_completed: isCompleted,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       };
 
       // Update completion count and streak if completed
       if (isCompleted) {
         // Get current completion data
-        const { data: currentTask, error: getCurrentError } = await supabase
+        const {data: currentTask, error: getCurrentError} = await supabase
           .from('tasks')
           .select('completion_count, streak_count')
           .eq('id', taskId)
@@ -319,7 +344,7 @@ export const taskService = {
         updateData.last_completed_at = null;
       }
 
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .update(updateData)
         .eq('id', taskId)
@@ -340,18 +365,18 @@ export const taskService = {
   // Update timer task completion
   async updateTimerTaskCompletion(taskId, timerData) {
     try {
-      const { duration, condition, isCompleted } = timerData;
-      
+      const {duration, condition, isCompleted} = timerData;
+
       const updateData = {
         timer_duration: duration,
         is_completed: isCompleted,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       };
 
       // Update completion count and streak if completed
       if (isCompleted) {
         // Get current completion data
-        const { data: currentTask, error: getCurrentError } = await supabase
+        const {data: currentTask, error: getCurrentError} = await supabase
           .from('tasks')
           .select('completion_count, streak_count')
           .eq('id', taskId)
@@ -367,7 +392,7 @@ export const taskService = {
         updateData.last_completed_at = null;
       }
 
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .update(updateData)
         .eq('id', taskId)
@@ -385,10 +410,89 @@ export const taskService = {
     }
   },
 
+  // Update pomodoro task progress
+  async updatePomodoroTaskProgress(taskId, pomodoroData) {
+    try {
+      const {sessionsCompleted, totalSessions, isCompleted} = pomodoroData;
+
+      const updateData = {
+        pomodoro_sessions_completed: sessionsCompleted,
+        pomodoro_total_sessions: totalSessions,
+        is_completed: isCompleted,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Update completion count and streak if completed
+      if (isCompleted) {
+        // Get current completion data
+        const {data: currentTask, error: getCurrentError} = await supabase
+          .from('tasks')
+          .select('completion_count, streak_count')
+          .eq('id', taskId)
+          .single();
+
+        if (!getCurrentError) {
+          updateData.completion_count = (currentTask.completion_count || 0) + 1;
+          updateData.streak_count = (currentTask.streak_count || 0) + 1;
+          updateData.last_completed_at = new Date().toISOString();
+        }
+      } else {
+        updateData.completion_count = 0;
+        updateData.last_completed_at = null;
+      }
+
+      const {data, error} = await supabase
+        .from('tasks')
+        .update(updateData)
+        .eq('id', taskId)
+        .select();
+
+      if (error) {
+        console.error('Error updating pomodoro task:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Error in updatePomodoroTaskProgress:', error);
+      throw error;
+    }
+  },
+
+  // NEW: Update repeat task settings
+  async updateRepeatTaskSettings(taskId, repeatData) {
+    try {
+      const updateData = {
+        every_days: repeatData.everyDays,
+        activity_days: repeatData.activityDays,
+        rest_days: repeatData.restDays,
+        is_repeat_flexible: repeatData.isRepeatFlexible || false,
+        is_repeat_alternate_days: repeatData.isRepeatAlternateDays || false,
+        updated_at: new Date().toISOString(),
+      };
+
+      const {data, error} = await supabase
+        .from('tasks')
+        .update(updateData)
+        .eq('id', taskId)
+        .select();
+
+      if (error) {
+        console.error('Error updating repeat task settings:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Error in updateRepeatTaskSettings:', error);
+      throw error;
+    }
+  },
+
   // Get single task by ID
   async getTaskById(taskId) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .select('*')
         .eq('id', taskId)
@@ -409,11 +513,11 @@ export const taskService = {
   // Update task
   async updateTask(taskId, taskData) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .update({
           ...taskData,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
         .eq('id', taskId)
         .select();
@@ -433,10 +537,7 @@ export const taskService = {
   // Delete a task
   async deleteTask(taskId) {
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', taskId);
+      const {error} = await supabase.from('tasks').delete().eq('id', taskId);
 
       if (error) {
         console.error('Error deleting task:', error);
@@ -453,11 +554,11 @@ export const taskService = {
   // Get tasks for a specific date
   async getTasksForDate(userId, date) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', {ascending: false});
 
       if (error) {
         console.error('Error fetching tasks for date:', error);
@@ -476,7 +577,7 @@ export const taskService = {
   // Get task statistics
   async getTaskStatistics(userId) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', userId);
@@ -489,7 +590,8 @@ export const taskService = {
       const totalTasks = data.length;
       const completedTasks = data.filter(task => task.is_completed).length;
       const pendingTasks = totalTasks - completedTasks;
-      const completionRate = totalTasks > 0 ? (completedTasks / totalTasks * 100).toFixed(1) : 0;
+      const completionRate =
+        totalTasks > 0 ? ((completedTasks / totalTasks) * 100).toFixed(1) : 0;
 
       const tasksByType = data.reduce((acc, task) => {
         acc[task.task_type] = (acc[task.task_type] || 0) + 1;
@@ -501,6 +603,18 @@ export const taskService = {
         return acc;
       }, {});
 
+      // Pomodoro statistics
+      const pomodoroTasks = data.filter(task => task.add_pomodoro);
+      const totalPomodoroSessions = pomodoroTasks.reduce(
+        (sum, task) => sum + (task.pomodoro_sessions_completed || 0),
+        0,
+      );
+
+      // NEW: Repeat task statistics
+      const repeatTasks = data.filter(task => task.frequency_type === 'Repeat');
+      const flexibleRepeatTasks = repeatTasks.filter(task => task.is_repeat_flexible);
+      const alternateDaysTasks = repeatTasks.filter(task => task.is_repeat_alternate_days);
+
       return {
         totalTasks,
         completedTasks,
@@ -508,8 +622,35 @@ export const taskService = {
         completionRate,
         tasksByType,
         tasksByCategory,
-        totalStreakCount: data.reduce((sum, task) => sum + (task.streak_count || 0), 0),
-        averageStreakCount: totalTasks > 0 ? (data.reduce((sum, task) => sum + (task.streak_count || 0), 0) / totalTasks).toFixed(1) : 0
+        totalStreakCount: data.reduce(
+          (sum, task) => sum + (task.streak_count || 0),
+          0,
+        ),
+        averageStreakCount:
+          totalTasks > 0
+            ? (
+                data.reduce((sum, task) => sum + (task.streak_count || 0), 0) /
+                totalTasks
+              ).toFixed(1)
+            : 0,
+        // Pomodoro statistics
+        pomodoroStats: {
+          totalPomodoroTasks: pomodoroTasks.length,
+          totalPomodoroSessions,
+          averageSessionsPerTask:
+            pomodoroTasks.length > 0
+              ? (totalPomodoroSessions / pomodoroTasks.length).toFixed(1)
+              : 0,
+        },
+        // NEW: Repeat task statistics
+        repeatStats: {
+          totalRepeatTasks: repeatTasks.length,
+          flexibleRepeatTasks: flexibleRepeatTasks.length,
+          alternateDaysTasks: alternateDaysTasks.length,
+          averageEveryDays: repeatTasks.length > 0 
+            ? (repeatTasks.reduce((sum, task) => sum + (task.every_days || 0), 0) / repeatTasks.length).toFixed(1)
+            : 0,
+        },
       };
     } catch (error) {
       console.error('Error in getTaskStatistics:', error);
@@ -520,13 +661,15 @@ export const taskService = {
   // Reset task completion (for new day/period)
   async resetTaskCompletion(taskId) {
     try {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from('tasks')
         .update({
           is_completed: false,
           numeric_value: 0,
           last_completed_at: null,
-          updated_at: new Date().toISOString()
+          // Reset pomodoro sessions for new day
+          pomodoro_sessions_completed: 0,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', taskId)
         .select();
@@ -541,5 +684,5 @@ export const taskService = {
       console.error('Error in resetTaskCompletion:', error);
       throw error;
     }
-  }
+  },
 };

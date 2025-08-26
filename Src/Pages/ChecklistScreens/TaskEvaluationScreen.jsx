@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   TouchableWithoutFeedback,
   Animated,
   Easing,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../Helper/Contants';
@@ -22,48 +23,132 @@ import {
 import ItemInput from '../../Components/ItemInput';
 import SuccessConditionModal from '../../Components/SuccessModal';
 import {taskService} from '../../services/api/taskService';
+import {taskCompletionsService} from '../../services/api/taskCompletionsService';
 import AppreciationModal from '../../Components/AppreciationModal';
+import {useAuth} from '../../contexts/AuthContext';
+import {getCompletionDateString} from '../../utils/dateUtils';
 
 const TaskEvaluationScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const {taskData, taskId} = route.params;
+  const {
+    taskData,
+    taskId,
+    selectedDate: routeSelectedDate,
+  } = route.params || {};
+  const {user} = useAuth();
+
+  // FIXED: Properly handle selectedDate - ensure we use the passed date or fallback to today
+  const selectedDate = routeSelectedDate || new Date().toDateString();
+
+  console.log('TaskEvaluationScreen - Route params:', {
+    taskId,
+    routeSelectedDate,
+    selectedDate,
+    taskTitle: taskData?.title,
+  });
 
   const slideAnim = useRef(new Animated.Value(HP(100))).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
   // state for ItemInput modal
   const [showItemInput, setShowItemInput] = useState(false);
-
   // state for filter mode toggle
   const [isFilterMode, setIsFilterMode] = useState(false);
-
   // state for success condition modal
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-
   // state for filter toggle
   const [showAllItems, setShowAllItems] = useState(false);
-
   const [checklistItems, setChecklistItems] = useState([]);
-
+  const [isLoading, setIsLoading] = useState(true);
   const [isAppreciationVisible, setAppreciationVisible] = useState(false);
 
-  // Load checklist items from task data
-  useEffect(() => {
-    if (taskData && taskData.checklistItems) {
-      setChecklistItems(taskData.checklistItems);
-    } else {
-      setChecklistItems([]);
+  // FIXED: Use consistent date formatting - exactly like numeric task
+  const completionDate = React.useMemo(() => {
+    const result = getCompletionDateString(selectedDate);
+    console.log(
+      'TaskEvaluation completionDate computed:',
+      result,
+      'from selectedDate:',
+      selectedDate,
+    );
+    return result;
+  }, [selectedDate]);
+
+  // Load checklist completion data from task_completions table
+  const loadChecklistCompletion = useCallback(async () => {
+    if (!user || !taskData || !completionDate) {
+      console.warn('TaskEvaluation - Missing data:', {
+        user: !!user,
+        taskData: !!taskData,
+        completionDate,
+      });
+      setIsLoading(false);
+      return;
     }
-  }, [taskData]);
+
+    try {
+      setIsLoading(true);
+      console.log('TaskEvaluation - Loading completion for:', {
+        taskId: taskData.id,
+        userId: user.id,
+        completionDate,
+        selectedDate,
+      });
+
+      const completion = await taskCompletionsService.getTaskCompletion(
+        taskData.id,
+        user.id,
+        completionDate,
+      );
+
+      if (completion && completion.checklist_items) {
+        // Load saved checklist items from completion
+        console.log(
+          'TaskEvaluation - Found saved items:',
+          completion.checklist_items.length,
+        );
+        setChecklistItems(completion.checklist_items);
+      } else {
+        // Load default checklist items from task data with fresh state
+        console.log('TaskEvaluation - Using fresh items from task data');
+        if (taskData && taskData.checklistItems) {
+          const freshItems = taskData.checklistItems.map(item => ({
+            ...item,
+            completed: false,
+          }));
+          setChecklistItems(freshItems);
+        } else {
+          setChecklistItems([]);
+        }
+      }
+    } catch (error) {
+      console.error('TaskEvaluation - Error loading completion:', error);
+      // Fallback to task data with fresh state
+      if (taskData && taskData.checklistItems) {
+        const freshItems = taskData.checklistItems.map(item => ({
+          ...item,
+          completed: false,
+        }));
+        setChecklistItems(freshItems);
+      } else {
+        setChecklistItems([]);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, taskData, completionDate, selectedDate]);
+
+  // Load checklist items on mount
+  useEffect(() => {
+    loadChecklistCompletion();
+  }, [loadChecklistCompletion]);
 
   // Reload data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      if (taskData && taskData.checklistItems) {
-        setChecklistItems(taskData.checklistItems);
-      }
-    }, [taskData]),
+      loadChecklistCompletion();
+    }, [loadChecklistCompletion]),
   );
 
   // Animation on mount
@@ -101,87 +186,150 @@ const TaskEvaluationScreen = () => {
     });
   };
 
+  // Toggle function - same logic as numeric task
   const toggleChecklistItem = async id => {
+    if (isLoading) return;
+
+    console.log('TaskEvaluation - Toggling item for date:', completionDate);
+
     const updatedItems = checklistItems.map(item =>
       item.id === id ? {...item, completed: !item.completed} : item,
     );
 
     setChecklistItems(updatedItems);
 
-    // Save to database
+    // Save to task_completions table - same as numeric task
     try {
-      await taskService.updateChecklistTask(taskId, updatedItems);
+      const completedCount = updatedItems.filter(item => item.completed).length;
+      const totalCount = updatedItems.length;
+      const isCompleted = completedCount === totalCount && totalCount > 0;
+
+      await taskCompletionsService.upsertChecklistCompletion(
+        taskId,
+        user.id,
+        completionDate,
+        updatedItems,
+        completedCount,
+        isCompleted,
+      );
+
+      console.log(
+        `TaskEvaluation - Updated for ${completionDate}: ${completedCount}/${totalCount} completed`,
+      );
     } catch (error) {
-      console.error('Error updating checklist:', error);
+      console.error('TaskEvaluation - Error updating:', error);
       // Revert on error
-      setChecklistItems(checklistItems);
+      setChecklistItems(prev =>
+        prev.map(item =>
+          item.id === id ? {...item, completed: !item.completed} : item,
+        ),
+      );
+      Alert.alert('Error', 'Failed to update checklist. Please try again.');
     }
   };
 
-  // Delete an item (used in filter mode)
+  // Delete function - same pattern as numeric task
   const deleteChecklistItem = async id => {
+    if (isLoading) return;
+
+    const itemToDelete = checklistItems.find(item => item.id === id);
     const updatedItems = checklistItems.filter(item => item.id !== id);
     setChecklistItems(updatedItems);
 
-    // Save to database
     try {
-      await taskService.updateChecklistTask(taskId, updatedItems);
+      const completedCount = updatedItems.filter(item => item.completed).length;
+      const totalCount = updatedItems.length;
+      const isCompleted = completedCount === totalCount && totalCount > 0;
+
+      await taskCompletionsService.upsertChecklistCompletion(
+        taskId,
+        user.id,
+        completionDate,
+        updatedItems,
+        completedCount,
+        isCompleted,
+      );
+
+      console.log(`TaskEvaluation - Item deleted for ${completionDate}`);
     } catch (error) {
-      console.error('Error deleting checklist item:', error);
+      console.error('TaskEvaluation - Error deleting:', error);
       // Revert on error
-      setChecklistItems(checklistItems);
+      setChecklistItems(prev => [...prev, itemToDelete]);
+      Alert.alert(
+        'Error',
+        'Failed to delete checklist item. Please try again.',
+      );
     }
   };
 
+  // Complete function
   const handleComplete = async () => {
+    if (isLoading) return;
+
     const completedCount = checklistItems.filter(item => item.completed).length;
     const totalCount = checklistItems.length;
 
     if (completedCount === totalCount && totalCount > 0) {
       try {
-        await taskService.updateChecklistTask(taskId, checklistItems);
+        await taskCompletionsService.upsertChecklistCompletion(
+          taskId,
+          user.id,
+          completionDate,
+          checklistItems,
+          completedCount,
+          true,
+        );
 
-        // Show appreciation modal first
+        console.log(`TaskEvaluation - Task completed for ${completionDate}`);
         setAppreciationVisible(true);
       } catch (error) {
-        console.error('Error saving final completion state:', error);
-        animateOut(() => {
-          navigation.goBack();
-        });
+        console.error('TaskEvaluation - Error saving completion:', error);
+        Alert.alert('Error', 'Failed to save completion. Please try again.');
       }
     } else {
       setShowItemInput(true);
     }
   };
 
-  // Function to handle adding new item
+  // Add item function
   const handleAddItem = async itemText => {
-    if (itemText.trim()) {
-      const newId =
-        checklistItems.length > 0
-          ? Math.max(...checklistItems.map(item => item.id)) + 1
-          : 1;
-      const newItem = {
-        id: newId,
-        text: itemText.trim(),
-        completed: false,
-      };
-      const updatedItems = [...checklistItems, newItem];
-      setChecklistItems(updatedItems);
+    if (!itemText.trim() || isLoading) return;
 
-      // Save to database
-      try {
-        await taskService.updateChecklistTask(taskId, updatedItems);
-      } catch (error) {
-        console.error('Error adding checklist item:', error);
-        // Revert on error
-        setChecklistItems(checklistItems);
-      }
+    const newId =
+      checklistItems.length > 0
+        ? Math.max(...checklistItems.map(item => item.id)) + 1
+        : 1;
+    const newItem = {
+      id: newId,
+      text: itemText.trim(),
+      completed: false,
+    };
+    const updatedItems = [...checklistItems, newItem];
+    setChecklistItems(updatedItems);
+
+    try {
+      const completedCount = updatedItems.filter(item => item.completed).length;
+      const totalCount = updatedItems.length;
+      const isCompleted = completedCount === totalCount && totalCount > 0;
+
+      await taskCompletionsService.upsertChecklistCompletion(
+        taskId,
+        user.id,
+        completionDate,
+        updatedItems,
+        completedCount,
+        isCompleted,
+      );
+
+      console.log(`TaskEvaluation - Item added for ${completionDate}`);
+    } catch (error) {
+      console.error('TaskEvaluation - Error adding item:', error);
+      setChecklistItems(prev => prev.filter(item => item.id !== newId));
+      Alert.alert('Error', 'Failed to add checklist item. Please try again.');
     }
   };
 
   const handleOverlayPress = () => {
-    // If in filter mode, exit filter mode
     if (isFilterMode) {
       setIsFilterMode(false);
       setShowAllItems(false);
@@ -193,11 +341,8 @@ const TaskEvaluationScreen = () => {
     });
   };
 
-  const handleModalPress = () => {
-    // Prevent modal from closing when touching inside the modal
-  };
+  const handleModalPress = () => {};
 
-  // Toggle filter mode
   const handleFilterToggle = () => {
     setIsFilterMode(!isFilterMode);
     setShowAllItems(false);
@@ -205,13 +350,16 @@ const TaskEvaluationScreen = () => {
 
   const handleAppreciationClose = () => {
     setAppreciationVisible(false);
-    // Navigate back after closing appreciation modal
     animateOut(() => {
-      navigation.goBack();
+      navigation.navigate('BottomTab', {
+        completedTaskId: taskId,
+        showAppreciation: false,
+        taskData: taskData,
+        completedDate: completionDate,
+      });
     });
   };
 
-  // Handle filter button click (in filter mode)
   const handleFilterPress = () => {
     setShowAllItems(!showAllItems);
   };
@@ -229,19 +377,40 @@ const TaskEvaluationScreen = () => {
     setShowSuccessModal(false);
   };
 
-  // Function to handle sort icon press
   const handleSortIconPress = () => {
     animateOut(() => {
       navigation.navigate('SortingScreen', {
         taskData: taskData,
         taskId: taskId,
         checklistItems: checklistItems,
+        selectedDate: selectedDate,
       });
     });
   };
 
   const completedCount = checklistItems.filter(item => item.completed).length;
   const totalCount = checklistItems.length;
+
+  // FIXED: Date formatting - same approach as numeric modal
+  const getFormattedDate = () => {
+    try {
+      const date = new Date(selectedDate);
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch (error) {
+      console.error('TaskEvaluation - Date format error:', error);
+      return new Date().toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    }
+  };
 
   // Normal checklist item render
   const renderChecklistItem = ({item, index}) => (
@@ -251,7 +420,8 @@ const TaskEvaluationScreen = () => {
         index === checklistItems.length - 1 && styles.lastChecklistItem,
       ]}
       onPress={() => toggleChecklistItem(item.id)}
-      activeOpacity={0.7}>
+      activeOpacity={0.7}
+      disabled={isLoading}>
       <View style={styles.itemLeft}>
         <Text style={styles.numberText}>
           {(index + 1).toString().padStart(2, '0')}.
@@ -285,7 +455,8 @@ const TaskEvaluationScreen = () => {
       <TouchableOpacity
         style={styles.deleteButton}
         onPress={() => deleteChecklistItem(item.id)}
-        activeOpacity={0.7}>
+        activeOpacity={0.7}
+        disabled={isLoading}>
         <Image source={Icons.Delete} style={styles.deleteIcon} />
       </TouchableOpacity>
     </View>
@@ -294,7 +465,10 @@ const TaskEvaluationScreen = () => {
   return (
     <TouchableWithoutFeedback onPress={handleOverlayPress}>
       <View style={styles.container}>
-        <StatusBar backgroundColor="#47474773" barStyle="light-content" />
+        <StatusBar
+          backgroundColor={colors.ModelBackground}
+          barStyle="light-content"
+        />
 
         <Animated.View style={[styles.overlay, {opacity: overlayOpacity}]} />
 
@@ -316,7 +490,7 @@ const TaskEvaluationScreen = () => {
                     </Text>
                     <View style={styles.dateBackground}>
                       <Text style={styles.headerDate}>
-                        {new Date().toLocaleDateString()}
+                        {getFormattedDate()}
                       </Text>
                     </View>
                   </View>
@@ -335,25 +509,33 @@ const TaskEvaluationScreen = () => {
                 </View>
               </View>
 
-              {/* Checklist */}
-              <FlatList
-                data={checklistItems}
-                keyExtractor={item => item.id.toString()}
-                renderItem={
-                  isFilterMode ? renderFilterItem : renderChecklistItem
-                }
-                style={styles.checklistContainer}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.checklistContent}
-                ListEmptyComponent={() => (
-                  <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>No checklist items yet</Text>
-                    <Text style={styles.emptySubText}>
-                      Tap the + button to add items
-                    </Text>
-                  </View>
-                )}
-              />
+              {/* Loading or Checklist */}
+              {isLoading ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading checklist...</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={checklistItems}
+                  keyExtractor={item => item.id.toString()}
+                  renderItem={
+                    isFilterMode ? renderFilterItem : renderChecklistItem
+                  }
+                  style={styles.checklistContainer}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.checklistContent}
+                  ListEmptyComponent={() => (
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>
+                        No checklist items yet
+                      </Text>
+                      <Text style={styles.emptySubText}>
+                        Tap the + button to add items
+                      </Text>
+                    </View>
+                  )}
+                />
+              )}
 
               {/* Bottom Actions */}
               <View style={styles.bottomActions}>
@@ -362,7 +544,8 @@ const TaskEvaluationScreen = () => {
                     <TouchableOpacity
                       style={styles.filterButton}
                       activeOpacity={0.6}
-                      onPress={handleFilterPress}>
+                      onPress={handleFilterPress}
+                      disabled={isLoading}>
                       <Image source={Icons.Filter} style={styles.actionIcon} />
                     </TouchableOpacity>
 
@@ -370,7 +553,8 @@ const TaskEvaluationScreen = () => {
                       <TouchableOpacity
                         style={styles.allItemsContainer}
                         onPress={handleAllItems}
-                        activeOpacity={0.7}>
+                        activeOpacity={0.7}
+                        disabled={isLoading}>
                         <View style={styles.allItemsContent}>
                           <Image
                             source={Icons.CheckTick}
@@ -383,23 +567,25 @@ const TaskEvaluationScreen = () => {
                     )}
                   </View>
                 ) : (
-                  // Normal mode actions
                   <View style={styles.actionsBackground}>
                     <TouchableOpacity
                       style={styles.actionIconButton}
                       activeOpacity={0.6}
-                      onPress={handleFilterToggle}>
+                      onPress={handleFilterToggle}
+                      disabled={isLoading}>
                       <Image source={Icons.Filter} style={styles.actionIcon} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.actionIconButton}
                       activeOpacity={0.6}
-                      onPress={handleSortIconPress}>
+                      onPress={handleSortIconPress}
+                      disabled={isLoading}>
                       <Image source={Icons.Sort} style={styles.actionIcon} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.actionIconButton}
-                      activeOpacity={0.6}>
+                      activeOpacity={0.6}
+                      disabled={isLoading}>
                       <Image source={Icons.Eye} style={styles.actionIcon} />
                     </TouchableOpacity>
                   </View>
@@ -410,17 +596,21 @@ const TaskEvaluationScreen = () => {
               <TouchableOpacity
                 style={[
                   styles.fab,
-                  completedCount === totalCount && styles.fabActive,
+                  completedCount === totalCount &&
+                    totalCount > 0 &&
+                    styles.fabActive,
+                  isLoading && styles.fabDisabled,
                 ]}
                 onPress={
                   isFilterMode ? () => setIsFilterMode(false) : handleComplete
                 }
-                activeOpacity={0.8}>
+                activeOpacity={0.8}
+                disabled={isLoading}>
                 <Icon
                   name={
                     isFilterMode
                       ? 'check'
-                      : completedCount === totalCount
+                      : completedCount === totalCount && totalCount > 0
                       ? 'check'
                       : 'add'
                   }
@@ -472,7 +662,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#47474773',
+    backgroundColor: colors.ModelBackground,
   },
   modalContainer: {
     position: 'absolute',
@@ -491,6 +681,16 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: -2},
     shadowOpacity: 0.15,
     shadowRadius: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: FS(1.8),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#666666',
   },
   header: {
     paddingVertical: HP(1.5),
@@ -732,6 +932,9 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 6},
     shadowOpacity: 0.3,
     shadowRadius: 10,
+  },
+  fabDisabled: {
+    opacity: 0.6,
   },
   emptyContainer: {
     flex: 1,

@@ -29,7 +29,10 @@ const SortingModal = ({
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <StatusBar backgroundColor="#47474773" barStyle="dark-content" />
+      <StatusBar
+        backgroundColor={colors.ModelBackground}
+        barStyle="dark-content"
+      />
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>{title}</Text>
@@ -59,7 +62,7 @@ const SortingModal = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: '#47474773',
+    backgroundColor: colors.ModelBackground,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: WP(8),

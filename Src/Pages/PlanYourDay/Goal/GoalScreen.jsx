@@ -2,18 +2,19 @@ import React, {useState} from 'react';
 import {
   Text,
   View,
-  StyleSheet,
   StatusBar,
   TouchableOpacity,
   ScrollView,
+  StyleSheet,
   Image,
   TextInput,
   Alert,
 } from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
 import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
+import DurationModal from '../../../Components/DurationModal';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
 import CustomToast from '../../../Components/CustomToast';
@@ -30,6 +31,9 @@ const GoalScreen = () => {
 
   // Get category from route params (from CategorySelection screen)
   const selectedCategory = route.params?.selectedCategory || { title: 'Work and Career' };
+  
+  // Get evaluation type from route params
+  const evaluationType = route.params?.evaluationType || null;
 
   // Helper function to get category icon
   const getCategoryIcon = (categoryName) => {
@@ -70,13 +74,16 @@ const GoalScreen = () => {
   const [addReminder, setAddReminder] = useState(false);
   const [addToGoogleCalendar, setAddToGoogleCalendar] = useState(false);
   const [showBlockTimeModal, setShowBlockTimeModal] = useState(false);
+  const [showDurationModal, setShowDurationModal] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [blockTimeData, setBlockTimeData] = useState(null);
+  const [durationData, setDurationData] = useState(null);
   const [reminderData, setReminderData] = useState(null);
+  const [pomodoroSettings, setPomodoroSettings] = useState(null);
 
-  // Toast states - ADD THESE
+  // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('error');
@@ -84,6 +91,9 @@ const GoalScreen = () => {
   // Date picker states
   const [startDate, setStartDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+
+  // Check if evaluation type is timer
+  const isTimerEvaluation = evaluationType === 'timer';
 
   const priorityOptions = [
     {
@@ -100,7 +110,96 @@ const GoalScreen = () => {
     },
   ];
 
-  // ADD THESE HELPER FUNCTIONS
+  // Load data when screen comes into focus (when returning from PomodoroSettings)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (route.params) {
+        const params = route.params;
+        
+        // Restore all form data when returning from navigation
+        if (params.taskTitle !== undefined) setTaskTitle(params.taskTitle);
+        if (params.priority !== undefined) setPriority(params.priority);
+        if (params.note !== undefined) setNote(params.note);
+        if (params.isPendingTask !== undefined) setIsPendingTask(params.isPendingTask);
+        if (params.addReminder !== undefined) setAddReminder(params.addReminder);
+        if (params.addToGoogleCalendar !== undefined) setAddToGoogleCalendar(params.addToGoogleCalendar);
+        if (params.reminderData) setReminderData(params.reminderData);
+        
+        // Restore date data
+        if (params.startDate) {
+          const date = typeof params.startDate === 'string' ? new Date(params.startDate) : params.startDate;
+          setStartDate(date);
+        }
+        
+        // Restore schedule data (block time and duration)
+        if (params.scheduleData) {
+          if (params.scheduleData.blockTimeData) {
+            setBlockTimeData(params.scheduleData.blockTimeData);
+          }
+          if (params.scheduleData.durationData) {
+            setDurationData(params.scheduleData.durationData);
+          }
+        }
+        
+        // Restore direct block time and duration data if available
+        if (params.blockTimeData) setBlockTimeData(params.blockTimeData);
+        if (params.durationData) setDurationData(params.durationData);
+        
+        // Restore pomodoro settings and state
+        if (params.pomodoroSettings) {
+          setPomodoroSettings(params.pomodoroSettings);
+          setAddPomodoro(true); // Enable pomodoro when settings are available
+        }
+      }
+    }, [route.params]),
+  );
+
+  // Helper function to calculate duration from block time
+  const calculateDuration = (startTime, endTime) => {
+    if (!startTime || !endTime) return null;
+
+    // Parse time strings (assuming format like "10:00 AM" or "12:30 PM")
+    const parseTime = timeStr => {
+      const [time, period] = timeStr.split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) {
+        hour24 += 12;
+      } else if (period === 'AM' && hours === 12) {
+        hour24 = 0;
+      }
+
+      return {hours: hour24, minutes: minutes || 0};
+    };
+
+    const start = parseTime(startTime);
+    const end = parseTime(endTime);
+
+    // Calculate duration in minutes
+    const startMinutes = start.hours * 60 + start.minutes;
+    let endMinutes = end.hours * 60 + end.minutes;
+
+    // Handle case where end time is next day
+    if (endMinutes <= startMinutes) {
+      endMinutes += 24 * 60; // Add 24 hours
+    }
+
+    const durationMinutes = endMinutes - startMinutes;
+    const hours = Math.floor(durationMinutes / 60);
+    const minutes = durationMinutes % 60;
+
+    return {
+      hours,
+      minutes,
+      totalMinutes: durationMinutes,
+      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
+        minutes,
+      ).padStart(2, '0')}`,
+    };
+  };
+
+  // Helper functions
   const showToast = (message, type = 'error') => {
     setToastMessage(message);
     setToastType(type);
@@ -112,6 +211,75 @@ const GoalScreen = () => {
   };
 
   const isTaskLabelActive = taskFocused || taskTitle.length > 0;
+
+  // Handle Pomodoro toggle with navigation to PomodoroSettings - FIXED VERSION
+  const handlePomodoroToggle = () => {
+    // Only allow pomodoro for timer evaluation type
+    if (!isTimerEvaluation) {
+      return;
+    }
+
+    if (addPomodoro) {
+      // If turning off, just disable and clear settings
+      setAddPomodoro(false);
+      setPomodoroSettings(null);
+    } else {
+      // Check if block time is available first (now block time is the primary requirement)
+      if (!blockTimeData) {
+        showToast('Please select a block time first to set up Pomodoro');
+        return;
+      }
+
+      // Calculate duration from block time for Pomodoro
+      let calculatedDuration = null;
+      if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
+        calculatedDuration = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
+      }
+
+      // Use calculated duration from block time or existing duration data
+      const durationForPomodoro = calculatedDuration || durationData;
+
+      if (!durationForPomodoro) {
+        showToast('Please select a block time first to calculate duration for Pomodoro');
+        return;
+      }
+
+      // Prepare current data and navigate to PomodoroSettings
+      const currentData = {
+        taskTitle,
+        selectedCategory,
+        priority,
+        note,
+        isPendingTask,
+        startDate: startDate.toISOString(),
+        blockTimeData,
+        durationData: durationForPomodoro, // Pass calculated duration from block time
+        addPomodoro: true, // Set to true for navigation
+        reminderData,
+        addReminder,
+        addToGoogleCalendar,
+        pomodoroSettings,
+        evaluationType,
+        screenType: 'GoalScreen',
+        scheduleData: {
+          startDate: startDate.toISOString(),
+          blockTimeData,
+          durationData: durationForPomodoro, // Include duration calculated from block time
+          addPomodoro: true,
+          reminderData,
+          addReminder,
+          addToGoogleCalendar,
+          pomodoroSettings,
+        },
+      };
+
+      // Navigate to PomodoroSettings screen
+      navigation.navigate('PomodoroSettings', currentData);
+    }
+  };
 
   // Handle Next button press - Save task to database
   const handleNextPress = async () => {
@@ -130,19 +298,42 @@ const GoalScreen = () => {
       return;
     }
 
+    if (!durationData) {
+      showToast('Select a duration');
+      return;
+    }
+
     if (!blockTimeData) {
       showToast('Select a block time');
       return;
     }
 
+    // Additional validation for timer evaluation type
+    if (isTimerEvaluation && !addPomodoro) {
+      showToast('Select a Pomodoro Timer');
+      return;
+    }
+
+    // Validate pomodoro settings if pomodoro is enabled
+    if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
+      showToast('Please configure Pomodoro settings');
+      return;
+    }
+
     try {
+      // Calculate duration from block time for pomodoro (not from manual duration)
+      let finalDurationForPomodoro = null;
+      if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
+        finalDurationForPomodoro = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
+      }
+
       // Prepare task data for database
       const taskData = {
         title: taskTitle.trim(),
         description: note || '',
         category: selectedCategory?.title || 'Work and Career',
         taskType: 'Task',
-        evaluationType: 'yesNo', // Default evaluation type for tasks
+        evaluationType: evaluationType || 'yesNo', // Use passed evaluation type
         userId: user.id,
         
         // Visual and display properties
@@ -191,9 +382,9 @@ const GoalScreen = () => {
         blockTimeEnabled: !!blockTimeData,
         blockTimeData: blockTimeData,
         
-        // Duration settings (not applicable for simple tasks)
-        durationEnabled: false,
-        durationData: null,
+        // Duration settings
+        durationEnabled: !!durationData,
+        durationData: durationData,
         
         // Reminder settings
         reminderEnabled: addReminder || false,
@@ -215,6 +406,24 @@ const GoalScreen = () => {
         // Progress tracking
         progress: null,
       };
+
+      // Add pomodoro settings if pomodoro is enabled - Use duration calculated from block time
+      if (addPomodoro && pomodoroSettings) {
+        // Use duration calculated from block time for pomodoro, not manual duration
+        taskData.pomodoroDuration = finalDurationForPomodoro ? finalDurationForPomodoro.totalMinutes : null;
+        
+        // Store pomodoro settings
+        taskData.focusDuration = pomodoroSettings.focusTime;
+        taskData.shortBreakDuration = pomodoroSettings.shortBreak;
+        taskData.longBreakDuration = pomodoroSettings.longBreak;
+        taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
+        taskData.autoStartShortBreaks = pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions = pomodoroSettings.autoStartFocusSessions || false;
+        
+        // Initialize pomodoro progress fields
+        taskData.pomodoroSessionsCompleted = 0;
+        taskData.pomodoroTotalSessions = pomodoroSettings.focusSessionsPerRound || 4;
+      }
 
       console.log('Saving task data:', taskData);
       
@@ -255,6 +464,11 @@ const GoalScreen = () => {
 
     if (!taskTitle.trim()) {
       showToast('Enter a name');
+      return;
+    }
+
+    if (!durationData) {
+      showToast('Select a duration');
       return;
     }
 
@@ -302,13 +516,41 @@ const GoalScreen = () => {
     setShowStartDatePicker(false);
   };
 
+  // Handle Duration press - Open duration modal
+  const handleDurationPress = () => {
+    setShowDurationModal(true);
+  };
+
+  // Handle Duration save - Save duration data
+  const handleDurationSave = durationData => {
+    setDurationData(durationData);
+    // Hide toast when duration is saved
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
   const handleBlockTimePress = () => {
     setShowBlockTimeModal(true);
   };
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
-    // Hide toast when block time is saved - ADD THIS
+    
+    // Automatically calculate duration from block time
+    if (timeData && timeData.startTime && timeData.endTime) {
+      const calculatedDuration = calculateDuration(
+        timeData.startTime,
+        timeData.endTime,
+      );
+      
+      // Update duration data if it's not manually set or if we want to override
+      if (!durationData) {
+        setDurationData(calculatedDuration);
+      }
+    }
+    
+    // Hide toast when block time is saved
     if (toastVisible) {
       hideToast();
     }
@@ -441,6 +683,47 @@ const GoalScreen = () => {
     );
   };
 
+  // Duration section - Now with duration picker functionality
+  const renderDurationSection = () => {
+    return (
+      <View style={styles.optionContainer}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handleDurationPress}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Duration</Text>
+              {durationData && (
+                <Text style={styles.optionSubtitle}>
+                  {durationData.formattedDuration || `${durationData.hours}h ${durationData.minutes}m`}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.optionRight}>
+            <TouchableOpacity
+              onPress={handleDurationPress}
+              style={styles.plusButton}
+              activeOpacity={0.7}>
+              <Image
+                source={Icons.Plus}
+                style={styles.plusIcon}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const renderBlockTimeSection = () => {
     return (
       <View style={styles.optionContainer}>
@@ -475,6 +758,67 @@ const GoalScreen = () => {
                 resizeMode="contain"
               />
             </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderPomodoroSection = () => {
+    // Only show Pomodoro section if evaluation type is timer
+    if (!isTimerEvaluation) {
+      return null;
+    }
+
+    // Format pomodoro settings display (focus, break, sessions only)
+    const formatPomodoroDisplay = () => {
+      if (!pomodoroSettings) return null;
+
+      const focusTime = pomodoroSettings.focusTime || 25;
+      const shortBreak = pomodoroSettings.shortBreak || 5;
+      const sessionsPerRound = pomodoroSettings.focusSessionsPerRound || 4;
+
+      return `${focusTime}min focus, ${shortBreak}min break, ${sessionsPerRound} sessions`;
+    };
+
+    // Calculate duration display from block time
+    const getDurationDisplay = () => {
+      if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
+        const calculatedDuration = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
+        return calculatedDuration ? calculatedDuration.formattedDuration : null;
+      }
+      return durationData ? durationData.formattedDuration : null;
+    };
+
+    return (
+      <View style={styles.optionContainer}>
+        <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Add Pomodoro</Text>
+              {addPomodoro && pomodoroSettings && (
+                <Text style={styles.optionSubtitle}>
+                  {formatPomodoroDisplay()}
+                </Text>
+              )}
+              {addPomodoro && getDurationDisplay() && (
+                <Text style={styles.pomodoroDuration}>
+                  Duration: {getDurationDisplay()}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.optionRight}>
+            {renderToggle(addPomodoro, handlePomodoroToggle)}
           </View>
         </TouchableOpacity>
       </View>
@@ -769,11 +1113,14 @@ const GoalScreen = () => {
           () => setShowStartDatePicker(true),
         )}
 
-        {/* Block Time */}
+        {/* Duration - Now above Block Time */}
+        {renderDurationSection()}
+
+        {/* Block Time - Now below Duration */}
         {renderBlockTimeSection()}
 
-        {/* Add Pomodoro - Removed toggle */}
-        {renderOptionRow(Icons.Clock, 'Add Pomodoro')}
+        {/* Add Pomodoro - Only show for timer evaluation type */}
+        {renderPomodoroSection()}
 
         {/* Priority with dropdown */}
         {renderPrioritySection()}
@@ -841,6 +1188,14 @@ const GoalScreen = () => {
         title="Select Start Date"
       />
 
+      {/* Duration Modal */}
+      <DurationModal
+        visible={showDurationModal}
+        onClose={() => setShowDurationModal(false)}
+        onSave={handleDurationSave}
+        initialData={durationData}
+      />
+
       {/* Block Time Modal */}
       <BlockTimeModal
         visible={showBlockTimeModal}
@@ -864,7 +1219,7 @@ const GoalScreen = () => {
         initialNote={note}
       />
 
-      {/* Custom Toast - ADD THIS */}
+      {/* Custom Toast */}
       <CustomToast
         visible={toastVisible}
         message={toastMessage}
@@ -1062,6 +1417,12 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(-0.4),
+  },
+  pomodoroDuration: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(0.2),
   },
   pendingSubtitle: {
     fontSize: FS(1.28),

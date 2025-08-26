@@ -5,64 +5,945 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
-  Image,
-  Animated,
-  Easing,
-  Platform,
-  PanGestureHandler,
-  State,
-  NativeModules,
   Alert,
+  AppState,
+  NativeModules,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
-import {useNavigation} from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from '@react-navigation/native';
+import {taskService} from '../../services/api/taskService';
+import {taskCompletionsService} from '../../services/api/taskCompletionsService';
+import {useAuth} from '../../contexts/AuthContext';
+import TimerDisplay from '../../Components/PomoTimerDisplay';
+import SessionControls from '../../Components/SessionControls';
+import CompletionScreen from '../../Components/CompletionScreen';
+import {getCompletionDateString} from '../../utils/dateUtils';
 
 const {PomodoroModule} = NativeModules;
 
 const PomodoroTimerScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
+  const {user} = useAuth();
 
-  const [totalTaskDuration, setTotalTaskDuration] = useState(120 * 60); 
+  const taskData = route.params?.task;
+  const taskId = taskData?.id;
+  // FIXED: Properly handle selectedDate - same pattern as TaskEvaluationScreen
+  const selectedDate = route.params?.selectedDate || new Date().toDateString();
+
+  console.log('PomodoroTimerScreen - Route params:', {
+    taskId,
+    selectedDate,
+    routeSelectedDate: route.params?.selectedDate,
+    taskTitle: taskData?.title
+  });
+
+  // FIXED: Use date-specific storage keys
+  const STORAGE_KEY = `pomodoro_timer_${taskId || 'default'}_${getCompletionDateString(selectedDate)}`;
+  const SESSION_STORAGE_KEY = `pomodoro_session_${taskId || 'default'}_${getCompletionDateString(selectedDate)}`;
+
+  // FIXED: Use consistent date formatting - same as TaskEvaluationScreen
+  const completionDate = React.useMemo(() => {
+    const result = getCompletionDateString(selectedDate);
+    console.log('PomodoroTimer completionDate computed:', result, 'from selectedDate:', selectedDate);
+    return result;
+  }, [selectedDate]);
+
+  // Add refs to prevent multiple simultaneous operations
+  const isSavingRef = useRef(false);
+  const isLoadingRef = useRef(false);
+  const backgroundTimeCalculatedRef = useRef(false);
+  const lastSaveTimeRef = useRef(0);
+
+  const getPomodoroSettings = () => {
+    const defaultSettings = {
+      focusTime: 25,
+      shortBreak: 5,
+      longBreak: 15,
+      focusSessionsPerRound: 4,
+      autoStartShortBreaks: true,
+      autoStartFocusSessions: false,
+    };
+
+    if (!taskData) {
+      return defaultSettings;
+    }
+
+    const settings = {
+      focusTime:
+        taskData.focus_duration ||
+        taskData.focusDuration ||
+        defaultSettings.focusTime,
+      shortBreak:
+        taskData.short_break_duration ||
+        taskData.shortBreakDuration ||
+        defaultSettings.shortBreak,
+      longBreak:
+        taskData.long_break_duration ||
+        taskData.longBreakDuration ||
+        defaultSettings.longBreak,
+      focusSessionsPerRound:
+        taskData.focus_sessions_per_round ||
+        taskData.focusSessionsPerRound ||
+        defaultSettings.focusSessionsPerRound,
+      autoStartShortBreaks:
+        taskData.auto_start_short_breaks ??
+        taskData.autoStartShortBreaks ??
+        defaultSettings.autoStartShortBreaks,
+      autoStartFocusSessions:
+        taskData.auto_start_focus_sessions ??
+        taskData.autoStartFocusSessions ??
+        defaultSettings.autoStartFocusSessions,
+    };
+
+    return settings;
+  };
+
+  const getTotalDuration = () => {
+    // First priority: get from pomodoro_duration
+    if (taskData?.pomodoro_duration) {
+      return taskData.pomodoro_duration * 60; // Convert minutes to seconds
+    }
+
+    // Fallback to existing logic for backward compatibility
+    if (taskData?.duration_data?.totalMinutes) {
+      return taskData.duration_data.totalMinutes * 60;
+    }
+
+    if (taskData?.durationData?.totalMinutes) {
+      return taskData.durationData.totalMinutes * 60;
+    }
+
+    if (
+      taskData?.block_time_data?.startTime &&
+      taskData?.block_time_data?.endTime
+    ) {
+      const parseTime = timeStr => {
+        const [time, period] = timeStr.split(' ');
+        const [hours, minutes] = time.split(':').map(Number);
+
+        let hour24 = hours;
+        if (period === 'PM' && hours !== 12) {
+          hour24 += 12;
+        } else if (period === 'AM' && hours === 12) {
+          hour24 = 0;
+        }
+
+        return hour24 * 60 + (minutes || 0);
+      };
+
+      const startMinutes = parseTime(taskData.block_time_data.startTime);
+      let endMinutes = parseTime(taskData.block_time_data.endTime);
+
+      if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60;
+      }
+
+      return (endMinutes - startMinutes) * 60;
+    }
+
+    if (
+      taskData?.blockTimeData?.startTime &&
+      taskData?.blockTimeData?.endTime
+    ) {
+      const parseTime = timeStr => {
+        const [time, period] = timeStr.split(' ');
+        const [hours, minutes] = time.split(':').map(Number);
+
+        let hour24 = hours;
+        if (period === 'PM' && hours !== 12) {
+          hour24 += 12;
+        } else if (period === 'AM' && hours === 12) {
+          hour24 = 0;
+        }
+
+        return hour24 * 60 + (minutes || 0);
+      };
+
+      const startMinutes = parseTime(taskData.blockTimeData.startTime);
+      let endMinutes = parseTime(taskData.blockTimeData.endTime);
+
+      if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60;
+      }
+
+      return (endMinutes - startMinutes) * 60;
+    }
+
+    return 120 * 60; // Default 2 hours
+  };
+
+  const [sessionStructure, setSessionStructure] = useState(null);
+
+  // FIXED SESSION STRUCTURE CALCULATION
+  useEffect(() => {
+    const calculateSessionStructure = () => {
+      const settings = getPomodoroSettings();
+      const totalDurationSeconds = getTotalDuration();
+      const totalDurationMinutes = totalDurationSeconds / 60;
+
+      const focusMinutes = settings.focusTime;
+      const shortBreakMinutes = settings.shortBreak;
+      const longBreakMinutes = settings.longBreak;
+      const focusSessionsPerRound = settings.focusSessionsPerRound;
+
+      console.log('Session Calculation Settings:', {
+        totalDurationMinutes,
+        focusMinutes,
+        shortBreakMinutes,
+        longBreakMinutes,
+        focusSessionsPerRound,
+      });
+
+      let sessions = [];
+      let remainingMinutes = totalDurationMinutes;
+      let focusSessionCount = 0;
+      let sessionsInCurrentRound = 0;
+
+      // Build sessions based on focus sessions per round pattern
+      while (remainingMinutes > 0 && focusSessionCount < 50) {
+        // Safety limit
+        // Check if we can fit at least a minimum focus session
+        const minimumFocusTime = Math.min(focusMinutes, 5); // At least 5 minutes or the set focus time
+        if (remainingMinutes < minimumFocusTime) {
+          break; // Can't fit any more meaningful sessions
+        }
+
+        // Add focus session
+        focusSessionCount++;
+        sessionsInCurrentRound++;
+
+        // UPDATED LOGIC: Determine the duration for this focus session
+        let focusSessionDuration;
+
+        if (sessionsInCurrentRound < focusSessionsPerRound) {
+          // Not the last session in the round - use standard focus time
+          focusSessionDuration = Math.min(focusMinutes, remainingMinutes);
+        } else {
+          // This IS the last session in the round (4th session)
+          // Check if we can fit a long break after this session
+          const timeAfterLongBreak = remainingMinutes - longBreakMinutes;
+
+          if (timeAfterLongBreak >= minimumFocusTime) {
+            // We can fit long break + at least one more focus session
+            // So for this 4th session, use all remaining time EXCEPT the long break time
+            focusSessionDuration = timeAfterLongBreak;
+          } else {
+            // We cannot fit another meaningful session after long break
+            // So this 4th session uses ALL remaining time (no long break will be added)
+            focusSessionDuration = remainingMinutes;
+          }
+        }
+
+        // Add the focus session
+        sessions.push({
+          type: 'focus',
+          number: focusSessionCount,
+          duration: Math.round(focusSessionDuration * 100) / 100,
+        });
+        remainingMinutes -= focusSessionDuration;
+        remainingMinutes = Math.max(0, remainingMinutes); // Ensure non-negative
+
+        console.log(
+          `Added focus session ${focusSessionCount} (${focusSessionDuration} min), remaining: ${remainingMinutes} minutes`,
+        );
+
+        // Check if we should add a break
+        if (remainingMinutes > 0) {
+          let breakDuration = 0;
+          let breakType = 'short';
+
+          if (sessionsInCurrentRound === focusSessionsPerRound) {
+            // End of round - try to add long break
+            breakType = 'long';
+
+            // Check if we can fit full long break
+            if (remainingMinutes >= longBreakMinutes) {
+              breakDuration = longBreakMinutes;
+            } else if (remainingMinutes >= shortBreakMinutes) {
+              // Can't fit long break, use short break instead
+              breakDuration = shortBreakMinutes;
+              breakType = 'short';
+            } else if (remainingMinutes >= 2) {
+              // Use remaining time as short break if at least 2 minutes
+              breakDuration = remainingMinutes;
+              breakType = 'short';
+            }
+          } else {
+            // Middle of round - try to add short break
+            if (remainingMinutes >= shortBreakMinutes) {
+              breakDuration = shortBreakMinutes;
+            } else if (remainingMinutes >= 2) {
+              // Use remaining time as break if at least 2 minutes
+              breakDuration = remainingMinutes;
+            }
+          }
+
+          // Add break if we determined a duration
+          if (breakDuration > 0) {
+            sessions.push({
+              type: 'break',
+              subType: breakType,
+              duration: breakDuration,
+            });
+            remainingMinutes -= breakDuration;
+            remainingMinutes = Math.max(0, remainingMinutes);
+
+            console.log(
+              `Added ${breakType} break (${breakDuration} min), remaining: ${remainingMinutes} minutes`,
+            );
+
+            // Reset round counter if it was a long break
+            if (breakType === 'long') {
+              sessionsInCurrentRound = 0;
+            }
+          } else {
+            // No break added, this was the final session
+            break;
+          }
+        } else {
+          // No remaining time, this was the final session
+          break;
+        }
+      }
+
+      // Count totals
+      const focusSessions = sessions.filter(s => s.type === 'focus');
+      const shortBreaks = sessions.filter(
+        s => s.type === 'break' && s.subType === 'short',
+      );
+      const longBreaks = sessions.filter(
+        s => s.type === 'break' && s.subType === 'long',
+      );
+
+      console.log('Final Sessions Array:', sessions);
+      sessions.forEach((session, index) => {
+        const subTypeText = session.subType || '';
+        const numberText = session.number || '';
+        console.log(
+          `Session ${index}: ${session.type} ${numberText} ${subTypeText} - ${session.duration} minutes`,
+        );
+      });
+
+      const usedMinutes = sessions.reduce(
+        (sum, session) => sum + session.duration,
+        0,
+      );
+      const finalRemainingMinutes = Math.max(
+        0,
+        totalDurationMinutes - usedMinutes,
+      );
+
+      const result = {
+        sessions: sessions,
+        totalFocusSessions: focusSessions.length,
+        totalShortBreaks: shortBreaks.length,
+        totalLongBreaks: longBreaks.length,
+        totalBreaks: shortBreaks.length + longBreaks.length,
+        focusMinutes,
+        shortBreakMinutes,
+        longBreakMinutes,
+        focusSessionsPerRound,
+        usedMinutes: usedMinutes,
+        remainingMinutes: finalRemainingMinutes,
+      };
+
+      console.log('Session Structure Result:', {
+        totalFocusSessions: result.totalFocusSessions,
+        totalShortBreaks: result.totalShortBreaks,
+        totalLongBreaks: result.totalLongBreaks,
+        usedMinutes: result.usedMinutes,
+        remainingMinutes: result.remainingMinutes,
+        totalDurationMinutes,
+      });
+
+      return result;
+    };
+
+    if (taskData) {
+      const structure = calculateSessionStructure();
+      setSessionStructure(structure);
+    }
+  }, [taskData]);
+
+  const pomodoroSettings = getPomodoroSettings();
+
+  const [totalTaskDuration, setTotalTaskDuration] = useState(() =>
+    getTotalDuration(),
+  );
   const [currentSessionTime, setCurrentSessionTime] = useState(0);
-  const [currentSessionTarget, setCurrentSessionTarget] = useState(25 * 60); 
+  const [currentSessionTarget, setCurrentSessionTarget] = useState(() => {
+    const settings = getPomodoroSettings();
+    return settings.focusTime * 60;
+  });
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [completedPomodoros, setCompletedPomodoros] = useState(0);
-  const [totalPomodoros, setTotalPomodoros] = useState(4); 
+  const [totalPomodoros, setTotalPomodoros] = useState(0);
   const [completedBreaks, setCompletedBreaks] = useState(0);
-  const [totalBreaks, setTotalBreaks] = useState(4); 
-  const [remainingTaskTime, setRemainingTaskTime] = useState(120 * 60);
-  
+  const [totalBreaks, setTotalBreaks] = useState(0);
+  const [remainingTaskTime, setRemainingTaskTime] = useState(() =>
+    getTotalDuration(),
+  );
+  const [currentBreakType, setCurrentBreakType] = useState('short');
+  const [currentSessionIndex, setCurrentSessionIndex] = useState(0);
+
   const [isRunning, setIsRunning] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isPomodoroBlocking, setIsPomodoroBlocking] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [timerStartTime, setTimerStartTime] = useState(null);
+  const [sessionStartTime, setSessionStartTime] = useState(null);
+  const [lastUpdateTime, setLastUpdateTime] = useState(null);
 
-  // App exclusion tracking
   const [excludedAppsCount, setExcludedAppsCount] = useState(0);
   const [pomodoroState, setPomodoroState] = useState(null);
+  const [isStateLoaded, setIsStateLoaded] = useState(false);
 
-  const focusIndicatorRotate = useRef(new Animated.Value(0)).current;
-  const completionScale = useRef(new Animated.Value(0)).current;
   const timerRef = useRef(null);
+  const backgroundStartTimeRef = useRef(null);
+  const appState = useRef(AppState.currentState);
 
+  // ADDED: Load existing timer completion from database - same pattern as TaskEvaluationScreen
+  const loadTimerCompletion = React.useCallback(async () => {
+    if (!user || !taskData || !completionDate) {
+      console.warn('PomodoroTimer - Missing data:', {user: !!user, taskData: !!taskData, completionDate});
+      return null;
+    }
+
+    try {
+      console.log('PomodoroTimer - Loading completion for:', {
+        taskId: taskData.id,
+        userId: user.id,
+        completionDate,
+        selectedDate
+      });
+
+      const completion = await taskCompletionsService.getTaskCompletion(
+        taskData.id,
+        user.id,
+        completionDate
+      );
+
+      console.log('PomodoroTimer - Found completion:', completion);
+      return completion;
+    } catch (error) {
+      console.error('PomodoroTimer - Error loading completion:', error);
+      return null;
+    }
+  }, [user, taskData, completionDate, selectedDate]);
+
+  // Enhanced save timer state function with debouncing
+  const saveTimerState = async (overrideState = {}) => {
+    // Prevent concurrent saves
+    if (isSavingRef.current) {
+      console.log('Save already in progress, skipping...');
+      return;
+    }
+
+    // Debounce saves - don't save more than once per second
+    const now = Date.now();
+    if (now - lastSaveTimeRef.current < 1000) {
+      console.log('Save debounced, too recent');
+      return;
+    }
+
+    try {
+      isSavingRef.current = true;
+      lastSaveTimeRef.current = now;
+
+      const currentTime = Date.now();
+      const timerState = {
+        currentSessionTime:
+          overrideState.currentSessionTime ?? currentSessionTime,
+        currentSessionTarget:
+          overrideState.currentSessionTarget ?? currentSessionTarget,
+        isOnBreak: overrideState.isOnBreak ?? isOnBreak,
+        completedPomodoros:
+          overrideState.completedPomodoros ?? completedPomodoros,
+        completedBreaks: overrideState.completedBreaks ?? completedBreaks,
+        currentBreakType: overrideState.currentBreakType ?? currentBreakType,
+        currentSessionIndex:
+          overrideState.currentSessionIndex ?? currentSessionIndex,
+        isRunning: overrideState.isRunning ?? isRunning,
+        isCompleted: overrideState.isCompleted ?? isCompleted,
+        isTransitioning: overrideState.isTransitioning ?? isTransitioning,
+        timerStartTime: overrideState.timerStartTime ?? timerStartTime,
+        sessionStartTime: overrideState.sessionStartTime ?? sessionStartTime,
+        lastUpdateTime: currentTime,
+        appCloseTime: currentTime,
+        // ADDED: Store completion date for validation
+        completionDate: completionDate,
+      };
+
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(timerState));
+      console.log('Timer state saved for date:', completionDate, timerState);
+    } catch (error) {
+      console.error('Error saving timer state:', error);
+    } finally {
+      isSavingRef.current = false;
+    }
+  };
+
+  // Enhanced load timer state function with proper locking
+  const loadTimerState = async () => {
+    // Prevent concurrent loads
+    if (isLoadingRef.current) {
+      console.log('Load already in progress, skipping...');
+      return false;
+    }
+
+    try {
+      isLoadingRef.current = true;
+
+      const savedState = await AsyncStorage.getItem(STORAGE_KEY);
+      if (savedState) {
+        const parsedState = JSON.parse(savedState);
+        console.log('Loading timer state for date:', completionDate, parsedState);
+
+        // ADDED: Validate that saved state is for the same date
+        if (parsedState.completionDate && parsedState.completionDate !== completionDate) {
+          console.log('Saved state is for different date, ignoring:', parsedState.completionDate, 'vs', completionDate);
+          return false;
+        }
+
+        // Only calculate background time once per app session
+        let adjustedCurrentTime = parsedState.currentSessionTime;
+
+        if (
+          parsedState.isRunning &&
+          parsedState.appCloseTime &&
+          !parsedState.isTransitioning &&
+          !backgroundTimeCalculatedRef.current
+        ) {
+          const backgroundTimeElapsed = Math.floor(
+            (Date.now() - parsedState.appCloseTime) / 1000,
+          );
+
+          // Only apply background time if it's reasonable (less than 1 hour)
+          if (backgroundTimeElapsed > 0 && backgroundTimeElapsed < 3600) {
+            adjustedCurrentTime =
+              parsedState.currentSessionTime + backgroundTimeElapsed;
+            backgroundTimeCalculatedRef.current = true; // Mark as calculated
+
+            console.log(`Background time elapsed: ${backgroundTimeElapsed}s`);
+            console.log(
+              `Adjusting session time from ${parsedState.currentSessionTime} to ${adjustedCurrentTime}`,
+            );
+
+            // Check if session(s) completed in background
+            if (adjustedCurrentTime >= parsedState.currentSessionTarget) {
+              await handleBackgroundSessionCompletions(
+                parsedState,
+                backgroundTimeElapsed,
+              );
+              return true;
+            }
+          }
+        }
+
+        // Restore state
+        setCurrentSessionTime(adjustedCurrentTime);
+        setCurrentSessionTarget(parsedState.currentSessionTarget);
+        setIsOnBreak(parsedState.isOnBreak);
+        setCompletedPomodoros(parsedState.completedPomodoros);
+        setCompletedBreaks(parsedState.completedBreaks);
+        setCurrentBreakType(parsedState.currentBreakType);
+        setCurrentSessionIndex(parsedState.currentSessionIndex);
+        setIsRunning(parsedState.isRunning);
+        setIsCompleted(parsedState.isCompleted);
+        setIsTransitioning(parsedState.isTransitioning);
+        setTimerStartTime(parsedState.timerStartTime);
+        setSessionStartTime(parsedState.sessionStartTime);
+        setLastUpdateTime(Date.now());
+
+        return true;
+      }
+    } catch (error) {
+      console.error('Error loading timer state:', error);
+    } finally {
+      isLoadingRef.current = false;
+    }
+    return false;
+  };
+
+  // Handle multiple session completions that may have occurred in background
+  const handleBackgroundSessionCompletions = async (
+    savedState,
+    backgroundTimeElapsed,
+  ) => {
+    if (!sessionStructure) return;
+
+    let remainingBackgroundTime = backgroundTimeElapsed;
+    let currentIndex = savedState.currentSessionIndex;
+    let currentTime = savedState.currentSessionTime;
+    let newCompletedPomodoros = savedState.completedPomodoros;
+    let newCompletedBreaks = savedState.completedBreaks;
+
+    // Simulate session progressions that occurred in background
+    while (
+      remainingBackgroundTime > 0 &&
+      currentIndex < sessionStructure.sessions.length
+    ) {
+      const currentSession = sessionStructure.sessions[currentIndex];
+      const timeNeededToComplete =
+        savedState.currentSessionTarget - currentTime;
+
+      if (remainingBackgroundTime >= timeNeededToComplete) {
+        // This session completed in background
+        remainingBackgroundTime -= timeNeededToComplete;
+
+        // Update counters
+        if (currentSession.type === 'focus') {
+          newCompletedPomodoros++;
+        } else {
+          newCompletedBreaks++;
+        }
+
+        // Move to next session
+        currentIndex++;
+        currentTime = 0;
+
+        // Check if there are more sessions
+        if (currentIndex < sessionStructure.sessions.length) {
+          const nextSession = sessionStructure.sessions[currentIndex];
+          const nextSessionTarget = nextSession.duration * 60;
+
+          // Apply any remaining background time to the next session
+          if (remainingBackgroundTime > 0) {
+            currentTime = Math.min(remainingBackgroundTime, nextSessionTarget);
+            remainingBackgroundTime = Math.max(
+              0,
+              remainingBackgroundTime - nextSessionTarget,
+            );
+          }
+
+          // Update current session target for the new session
+          savedState.currentSessionTarget = nextSessionTarget;
+          savedState.isOnBreak = nextSession.type === 'break';
+          savedState.currentBreakType = nextSession.subType || 'short';
+        } else {
+          // All sessions completed
+          setIsCompleted(true);
+          await clearTimerState();
+          return;
+        }
+      } else {
+        // Session didn't complete, add remaining time
+        currentTime += remainingBackgroundTime;
+        remainingBackgroundTime = 0;
+      }
+    }
+
+    // Set the final calculated state
+    setCurrentSessionTime(currentTime);
+    setCurrentSessionTarget(savedState.currentSessionTarget);
+    setIsOnBreak(savedState.isOnBreak);
+    setCurrentBreakType(savedState.currentBreakType);
+    setCurrentSessionIndex(currentIndex);
+    setCompletedPomodoros(newCompletedPomodoros);
+    setCompletedBreaks(newCompletedBreaks);
+    setIsRunning(savedState.isRunning);
+    setIsCompleted(currentIndex >= sessionStructure.sessions.length);
+    setIsTransitioning(false);
+    setTimerStartTime(savedState.timerStartTime);
+    setSessionStartTime(savedState.sessionStartTime);
+    setLastUpdateTime(Date.now());
+
+    // Save the updated state
+    await saveTimerState({
+      currentSessionTime: currentTime,
+      currentSessionTarget: savedState.currentSessionTarget,
+      isOnBreak: savedState.isOnBreak,
+      currentBreakType: savedState.currentBreakType,
+      currentSessionIndex: currentIndex,
+      completedPomodoros: newCompletedPomodoros,
+      completedBreaks: newCompletedBreaks,
+      isCompleted: currentIndex >= sessionStructure.sessions.length,
+      isTransitioning: false,
+    });
+  };
+
+  // Clear timer state from AsyncStorage
+  const clearTimerState = async () => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEY);
+      await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
+      backgroundTimeCalculatedRef.current = false; // Reset background time flag
+      console.log('Timer state cleared for date:', completionDate);
+    } catch (error) {
+      console.error('Error clearing timer state:', error);
+    }
+  };
+
+  // Save session structure to AsyncStorage
+  const saveSessionStructure = async structure => {
+    try {
+      await AsyncStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify(structure),
+      );
+    } catch (error) {
+      console.error('Error saving session structure:', error);
+    }
+  };
+
+  // Load session structure from AsyncStorage
+  const loadSessionStructure = async () => {
+    try {
+      const savedStructure = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
+      if (savedStructure) {
+        return JSON.parse(savedStructure);
+      }
+    } catch (error) {
+      console.error('Error loading session structure:', error);
+    }
+    return null;
+  };
+
+  // Helper function to format time for display
+  const formatTimeForDisplay = seconds => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
+  // Helper function to convert seconds to minutes with precision
+  const secondsToMinutesWithPrecision = seconds => {
+    return Math.round((seconds / 60) * 100) / 100; // 2 decimal places
+  };
+
+  // UPDATED: Save timer completion to database with date-specific handling
+  const saveTimerCompletionToDatabase = async (timerValue, isCompleted) => {
+    if (!taskId || !user) {
+      console.log('No task ID or user for saving timer completion');
+      return;
+    }
+
+    try {
+      // Enhanced logging with both seconds and minutes for clarity
+      console.log(`Saving timer completion for date ${completionDate}:
+        - Raw seconds: ${timerValue}
+        - Formatted time: ${formatTimeForDisplay(timerValue)}
+        - Minutes (with precision): ${secondsToMinutesWithPrecision(timerValue)}
+        - Completed: ${isCompleted}
+        - Date: ${completionDate}`);
+
+      // Store seconds directly for maximum precision
+      const completion = await taskCompletionsService.upsertTimerCompletion(
+        taskId,
+        user.id,
+        completionDate, // FIXED: Use completionDate instead of selectedDate
+        timerValue, // Store full seconds - no conversion/precision loss
+        isCompleted,
+      );
+
+      console.log('Timer completion saved to database for date:', completionDate, completion);
+      return completion;
+    } catch (error) {
+      console.error('Error saving timer completion to database:', error);
+      Alert.alert('Error', 'Failed to save task completion. Please try again.');
+      throw error;
+    }
+  };
+
+  // ...existing code above...
   useEffect(() => {
-    const usedTime = (completedPomodoros * 25 * 60) + (completedBreaks * 5 * 60);
-    setRemainingTaskTime(Math.max(0, totalTaskDuration - usedTime));
-  }, [completedPomodoros, completedBreaks, totalTaskDuration]);
+    const handleAppStateChange = nextAppState => {
+      // App goes to background
+      if (
+        appState.current === 'active' &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        backgroundStartTimeRef.current = Date.now();
+      }
+      // App comes to foreground
+      else if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        if (
+          isRunning &&
+          backgroundStartTimeRef.current &&
+          !isTransitioning &&
+          !isCompleted
+        ) {
+          const now = Date.now();
+          const elapsed = Math.floor(
+            (now - backgroundStartTimeRef.current) / 1000,
+          );
+          if (elapsed > 0 && elapsed < 3600) {
+            setCurrentSessionTime(prev => {
+              // Don't exceed session target
+              return Math.min(prev + elapsed, currentSessionTarget);
+            });
+          }
+          backgroundStartTimeRef.current = null;
+        }
+      }
+      appState.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [isRunning, isTransitioning, isCompleted, currentSessionTarget]);
+
+  // UPDATED: Load state when screen focuses with existing completion check
+  useFocusEffect(
+    React.useCallback(() => {
+      const initializeScreen = async () => {
+        // Prevent multiple initializations
+        if (isLoadingRef.current) {
+          return;
+        }
+
+        console.log('Screen focused, initializing for date:', completionDate);
+
+        // ADDED: Check for existing completion first - same pattern as TaskEvaluationScreen
+        const existingCompletion = await loadTimerCompletion();
+        if (existingCompletion) {
+          console.log('Found existing timer completion:', existingCompletion);
+          
+          // If task is already completed for this date, show completion screen
+          if (existingCompletion.is_completed) {
+            console.log('Task already completed for this date, showing completion screen');
+            setIsCompleted(true);
+            setIsStateLoaded(true);
+            return;
+          }
+
+          // If there's existing timer progress, we might want to restore it
+          // but we'll let the AsyncStorage state take precedence for active sessions
+        }
+
+        // Try to load existing session structure first
+        const savedStructure = await loadSessionStructure();
+        if (savedStructure) {
+          console.log('Loaded existing session structure');
+          setSessionStructure(savedStructure);
+        }
+
+        // Try to load timer state
+        const stateLoaded = await loadTimerState();
+        setIsStateLoaded(true);
+
+        if (stateLoaded) {
+          console.log('Previous timer state loaded successfully');
+        } else {
+          console.log('No previous timer state found, starting fresh');
+        }
+      };
+
+      initializeScreen();
+
+      // Save state when screen loses focus with debouncing
+      return () => {
+        if (isStateLoaded && !isSavingRef.current) {
+          console.log('Screen losing focus, saving state for date:', completionDate);
+          // Use setTimeout to avoid blocking navigation
+          setTimeout(() => {
+            saveTimerState();
+          }, 50);
+        }
+      };
+    }, [completionDate, loadTimerCompletion]),
+  );
+
+  // UPDATED: Calculate remaining time properly based on session structure
+  useEffect(() => {
+    if (sessionStructure) {
+      saveSessionStructure(sessionStructure);
+      setTotalPomodoros(sessionStructure.totalFocusSessions);
+      setTotalBreaks(sessionStructure.totalBreaks);
+
+      // Only set initial session if we haven't loaded a previous state and state hasn't been loaded yet
+      if (
+        currentSessionIndex === 0 &&
+        currentSessionTime === 0 &&
+        !isStateLoaded
+      ) {
+        if (sessionStructure.sessions.length > 0) {
+          const firstSession = sessionStructure.sessions[0];
+          setCurrentSessionTarget(firstSession.duration * 60);
+          setIsOnBreak(firstSession.type === 'break');
+          setCurrentBreakType(firstSession.subType || 'short');
+        }
+      }
+
+      // UPDATED: Calculate remaining time based on sessions completed and current session progress
+      const completedSessionsTime = sessionStructure.sessions
+        .slice(0, currentSessionIndex)
+        .reduce((sum, session) => sum + session.duration * 60, 0);
+
+      const currentSessionProgress = currentSessionTime;
+      const totalUsedTime = completedSessionsTime + currentSessionProgress;
+      const totalPomodoroTime = sessionStructure.usedMinutes * 60; // Total planned time for all sessions
+      const absoluteRemainingTime = Math.max(
+        0,
+        totalTaskDuration - totalUsedTime,
+      );
+
+      // If using pomodoro_duration, remaining time should be based on unused pomodoro time
+      if (taskData?.pomodoro_duration) {
+        const pomodoroRemainingTime = Math.max(
+          0,
+          totalPomodoroTime - totalUsedTime,
+        );
+        setRemainingTaskTime(pomodoroRemainingTime);
+      } else {
+        // For other duration types, use absolute remaining time
+        setRemainingTaskTime(absoluteRemainingTime);
+      }
+
+      console.log('Remaining Time Calculation:', {
+        completedSessionsTime: completedSessionsTime / 60,
+        currentSessionProgress: currentSessionProgress / 60,
+        totalUsedTime: totalUsedTime / 60,
+        totalPomodoroTime: totalPomodoroTime / 60,
+        absoluteRemainingTime: absoluteRemainingTime / 60,
+        finalRemainingTime:
+          (taskData?.pomodoro_duration
+            ? Math.max(0, totalPomodoroTime - totalUsedTime)
+            : absoluteRemainingTime) / 60,
+      });
+    }
+  }, [
+    sessionStructure,
+    isStateLoaded,
+    currentSessionIndex,
+    currentSessionTime,
+    totalTaskDuration,
+  ]);
 
   useEffect(() => {
     checkPomodoroStatus();
     loadPomodoroState();
   }, []);
 
-  // Load Pomodoro state including app exclusion information
   const loadPomodoroState = async () => {
     try {
       if (PomodoroModule && PomodoroModule.getPomodoroState) {
         const state = await PomodoroModule.getPomodoroState();
-        console.log('Loaded Pomodoro state with exclusions:', state);
         setPomodoroState(state);
         setExcludedAppsCount(state.excludedAppsCount || 0);
       }
@@ -71,13 +952,11 @@ const PomodoroTimerScreen = () => {
     }
   };
 
-  // Check current Pomodoro blocking status
   const checkPomodoroStatus = async () => {
     try {
       if (PomodoroModule) {
         const isBlocking = await PomodoroModule.isPomodoroBlocking();
         setIsPomodoroBlocking(isBlocking);
-        console.log('Pomodoro blocking status:', isBlocking);
         await loadPomodoroState();
       }
     } catch (error) {
@@ -85,13 +964,11 @@ const PomodoroTimerScreen = () => {
     }
   };
 
-  // Start app blocking for work sessions
   const startPomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
         await PomodoroModule.startPomodoroBlocking();
         setIsPomodoroBlocking(true);
-        console.log('Pomodoro blocking started');
         await loadPomodoroState();
       }
     } catch (error) {
@@ -99,31 +976,26 @@ const PomodoroTimerScreen = () => {
     }
   };
 
-  // Stop app blocking
   const stopPomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
         await PomodoroModule.stopPomodoroBlocking();
         setIsPomodoroBlocking(false);
-        console.log('Pomodoro blocking stopped');
       }
     } catch (error) {
       console.error('Error stopping Pomodoro blocking:', error);
     }
   };
 
-  // Pause app blocking (temporary)
   const pausePomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
         await PomodoroModule.pausePomodoroBlocking();
         setIsPomodoroBlocking(false);
-        console.log('Pomodoro blocking paused');
-        
+
         setTimeout(async () => {
           const isBlocking = await PomodoroModule.isPomodoroBlocking();
           setIsPomodoroBlocking(isBlocking);
-          console.log('Verified blocking state after pause:', isBlocking);
         }, 100);
       }
     } catch (error) {
@@ -131,18 +1003,15 @@ const PomodoroTimerScreen = () => {
     }
   };
 
-  // Resume app blocking
   const resumePomodoroBlocking = async () => {
     try {
       if (PomodoroModule) {
         await PomodoroModule.resumePomodoroBlocking();
         setIsPomodoroBlocking(true);
-        console.log('Pomodoro blocking resumed');
-        
+
         setTimeout(async () => {
           const isBlocking = await PomodoroModule.isPomodoroBlocking();
           setIsPomodoroBlocking(isBlocking);
-          console.log('Verified blocking state after resume:', isBlocking);
         }, 100);
       }
     } catch (error) {
@@ -154,84 +1023,236 @@ const PomodoroTimerScreen = () => {
     }
   };
 
+  const getCurrentSession = () => {
+    if (
+      !sessionStructure ||
+      currentSessionIndex >= sessionStructure.sessions.length
+    ) {
+      return null;
+    }
+    return sessionStructure.sessions[currentSessionIndex];
+  };
+
+  // UPDATED: Complete task and navigate home with database integration
+  const completeTaskAndNavigateHome = async () => {
+    if (!taskId || !taskData || !user) {
+      await clearTimerState();
+      navigation.goBack();
+      return;
+    }
+
+    try {
+      // Calculate total timer duration completed
+      const totalCompletedTime = sessionStructure
+        ? sessionStructure.sessions
+            .slice(0, currentSessionIndex + 1)
+            .reduce((sum, session, index) => {
+              if (index < currentSessionIndex) {
+                return sum + session.duration * 60; // Convert to seconds
+              } else if (index === currentSessionIndex) {
+                return sum + currentSessionTime;
+              }
+              return sum;
+            }, 0)
+        : currentSessionTime;
+
+      // Save to task_completions table with full precision
+      await saveTimerCompletionToDatabase(totalCompletedTime, true);
+
+      // Clear saved state since task is completed
+      await clearTimerState();
+
+      // Navigate back with completion info - FIXED: Pass selectedDate consistently
+      navigation.navigate('BottomTab', {
+        screen: 'Home',
+        params: {
+          completedTaskId: taskId,
+          showAppreciation: true,
+          taskData: {
+            ...taskData,
+            isCompleted: true,
+          },
+          completedDate: completionDate, // ADDED: Pass completion date
+        },
+      });
+    } catch (error) {
+      console.error('Error completing task:', error);
+      Alert.alert(
+        'Update Error',
+        'Task completed but failed to save. Please check the home screen.',
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              await clearTimerState();
+              navigation.navigate('BottomTab', {
+                screen: 'Home',
+                params: {
+                  completedTaskId: taskId,
+                  completedDate: completionDate,
+                },
+              });
+            },
+          },
+        ],
+      );
+    }
+  };
+
   const startNextSession = async () => {
-    console.log('Session transition - Current state:', {
-      completedPomodoros,
-      completedBreaks,
-      isOnBreak,
-      totalPomodoros,
-      totalBreaks
-    });
+    if (!sessionStructure) return;
 
     setIsTransitioning(true);
     setIsRunning(false);
 
-    if (isOnBreak) {
-      const newCompletedBreaks = completedBreaks + 1;
-      console.log('Break completed, completed breaks will be:', newCompletedBreaks);
-      setCompletedBreaks(newCompletedBreaks);
-      
-      if (completedPomodoros >= totalPomodoros) {
-        console.log('All work sessions completed after this break - finishing cycle');
-        setIsCompleted(true);
-        setIsTransitioning(false);
-        await stopPomodoroBlocking();
-        
-        Animated.spring(completionScale, {
-          toValue: 1,
-          tension: 100,
-          friction: 8,
-          useNativeDriver: true,
-        }).start();
-        return;
+    // Save transitioning state
+    await saveTimerState({isTransitioning: true, isRunning: false});
+
+    // Move to next session
+    const nextSessionIndex = currentSessionIndex + 1;
+
+    // Check if we've completed all sessions
+    if (nextSessionIndex >= sessionStructure.sessions.length) {
+      setIsCompleted(true);
+      setIsTransitioning(false);
+      await stopPomodoroBlocking();
+
+      // Save final timer completion when all sessions are done
+      try {
+        const totalCompletedTime = sessionStructure.sessions.reduce(
+          (sum, session) => sum + session.duration * 60,
+          0,
+        );
+
+        await saveTimerCompletionToDatabase(totalCompletedTime, true);
+      } catch (error) {
+        console.error('Error saving final timer completion:', error);
       }
-      
-      
-      console.log('Starting next work session');
-      setIsOnBreak(false);
-      setCurrentSessionTarget(25 * 60); 
-      setCurrentSessionTime(0);
-      await startPomodoroBlocking();
-      
-    } else {
-      const newCompletedPomodoros = completedPomodoros + 1;
-      console.log(`Work session ${newCompletedPomodoros} completed`);
-      setCompletedPomodoros(newCompletedPomodoros);
-      
-      if (newCompletedPomodoros >= totalPomodoros) {
-        console.log('Last work session completed - starting final break');
-        setIsOnBreak(true);
-        setCurrentSessionTarget(5 * 60);
-        setCurrentSessionTime(0);
-        await stopPomodoroBlocking();
-      } else {
-        console.log(`Starting break ${completedBreaks + 1} of ${totalBreaks}`);
-        setIsOnBreak(true);
-        setCurrentSessionTarget(5 * 60); // 5-minute break
-        setCurrentSessionTime(0);
-        await stopPomodoroBlocking();
-      }
+
+      await clearTimerState(); // Clear state on completion
+      return;
     }
 
-    setTimeout(() => {
+    // Update counters based on current session completion
+    const currentSession = sessionStructure.sessions[currentSessionIndex];
+    const newCompletedPomodoros =
+      currentSession.type === 'focus'
+        ? completedPomodoros + 1
+        : completedPomodoros;
+    const newCompletedBreaks =
+      currentSession.type === 'break' ? completedBreaks + 1 : completedBreaks;
+
+    // Set up next session
+    const nextSession = sessionStructure.sessions[nextSessionIndex];
+    const newSessionTarget = nextSession.duration * 60;
+    const newIsOnBreak = nextSession.type === 'break';
+    const newBreakType = nextSession.subType || 'short';
+
+    // Update state
+    setCurrentSessionIndex(nextSessionIndex);
+    setCurrentSessionTarget(newSessionTarget);
+    setCurrentSessionTime(0);
+    setIsOnBreak(newIsOnBreak);
+    setCurrentBreakType(newBreakType);
+    setCompletedPomodoros(newCompletedPomodoros);
+    setCompletedBreaks(newCompletedBreaks);
+    setSessionStartTime(Date.now());
+
+    // Handle blocking based on session type
+    if (nextSession.type === 'focus') {
+      if (pomodoroSettings.autoStartFocusSessions) {
+        await startPomodoroBlocking();
+      }
+    } else {
+      await stopPomodoroBlocking();
+    }
+
+    // Save updated state
+    await saveTimerState({
+      currentSessionIndex: nextSessionIndex,
+      currentSessionTarget: newSessionTarget,
+      currentSessionTime: 0,
+      isOnBreak: newIsOnBreak,
+      currentBreakType: newBreakType,
+      completedPomodoros: newCompletedPomodoros,
+      completedBreaks: newCompletedBreaks,
+      sessionStartTime: Date.now(),
+      isTransitioning: true,
+    });
+
+    // Save intermediate progress to database periodically
+    try {
+      const completedTime = sessionStructure.sessions
+        .slice(0, nextSessionIndex)
+        .reduce((sum, session) => sum + session.duration * 60, 0);
+
+      if (completedTime > 0) {
+        await saveTimerCompletionToDatabase(completedTime, false);
+      }
+    } catch (error) {
+      console.error('Error saving intermediate timer progress:', error);
+    }
+
+    setTimeout(async () => {
       if (!isCompleted) {
         setIsTransitioning(false);
-        setIsRunning(true); 
+
+        const shouldAutoStart =
+          nextSession.type === 'break'
+            ? pomodoroSettings.autoStartShortBreaks
+            : pomodoroSettings.autoStartFocusSessions;
+
+        if (shouldAutoStart) {
+          setIsRunning(true);
+          setTimerStartTime(Date.now());
+        }
+
+        // Save final transition state
+        await saveTimerState({
+          isTransitioning: false,
+          isRunning: shouldAutoStart,
+          timerStartTime: shouldAutoStart ? Date.now() : null,
+        });
       }
     }, 2000);
   };
 
+  // Enhanced main timer effect with better state persistence
   useEffect(() => {
-    if (isTransitioning) {
+    if (isTransitioning || !sessionStructure || !isStateLoaded) {
       return;
     }
 
     if (isRunning && currentSessionTime < currentSessionTarget) {
       timerRef.current = setTimeout(() => {
-        setCurrentSessionTime(prev => prev + 1);
+        const newTime = currentSessionTime + 1;
+        setCurrentSessionTime(newTime);
+        setLastUpdateTime(Date.now());
+
+        // Save state every 30 seconds when running (reduced frequency to minimize database calls)
+        if (newTime % 30 === 0) {
+          saveTimerState({currentSessionTime: newTime});
+
+          // Also save intermediate progress to database every minute
+          if (newTime % 60 === 0) {
+            const completedTime = sessionStructure
+              ? sessionStructure.sessions
+                  .slice(0, currentSessionIndex)
+                  .reduce((sum, session) => sum + session.duration * 60, 0) +
+                newTime
+              : newTime;
+
+            saveTimerCompletionToDatabase(completedTime, false).catch(
+              console.error,
+            );
+          }
+        }
       }, 1000);
-    } else if (currentSessionTime >= currentSessionTarget && !isCompleted && !isTransitioning) {
-      // Session completed - start transition
+    } else if (
+      currentSessionTime >= currentSessionTarget &&
+      !isCompleted &&
+      !isTransitioning
+    ) {
       startNextSession();
     }
 
@@ -240,164 +1261,249 @@ const PomodoroTimerScreen = () => {
         clearTimeout(timerRef.current);
       }
     };
-  }, [isRunning, currentSessionTime, currentSessionTarget, isOnBreak, completedPomodoros, totalPomodoros, isTransitioning]);
+  }, [
+    isRunning,
+    currentSessionTime,
+    currentSessionTarget,
+    currentSessionIndex,
+    isTransitioning,
+    sessionStructure,
+    isStateLoaded,
+  ]);
 
-  // Focus indicator animation during work sessions
-  useEffect(() => {
-    if (isRunning && !isOnBreak && !isTransitioning) {
-      const rotateAnimation = Animated.loop(
-        Animated.timing(focusIndicatorRotate, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-      );
-      rotateAnimation.start();
-
-      return () => rotateAnimation.stop();
-    } else {
-      focusIndicatorRotate.setValue(0);
-    }
-  }, [isRunning, isOnBreak, isTransitioning]);
-
-  // Handle start/pause/restart functionality
   const handleStartPause = async () => {
-    if (isTransitioning) {
+    if (isTransitioning || !sessionStructure) {
       return;
     }
 
     if (isCompleted) {
-      // Reset entire cycle
-      console.log('Restarting complete Pomodoro cycle');
-      setIsCompleted(false);
-      setCurrentSessionTime(0);
-      setCurrentSessionTarget(25 * 60);
-      setIsOnBreak(false);
-      setCompletedPomodoros(0);
-      setCompletedBreaks(0);
-      setRemainingTaskTime(totalTaskDuration);
-      setIsTransitioning(false);
-      completionScale.setValue(0);
-      setIsRunning(true);
-      if (!isOnBreak) {
-        await startPomodoroBlocking();
-      }
+      await completeTaskAndNavigateHome();
+      return;
     } else {
       const newRunningState = !isRunning;
       setIsRunning(newRunningState);
 
-      console.log('Timer state changing to:', newRunningState, 'Current blocking state:', isPomodoroBlocking);
+      if (newRunningState) {
+        setTimerStartTime(Date.now());
+        setSessionStartTime(Date.now());
 
-      if (newRunningState && !isOnBreak) {
-        console.log('Starting work session - initiating app blocking');
-        await startPomodoroBlocking();
-      } else if (newRunningState && isOnBreak) {
-        console.log('Starting break - no blocking needed');
+        if (!isOnBreak) {
+          await startPomodoroBlocking();
+        }
       } else {
-        console.log('Pausing timer - pausing app blocking');
-        await pausePomodoroBlocking();
+        setTimerStartTime(null);
+
+        if (!isOnBreak) {
+          await pausePomodoroBlocking();
+        }
+
+        // Save current progress when pausing
+        try {
+          const completedTime = sessionStructure
+            ? sessionStructure.sessions
+                .slice(0, currentSessionIndex)
+                .reduce((sum, session) => sum + session.duration * 60, 0) +
+              currentSessionTime
+            : currentSessionTime;
+
+          await saveTimerCompletionToDatabase(completedTime, false);
+        } catch (error) {
+          console.error('Error saving timer progress on pause:', error);
+        }
       }
-      
+
+      // Save state immediately when starting/pausing
+      await saveTimerState({
+        isRunning: newRunningState,
+        timerStartTime: newRunningState ? Date.now() : null,
+      });
+
       setTimeout(async () => {
         if (PomodoroModule) {
-          const currentBlockingState = await PomodoroModule.isPomodoroBlocking();
-          console.log('Final blocking state after start/pause:', currentBlockingState);
+          const currentBlockingState =
+            await PomodoroModule.isPomodoroBlocking();
           setIsPomodoroBlocking(currentBlockingState);
         }
       }, 200);
     }
   };
 
-  // Stop and reset current cycle
   const handleStop = async () => {
-    console.log('Stopping and resetting Pomodoro timer');
+    if (!sessionStructure) return;
+
+    // Save current progress before stopping
+    try {
+      const completedTime = sessionStructure
+        ? sessionStructure.sessions
+            .slice(0, currentSessionIndex)
+            .reduce((sum, session) => sum + session.duration * 60, 0) +
+          currentSessionTime
+        : currentSessionTime;
+
+      if (completedTime > 0) {
+        await saveTimerCompletionToDatabase(completedTime, false);
+      }
+    } catch (error) {
+      console.error('Error saving timer progress on stop:', error);
+    }
+
     setIsRunning(false);
     setIsTransitioning(false);
     setCurrentSessionTime(0);
-    setCurrentSessionTarget(25 * 60);
-    setIsOnBreak(false);
+    setCurrentSessionIndex(0);
+    setTimerStartTime(null);
+    setSessionStartTime(null);
+
+    // Reset to first session
+    if (sessionStructure.sessions.length > 0) {
+      const firstSession = sessionStructure.sessions[0];
+      setCurrentSessionTarget(firstSession.duration * 60);
+      setIsOnBreak(firstSession.type === 'break');
+      setCurrentBreakType(firstSession.subType || 'short');
+    }
+
     setCompletedPomodoros(0);
     setCompletedBreaks(0);
-    setRemainingTaskTime(totalTaskDuration);
     setIsCompleted(false);
-    completionScale.setValue(0);
-    
+
     await stopPomodoroBlocking();
+    await clearTimerState(); // Clear saved state on manual stop
   };
 
-  // Close screen and cleanup
   const handleClose = async () => {
     if (isPomodoroBlocking) {
       await stopPomodoroBlocking();
     }
-    navigation.goBack();
+
+    // Save current state and progress before closing
+    if (isStateLoaded) {
+      await saveTimerState();
+
+      // Also save current progress to database
+      try {
+        const completedTime = sessionStructure
+          ? sessionStructure.sessions
+              .slice(0, currentSessionIndex)
+              .reduce((sum, session) => sum + session.duration * 60, 0) +
+            currentSessionTime
+          : currentSessionTime;
+
+        if (completedTime > 0) {
+          await saveTimerCompletionToDatabase(completedTime, false);
+        }
+      } catch (error) {
+        console.error('Error saving timer progress on close:', error);
+      }
+    }
+
+    navigation.navigate('BottomTab');
   };
 
-  // Format seconds to MM:SS
+  const handleCompletionAction = async () => {
+    await completeTaskAndNavigateHome();
+  };
+
   const formatTime = seconds => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, '0')}:${secs
+      .toString()
+      .padStart(2, '0')}`;
   };
 
-  // Calculate progress percentage
-  const getProgress = () => {
-    return (currentSessionTime / currentSessionTarget) * 100;
-  };
+  const getCurrentFocusSession = () => {
+    if (!sessionStructure || !sessionStructure.sessions) return 1;
 
-  // Animation interpolation for rotating focus indicator
-  const rotateInterpolate = focusIndicatorRotate.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  // FIXED: Dynamic status text with correct transition messages
-  const getStatusText = () => {
-    if (isTransitioning) {
-      return !isOnBreak ? 
-        'Focus session complete! Starting break in a moment...' : 
-        'Break session ending... Preparing for next focus session';
+    let focusCount = 0;
+    for (
+      let i = 0;
+      i <= currentSessionIndex && i < sessionStructure.sessions.length;
+      i++
+    ) {
+      if (sessionStructure.sessions[i].type === 'focus') {
+        focusCount++;
+      }
     }
-    
-    if (isOnBreak && isRunning) {
-      return `Break ${completedBreaks + 1} of ${totalBreaks} - Relax and recharge`;
-    } else if (isOnBreak && !isRunning) {
-      return `Break ${completedBreaks + 1} of ${totalBreaks} - Paused`;
-    } else if (isRunning && isPomodoroBlocking) {
-      const excludedText = excludedAppsCount > 0 ? ` • ${excludedAppsCount} apps excluded` : '';
-      return `Focus session ${completedPomodoros + 1} of ${totalPomodoros} - Apps blocked${excludedText}`;
-    } else if (isRunning && !isPomodoroBlocking && !isOnBreak) {
-      return 'Focus session paused - Apps accessible';
-    } else if (isRunning) {
-      return `Session ${completedPomodoros + 1} of ${totalPomodoros} in progress...`;
-    } else if (isPomodoroBlocking) {
-      return 'Apps blocked - Session paused';
-    } else {
-      return `Professional Pomodoro Technique - 4 sessions + 4 breaks (120 min total)`;
+
+    // If current session is focus, we're in that session
+    const currentSession = getCurrentSession();
+    if (currentSession && currentSession.type === 'focus') {
+      return focusCount;
+    }
+
+    // If current session is break, we've completed the previous focus session
+    return focusCount;
+  };
+
+  const getCurrentBreakSession = () => {
+    if (!sessionStructure || !sessionStructure.sessions) return 1;
+
+    let breakCount = 0;
+    for (
+      let i = 0;
+      i <= currentSessionIndex && i < sessionStructure.sessions.length;
+      i++
+    ) {
+      if (sessionStructure.sessions[i].type === 'break') {
+        breakCount++;
+      }
+    }
+
+    // If current session is break, we're in that session
+    const currentSession = getCurrentSession();
+    if (currentSession && currentSession.type === 'break') {
+      return breakCount;
+    }
+
+    // If current session is focus, return completed breaks
+    return Math.max(0, breakCount);
+  };
+
+  // ADDED: Date formatting helper - same as TaskEvaluationScreen
+  const getFormattedDate = () => {
+    try {
+      const date = new Date(selectedDate);
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch (error) {
+      console.error('PomodoroTimer - Date format error:', error);
+      return new Date().toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
     }
   };
 
-  const getSessionTypeText = () => {
-    if (isTransitioning) {
-      return !isOnBreak ? 'Session Complete!' : 'Break Ending...';
-    }
-    
-    if (isOnBreak) {
-      return `Break ${completedBreaks + 1} of ${totalBreaks}`;
-    } else {
-      return `Focus Session ${completedPomodoros + 1} of ${totalPomodoros}`;
-    }
-  };
-
-  const getProgressSummary = () => {
-    const workProgress = `Sessions: ${completedPomodoros}/${totalPomodoros}`;
-    const breakProgress = `Breaks: ${completedBreaks}/${totalBreaks}`;
-    const totalMinutes = Math.floor((totalTaskDuration - remainingTaskTime) / 60);
-    const timeProgress = `Time: ${totalMinutes}/120 min`;
-    
-    return `${workProgress} • ${breakProgress} • ${timeProgress}`;
-  };
+  // Show loading screen while initializing
+  if (!sessionStructure || !isStateLoaded) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <StatusBar backgroundColor="white" barStyle="dark-content" />
+        <Text style={styles.loadingText}>Initializing timer...</Text>
+        <Text style={styles.loadingSubText}>
+          Total Duration: {Math.floor(getTotalDuration() / 60)} minutes
+        </Text>
+        <Text style={styles.loadingDateText}>
+          {getFormattedDate()}
+        </Text>
+        {/* Show background timer indicator if timer is running */}
+        {isRunning && (
+          <View style={styles.backgroundTimerIndicator}>
+            <Icon name="timer" size={WP(6)} color="#4CAF50" />
+            <Text style={styles.backgroundTimerText}>
+              Timer running in background
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -406,216 +1512,139 @@ const PomodoroTimerScreen = () => {
       <View style={styles.mainContent}>
         {!isCompleted ? (
           <>
-            {/* Header with status indicators */}
             <View style={styles.header}>
-              <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeButton}>
                 <Icon name="close" size={WP(6)} color={colors.Black} />
               </TouchableOpacity>
-              
+
               <View style={styles.headerCenter}>
+                {taskData && (
+                  <Text style={styles.taskTitle} numberOfLines={1}>
+                    {taskData.title}
+                  </Text>
+                )}
+                {/* ADDED: Date display - same as TaskEvaluationScreen */}
+                <View style={styles.dateBackground}>
+                  <Text style={styles.headerDate}>
+                    {getFormattedDate()}
+                  </Text>
+                </View>
+                {/* Background timer indicator */}
+                {timerStartTime && isRunning && (
+                  <View
+                    style={[
+                      styles.blockingIndicator,
+                      {backgroundColor: '#E8F5E8'},
+                    ]}>
+                    <Icon name="schedule" size={WP(4)} color="#4CAF50" />
+                    <Text style={[styles.blockingText, {color: '#4CAF50'}]}>
+                      Running in background
+                    </Text>
+                  </View>
+                )}
                 {isTransitioning && (
-                  <View style={[styles.blockingIndicator, {backgroundColor: '#F0F8FF'}]}>
+                  <View
+                    style={[
+                      styles.blockingIndicator,
+                      {backgroundColor: '#F0F8FF'},
+                    ]}>
                     <Icon name="sync" size={WP(4)} color="#2196F3" />
-                    <Text style={[styles.blockingText, {color: '#2196F3'}]}>Transitioning...</Text>
+                    <Text style={[styles.blockingText, {color: '#2196F3'}]}>
+                      Transitioning...
+                    </Text>
                   </View>
                 )}
                 {!isTransitioning && isPomodoroBlocking && !isOnBreak && (
                   <View style={styles.blockingIndicator}>
                     <Icon name="block" size={WP(4)} color="#FF6B35" />
                     <Text style={styles.blockingText}>
-                      Apps Blocked{excludedAppsCount > 0 ? ` (${excludedAppsCount} excluded)` : ''}
+                      Apps Blocked
+                      {excludedAppsCount > 0
+                        ? ` (${excludedAppsCount} excluded)`
+                        : ''}
                     </Text>
                   </View>
                 )}
-                {!isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && (
-                  <View style={[styles.blockingIndicator, {backgroundColor: '#FFF8E1'}]}>
-                    <Icon name="pause" size={WP(4)} color="#FFA726" />
-                    <Text style={[styles.blockingText, {color: '#FFA726'}]}>Session Paused</Text>
-                  </View>
-                )}
+                {!isTransitioning &&
+                  isRunning &&
+                  !isPomodoroBlocking &&
+                  !isOnBreak && (
+                    <View
+                      style={[
+                        styles.blockingIndicator,
+                        {backgroundColor: '#FFF8E1'},
+                      ]}>
+                      <Icon name="pause" size={WP(4)} color="#FFA726" />
+                      <Text style={[styles.blockingText, {color: '#FFA726'}]}>
+                        Session Paused
+                      </Text>
+                    </View>
+                  )}
                 {!isTransitioning && isOnBreak && (
-                  <View style={[styles.blockingIndicator, {backgroundColor: '#E8F5E8'}]}>
+                  <View
+                    style={[
+                      styles.blockingIndicator,
+                      {backgroundColor: '#E8F5E8'},
+                    ]}>
                     <Icon name="free-breakfast" size={WP(4)} color="#4CAF50" />
-                    <Text style={[styles.blockingText, {color: '#4CAF50'}]}>Break Time</Text>
+                    <Text style={[styles.blockingText, {color: '#4CAF50'}]}>
+                      {currentBreakType === 'long' ? 'Long Break' : 'Break'}{' '}
+                      Time
+                    </Text>
                   </View>
                 )}
               </View>
 
               <View style={styles.sessionCounter}>
                 <Text style={styles.sessionCounterText}>
-                  {isOnBreak ? `B${completedBreaks + 1}/4` : `S${completedPomodoros + 1}/4`}
+                  {isOnBreak
+                    ? `B${getCurrentBreakSession()}/${totalBreaks}`
+                    : `S${getCurrentFocusSession()}/${totalPomodoros}`}
                 </Text>
               </View>
             </View>
 
-            {/* Main timer display */}
-            <View style={styles.timerContainer}>
-              <Text style={styles.sessionTypeText}>{getSessionTypeText()}</Text>
-              
-              <Animated.View
-                style={[
-                  styles.focusIndicatorContainer,
-                  {transform: [{rotate: rotateInterpolate}]},
-                ]}>
-                <View style={[
-                  styles.focusIcon,
-                  isTransitioning && styles.focusIconTransition,
-                  !isTransitioning && isPomodoroBlocking && !isOnBreak && styles.focusIconBlocked,
-                  !isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && styles.focusIconPaused,
-                  !isTransitioning && isOnBreak && styles.focusIconBreak
-                ]}>
-                  <Icon
-                    name={
-                      isTransitioning ? "sync" :
-                      isOnBreak ? "free-breakfast" : "center-focus-strong"
-                    }
-                    size={WP(15)}
-                    color={
-                      isTransitioning ? '#2196F3' :
-                      isOnBreak ? '#4CAF50' :
-                      isPomodoroBlocking ? '#FF6B35' : 
-                      (isRunning && !isPomodoroBlocking) ? '#FFA726' : 
-                      colors.Black
-                    }
-                  />
-                </View>
-              </Animated.View>
+            <TimerDisplay
+              sessionStructure={sessionStructure}
+              currentSessionTime={currentSessionTime}
+              currentSessionTarget={currentSessionTarget}
+              isOnBreak={isOnBreak}
+              currentBreakType={currentBreakType}
+              isTransitioning={isTransitioning}
+              isRunning={isRunning}
+              isPomodoroBlocking={isPomodoroBlocking}
+              excludedAppsCount={excludedAppsCount}
+              remainingTaskTime={remainingTaskTime}
+              totalPomodoros={totalPomodoros}
+              totalBreaks={totalBreaks}
+              completedPomodoros={completedPomodoros}
+              completedBreaks={completedBreaks}
+              currentSessionIndex={currentSessionIndex}
+              totalTaskDuration={totalTaskDuration}
+            />
 
-              <Text style={styles.timerText}>
-                {isTransitioning ? '00:00' : formatTime(currentSessionTarget - currentSessionTime)}
-              </Text>
-              
-              <Text style={[
-                styles.statusText,
-                isTransitioning && styles.statusTextTransition,
-                !isTransitioning && isPomodoroBlocking && styles.statusTextBlocked,
-                !isTransitioning && isRunning && !isPomodoroBlocking && styles.statusTextPaused,
-                !isTransitioning && isOnBreak && styles.statusTextBreak
-              ]}>
-                {getStatusText()}
-              </Text>
-
-              {/* Progress bar */}
-              <View style={styles.progressContainer}>
-                <View
-                  style={[
-                    styles.progressBar,
-                    {width: isTransitioning ? '100%' : `${getProgress()}%`},
-                    isTransitioning && styles.progressBarTransition,
-                    !isTransitioning && isPomodoroBlocking && !isOnBreak && styles.progressBarBlocked,
-                    !isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && styles.progressBarPaused,
-                    !isTransitioning && isOnBreak && styles.progressBarBreak
-                  ]}
-                />
-              </View>
-              
-              <Text style={styles.remainingTimeText}>
-                Remaining total time: {formatTime(remainingTaskTime)}
-              </Text>
-
-              {/* Progress Summary */}
-              <View style={styles.progressSummary}>
-                <Text style={styles.progressSummaryText}>
-                  {getProgressSummary()}
-                </Text>
-              </View>
-            </View>
-
-            {/* Control buttons */}
-            <View style={styles.controlsContainer}>
-              <TouchableOpacity
-                style={[styles.stopButton, isTransitioning && styles.buttonDisabled]}
-                onPress={handleStop}
-                activeOpacity={0.8}
-                disabled={isTransitioning}>
-                <Icon name="stop" size={WP(6)} color={isTransitioning ? '#CCCCCC' : colors.Black} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.controlButton,
-                  isTransitioning && styles.buttonDisabled,
-                  !isTransitioning && isPomodoroBlocking && !isOnBreak && styles.controlButtonBlocked,
-                  !isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak && styles.controlButtonPaused,
-                  !isTransitioning && isOnBreak && styles.controlButtonBreak
-                ]}
-                onPress={handleStartPause}
-                activeOpacity={0.8}
-                disabled={isTransitioning}>
-                <Icon
-                  name={isRunning ? 'pause' : 'play-arrow'}
-                  size={WP(8)}
-                  color={isTransitioning ? '#CCCCCC' : colors.White}
-                />
-              </TouchableOpacity>
-            </View>
+            <SessionControls
+              isRunning={isRunning}
+              isTransitioning={isTransitioning}
+              isPomodoroBlocking={isPomodoroBlocking}
+              isOnBreak={isOnBreak}
+              onStartPause={handleStartPause}
+              onStop={handleStop}
+            />
           </>
         ) : (
-          <>
-            {/* Completion celebration screen */}
-            <View style={styles.celebrationContainer}>
-              <Animated.View
-                style={[
-                  styles.completionIndicator,
-                  {transform: [{scale: completionScale}]},
-                ]}>
-                <View style={styles.completedFocusIcon}>
-                  <Icon name="emoji-events" size={WP(20)} color="#FF6B35" />
-                  <View style={styles.checkmarkOverlay}>
-                    <Icon name="check-circle" size={WP(8)} color="#00754B" />
-                  </View>
-                </View>
-              </Animated.View>
-
-              <Text style={styles.congratsText}>
-                Outstanding Work!{'\n'}You completed the full Pomodoro cycle:{'\n'}
-                4 Focus Sessions + 4 Breaks{'\n'}
-                Total productive time: 120 minutes
-              </Text>
-
-              <View style={styles.celebrationDots}>
-                {[...Array(8)].map((_, index) => (
-                  <View
-                    key={index}
-                    style={[
-                      styles.celebrationDot,
-                      {
-                        backgroundColor: [
-                          '#FF6B35',
-                          '#4ECDC4',
-                          '#45B7D1',
-                          '#96CEB4',
-                        ][index % 4],
-                        transform: [
-                          {
-                            translateX:
-                              Math.cos((index * 45 * Math.PI) / 180) * WP(25),
-                          },
-                          {
-                            translateY:
-                              Math.sin((index * 45 * Math.PI) / 180) * WP(25),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.celebrationActions}>
-              <TouchableOpacity style={styles.shareButton} activeOpacity={0.8}>
-                <Icon name="share" size={WP(6)} color={colors.Black} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.continueButton}
-                onPress={handleStartPause}
-                activeOpacity={0.8}>
-                <Text style={styles.continueButtonText}>Start New Cycle</Text>
-              </TouchableOpacity>
-            </View>
-          </>
+          <CompletionScreen
+            taskData={taskData}
+            totalPomodoros={totalPomodoros}
+            totalBreaks={totalBreaks}
+            sessionStructure={sessionStructure}
+            totalTaskDuration={totalTaskDuration}
+            selectedDate={selectedDate}
+            completionDate={completionDate}
+            onComplete={handleCompletionAction}
+          />
         )}
       </View>
     </View>
@@ -626,6 +1655,37 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: 'white',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: FS(2),
+    fontFamily: 'Inter-SemiBold',
+    color: colors.Black,
+    marginBottom: HP(1),
+  },
+  loadingSubText: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginBottom: HP(2),
+  },
+  backgroundTimerIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E8',
+    paddingHorizontal: WP(4),
+    paddingVertical: HP(1),
+    borderRadius: WP(6),
+    gap: WP(2),
+    marginTop: HP(2),
+  },
+  backgroundTimerText: {
+    fontSize: FS(1.4),
+    fontFamily: 'Inter-Medium',
+    color: '#4CAF50',
   },
   mainContent: {
     flex: 1,
@@ -642,6 +1702,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
+  taskTitle: {
+    fontSize: FS(1.6),
+    fontFamily: 'Inter-SemiBold',
+    color: colors.Black,
+    textAlign: 'center',
+    marginBottom: HP(0.5),
+    paddingHorizontal: WP(2),
+  },
   blockingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -650,6 +1718,7 @@ const styles = StyleSheet.create({
     paddingVertical: HP(0.5),
     borderRadius: WP(4),
     gap: WP(1),
+    marginBottom: WP(2),
   },
   blockingText: {
     fontSize: FS(1.4),
@@ -674,247 +1743,6 @@ const styles = StyleSheet.create({
     fontSize: FS(1.6),
     fontFamily: 'Inter-SemiBold',
     color: colors.Black,
-  },
-  timerContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: WP(5),
-  },
-  sessionTypeText: {
-    fontSize: FS(2.2),
-    fontFamily: 'Inter-SemiBold',
-    color: colors.Black,
-    marginBottom: HP(2),
-  },
-  focusIndicatorContainer: {
-    marginBottom: HP(3),
-  },
-  focusIcon: {
-    width: WP(25),
-    height: WP(25),
-    backgroundColor: '#F8F8F8',
-    borderRadius: WP(12.5),
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 3,
-    shadowColor: colors.Shadow,
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  focusIconBlocked: {
-    backgroundColor: '#FFF5F0',
-    borderWidth: 2,
-    borderColor: '#FF6B35',
-  },
-  focusIconPaused: {
-    backgroundColor: '#FFF8E1',
-    borderWidth: 2,
-    borderColor: '#FFA726',
-  },
-  focusIconBreak: {
-    backgroundColor: '#E8F5E8',
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-  },
-  focusIconTransition: {
-    backgroundColor: '#F0F8FF',
-    borderWidth: 2,
-    borderColor: '#2196F3',
-  },
-  timerText: {
-    fontSize: FS(6),
-    fontFamily: 'Inter-Bold',
-    color: colors.Black,
-    marginBottom: HP(1),
-  },
-  statusText: {
-    fontSize: FS(1.8),
-    fontFamily: 'OpenSans-Regular',
-    color: '#666666',
-    marginBottom: HP(2),
-    textAlign: 'center',
-  },
-  statusTextBlocked: {
-    color: '#FF6B35',
-    fontFamily: 'OpenSans-SemiBold',
-  },
-  statusTextPaused: {
-    color: '#FFA726',
-    fontFamily: 'OpenSans-SemiBold',
-  },
-  statusTextBreak: {
-    color: '#4CAF50',
-    fontFamily: 'OpenSans-SemiBold',
-  },
-  statusTextTransition: {
-    color: '#2196F3',
-    fontFamily: 'OpenSans-SemiBold',
-  },
-  progressContainer: {
-    width: '80%',
-    height: HP(0.5),
-    backgroundColor: '#E5E5E5',
-    borderRadius: HP(0.25),
-    overflow: 'hidden',
-    marginBottom: HP(2),
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: colors.Primary,
-    borderRadius: HP(0.25),
-  },
-  progressBarBlocked: {
-    backgroundColor: '#FF6B35',
-  },
-  progressBarPaused: {
-    backgroundColor: '#FFA726',
-  },
-  progressBarBreak: {
-    backgroundColor: '#4CAF50',
-  },
-  progressBarTransition: {
-    backgroundColor: '#2196F3',
-  },
-  remainingTimeText: {
-    fontSize: FS(1.6),
-    fontFamily: 'OpenSans-Regular',
-    color: '#999999',
-    textAlign: 'center',
-    marginBottom: HP(1),
-  },
-  progressSummary: {
-    marginTop: HP(1),
-  },
-  progressSummaryText: {
-    fontSize: FS(1.4),
-    fontFamily: 'OpenSans-Medium',
-    color: '#666666',
-    textAlign: 'center',
-  },
-  controlsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: HP(3),
-    paddingBottom: HP(10),
-    gap: WP(8),
-  },
-  stopButton: {
-    width: WP(12),
-    height: WP(12),
-    backgroundColor: '#F0F0F0',
-    borderRadius: WP(6),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonDisabled: {
-    backgroundColor: '#E5E5E5',
-    opacity: 0.6,
-  },
-  controlButton: {
-    width: WP(16),
-    height: WP(16),
-    backgroundColor: colors.Black,
-    borderRadius: WP(4),
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: colors.Shadow,
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  controlButtonBlocked: {
-    backgroundColor: '#FF6B35',
-  },
-  controlButtonPaused: {
-    backgroundColor: '#FFA726',
-  },
-  controlButtonBreak: {
-    backgroundColor: '#4CAF50',
-  },
-  controlButtonTransition: {
-    backgroundColor: '#2196F3',
-  },
-  celebrationContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    paddingTop: HP(4),
-  },
-  completionIndicator: {
-    marginBottom: HP(3),
-    position: 'relative',
-  },
-  completedFocusIcon: {
-    width: WP(30),
-    height: WP(30),
-    backgroundColor: '#FFF5F0',
-    borderRadius: WP(15),
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  checkmarkOverlay: {
-    position: 'absolute',
-    top: -WP(2),
-    right: -WP(1),
-    backgroundColor: 'white',
-    borderRadius: WP(4),
-    elevation: 3,
-  },
-  congratsText: {
-    fontSize: FS(2.2),
-    fontFamily: 'OpenSans-SemiBold',
-    color: colors.Black,
-    textAlign: 'center',
-    lineHeight: HP(3),
-    marginTop: HP(5),
-  },
-  celebrationDots: {
-    position: 'absolute',
-    width: WP(50),
-    height: WP(50),
-  },
-  celebrationDot: {
-    position: 'absolute',
-    width: WP(2),
-    height: WP(2),
-    borderRadius: WP(1),
-    marginLeft: WP(25),
-    marginTop: WP(6.5),
-  },
-  celebrationActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: WP(25),
-    paddingVertical: HP(3),
-    paddingBottom: HP(10),
-  },
-  shareButton: {
-    width: WP(16),
-    height: WP(12),
-    backgroundColor: '#F0F0F0',
-    borderRadius: WP(4),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  continueButton: {
-    width: WP(30),
-    height: WP(12),
-    backgroundColor: colors.Black,
-    borderRadius: WP(4),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  continueButtonText: {
-    fontSize: FS(1.8),
-    fontFamily: 'Inter-SemiBold',
-    color: colors.White,
   },
 });
 

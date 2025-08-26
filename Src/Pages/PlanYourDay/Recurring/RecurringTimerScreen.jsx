@@ -10,36 +10,45 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Headers from '../../../Components/Headers';
 import CustomDropdown from '../../../Components/Dropdown';
 import TimePicker from '../../../Components/TimePicker';
 import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
+import DurationModal from '../../../Components/DurationModal';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
 import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import {colors, Icons} from '../../../Helper/Contants';
-import { taskService } from '../../../services/api/taskService';
-import { useAuth } from '../../../contexts/AuthContext';
-
+import {taskService} from '../../../services/api/taskService';
+import {useAuth} from '../../../contexts/AuthContext';
 
 const RecurringTimerScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { user } = useAuth();
+  const {user} = useAuth();
 
   // Task form states
   const [habit, setHabit] = useState('');
   const [description, setDescription] = useState('');
   const [habitFocused, setHabitFocused] = useState(false);
-  
+
   // Get category data from route params
-  const selectedCategoryParam = route.params?.selectedCategory || { title: 'Work and Career', image: Icons.Work };
-  const [selectedCategory, setSelectedCategory] = useState(selectedCategoryParam);
-  
+  const selectedCategoryParam = route.params?.selectedCategory || {
+    title: 'Work and Career',
+    image: Icons.Work,
+  };
+  const [selectedCategory, setSelectedCategory] = useState(
+    selectedCategoryParam,
+  );
+
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
@@ -56,13 +65,16 @@ const RecurringTimerScreen = () => {
 
   // Feature states
   const [addPomodoro, setAddPomodoro] = useState(false);
+  const [pomodoroSettings, setPomodoroSettings] = useState(null);
   const [addReminder, setAddReminder] = useState(false);
   const [addToGoogleCalendar, setAddToGoogleCalendar] = useState(false);
   const [showBlockTimeModal, setShowBlockTimeModal] = useState(false);
+  const [showDurationModal, setShowDurationModal] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [blockTimeData, setBlockTimeData] = useState(null);
+  const [durationData, setDurationData] = useState(null);
   const [reminderData, setReminderData] = useState(null);
 
   // Date picker states
@@ -94,6 +106,130 @@ const RecurringTimerScreen = () => {
   // Check if habit label should be active
   const isHabitLabelActive = habitFocused || habit.length > 0;
 
+  // Since this is a timer task, always show Pomodoro option
+  const isTimerEvaluation = true;
+
+  // Replace the existing useFocusEffect in RecurringTimerScreen with this:
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (route.params) {
+        const params = route.params;
+
+        // Restore all form data when returning from navigation
+        if (params.habit !== undefined) setHabit(params.habit);
+        if (params.description !== undefined)
+          setDescription(params.description);
+        if (params.selectedCategory !== undefined)
+          setSelectedCategory(params.selectedCategory);
+        if (params.priority !== undefined) setPriority(params.priority);
+        if (params.note !== undefined) setNote(params.note);
+        if (params.isPendingTask !== undefined)
+          setIsPendingTask(params.isPendingTask);
+        if (params.selectedDropdownValue !== undefined)
+          setSelectedDropdownValue(params.selectedDropdownValue);
+        if (params.selectedTime !== undefined)
+          setSelectedTime(params.selectedTime);
+        if (params.addReminder !== undefined)
+          setAddReminder(params.addReminder);
+        if (params.addToGoogleCalendar !== undefined)
+          setAddToGoogleCalendar(params.addToGoogleCalendar);
+        if (params.reminderData) setReminderData(params.reminderData);
+
+        // Restore date data
+        if (params.startDate) {
+          const date =
+            typeof params.startDate === 'string'
+              ? new Date(params.startDate)
+              : params.startDate;
+          setStartDate(date);
+        }
+
+        // Restore schedule data (block time and duration)
+        if (params.scheduleData) {
+          if (params.scheduleData.blockTimeData) {
+            setBlockTimeData(params.scheduleData.blockTimeData);
+          }
+          if (params.scheduleData.durationData) {
+            setDurationData(params.scheduleData.durationData);
+          }
+        }
+
+        // Restore direct block time and duration data if available
+        if (params.blockTimeData) setBlockTimeData(params.blockTimeData);
+        if (params.durationData) setDurationData(params.durationData);
+
+        // Restore pomodoro settings and state
+        if (params.pomodoroSettings) {
+          setPomodoroSettings(params.pomodoroSettings);
+          setAddPomodoro(true); // Enable pomodoro when settings are available
+        }
+      }
+    }, [route.params]),
+  );
+
+  // Helper function to calculate duration from block time
+  const calculateDuration = (startTime, endTime) => {
+    if (!startTime || !endTime) return null;
+
+    // Parse time strings (assuming format like "10:00 AM" or "12:30 PM")
+    const parseTime = timeStr => {
+      const [time, period] = timeStr.split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) {
+        hour24 += 12;
+      } else if (period === 'AM' && hours === 12) {
+        hour24 = 0;
+      }
+
+      return {hours: hour24, minutes: minutes || 0};
+    };
+
+    const start = parseTime(startTime);
+    const end = parseTime(endTime);
+
+    // Calculate duration in minutes
+    const startMinutes = start.hours * 60 + start.minutes;
+    let endMinutes = end.hours * 60 + end.minutes;
+
+    // Handle case where end time is next day
+    if (endMinutes <= startMinutes) {
+      endMinutes += 24 * 60; // Add 24 hours
+    }
+
+    const durationMinutes = endMinutes - startMinutes;
+    const hours = Math.floor(durationMinutes / 60);
+    const minutes = durationMinutes % 60;
+
+    return {
+      hours,
+      minutes,
+      totalMinutes: durationMinutes,
+      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
+        minutes,
+      ).padStart(2, '0')}`,
+    };
+  };
+
+  // Helper function to calculate duration from selected time (for manual time input)
+  const calculateDurationFromTime = timeData => {
+    if (!timeData) return null;
+
+    const {hours, minutes} = timeData;
+    const totalMinutes = hours * 60 + minutes;
+
+    return {
+      hours,
+      minutes,
+      totalMinutes,
+      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
+        minutes,
+      ).padStart(2, '0')}`,
+    };
+  };
+
   // Toast helper functions
   const showToast = (message, type = 'error') => {
     setToastMessage(message);
@@ -103,6 +239,75 @@ const RecurringTimerScreen = () => {
 
   const hideToast = () => {
     setToastVisible(false);
+  };
+
+  // Updated RecurringTimerScreen.js - Key changes to handlePomodoroToggle function
+
+  // Replace the existing handlePomodoroToggle function with this:
+
+  const handlePomodoroToggle = () => {
+    if (addPomodoro) {
+      // If turning off, just disable and clear settings
+      setAddPomodoro(false);
+      setPomodoroSettings(null);
+    } else {
+      // Check if block time is available first
+      if (!blockTimeData) {
+        showToast('Please select a block time first to set up Pomodoro');
+        return;
+      }
+
+      // Calculate duration from block time for Pomodoro (not from manual duration)
+      let calculatedDuration = null;
+      if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
+        calculatedDuration = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
+      }
+
+      if (!calculatedDuration) {
+        showToast(
+          'Please select a block time first to calculate duration for Pomodoro',
+        );
+        return;
+      }
+
+      // Prepare current data and navigate to PomodoroSettings - UPDATED WITHOUT CALLBACK
+      const currentData = {
+        ...route.params,
+        habit,
+        description,
+        selectedCategory,
+        priority,
+        note,
+        isPendingTask,
+        selectedDropdownValue,
+        selectedTime,
+        addReminder,
+        addToGoogleCalendar,
+        reminderData,
+        startDate: startDate.toISOString(),
+        screenType: 'RecurringTimer',
+        // Pass duration data calculated from block time for pomodoro
+        scheduleData: {
+          durationData: calculatedDuration,
+          blockTimeData: blockTimeData,
+          addPomodoro: true,
+          pomodoroSettings: pomodoroSettings,
+          startDate: startDate.toISOString(),
+          endDate: null,
+          endDateSelected: false,
+          addReminder,
+          reminderData,
+          addToGoogleCalendar,
+        },
+        // REMOVED: onPomodoroSave callback function
+      };
+
+      // Navigate to PomodoroSettings screen
+      navigation.navigate('PomodoroSettings', currentData);
+    }
   };
 
   // Validation function
@@ -122,8 +327,25 @@ const RecurringTimerScreen = () => {
       }
     }
 
+    if (!durationData) {
+      showToast('Select a Duration');
+      return false;
+    }
+
     if (!blockTimeData) {
       showToast('Select a block time');
+      return false;
+    }
+
+    // Validation for timer task - must have Pomodoro
+    if (isTimerEvaluation && !addPomodoro) {
+      showToast('Select a Pomodoro');
+      return false;
+    }
+
+    // Validate pomodoro settings if pomodoro is enabled
+    if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
+      showToast('Please configure Pomodoro settings');
       return false;
     }
 
@@ -174,13 +396,16 @@ const RecurringTimerScreen = () => {
       return;
     }
 
-    // Check if block time is selected
-    if (!blockTimeData) {
-      showToast('Select a block time');
-      return;
-    }
-
     try {
+      // Calculate duration from block time for pomodoro (not from manual duration)
+      let finalDurationForPomodoro = null;
+      if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
+        finalDurationForPomodoro = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
+      }
+
       // Prepare task data for database
       const taskData = {
         // Basic task information
@@ -190,7 +415,7 @@ const RecurringTimerScreen = () => {
         taskType: 'Recurring',
         evaluationType: 'timer',
         userId: user.id,
-        
+
         // Visual and display properties
         time: blockTimeData?.startTime || null,
         timeColor: '#E4EBF3',
@@ -198,11 +423,11 @@ const RecurringTimerScreen = () => {
         image: null,
         hasFlag: true,
         priority: priority || 'Important',
-        
+
         // Timer-specific data
         timerDuration: selectedTime,
         timerCondition: selectedDropdownValue,
-        
+
         // Repetition and frequency settings (default for recurring tasks)
         frequencyType: 'Every Day',
         selectedWeekdays: [],
@@ -216,70 +441,97 @@ const RecurringTimerScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-        
+
         // Scheduling settings
-        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
-        
+
         // Block time settings
         blockTimeEnabled: !!blockTimeData,
         blockTimeData: blockTimeData,
-        
-        // Duration settings
-        durationEnabled: false,
-        durationData: null,
-        
+
+        // Duration settings (now from DurationModal picker)
+        durationEnabled: true,
+        durationData: durationData, // Use manual duration from picker
+
         // Reminder settings
         reminderEnabled: addReminder,
         reminderData: reminderData,
-        
-        // Additional features
+
+        // Pomodoro settings
         addPomodoro: addPomodoro,
+
+        // Additional features
         addToGoogleCalendar: addToGoogleCalendar,
         isPendingTask: isPendingTask,
-        
+
         // Goal linking
         linkedGoalId: null,
         linkedGoalTitle: null,
         linkedGoalType: null,
-        
+
         // Notes
         note: note,
-        
+
         // Progress tracking
         progress: null,
       };
 
+      // Add pomodoro settings if enabled - Use duration calculated from block time
+      if (addPomodoro && pomodoroSettings) {
+        // Use duration calculated from block time for pomodoro, not manual duration
+        taskData.pomodoroDuration = finalDurationForPomodoro
+          ? finalDurationForPomodoro.totalMinutes
+          : null;
+
+        // Store pomodoro settings
+        taskData.focusDuration = pomodoroSettings.focusTime;
+        taskData.shortBreakDuration = pomodoroSettings.shortBreak;
+        taskData.longBreakDuration = pomodoroSettings.longBreak;
+        taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
+        taskData.autoStartShortBreaks =
+          pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions =
+          pomodoroSettings.autoStartFocusSessions || false;
+
+        // Initialize pomodoro progress fields
+        taskData.pomodoroSessionsCompleted = 0;
+        taskData.pomodoroTotalSessions =
+          pomodoroSettings.focusSessionsPerRound || 4;
+      }
+
       console.log('Saving recurring task data:', taskData);
-      
+
       // Save to database
       const savedTask = await taskService.createTask(taskData);
-      
+
       console.log('Recurring task saved successfully:', savedTask);
-      
-      Alert.alert(
-        'Success', 
-        'Recurring task created successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ 
+
+      Alert.alert('Success', 'Recurring task created successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            navigation.reset({
+              index: 0,
+              routes: [
+                {
                   name: 'BottomTab',
-                  params: { newTaskCreated: true }
-                }],
-              });
-            }
-          }
-        ]
-      );
-      
+                  params: {newTaskCreated: true},
+                },
+              ],
+            });
+          },
+        },
+      ]);
     } catch (error) {
       console.error('Error saving recurring task:', error);
-      Alert.alert('Error', 'Failed to create recurring task. Please try again.');
+      Alert.alert(
+        'Error',
+        'Failed to create recurring task. Please try again.',
+      );
     }
   };
 
@@ -329,6 +581,19 @@ const RecurringTimerScreen = () => {
   const handleStartDateSelect = date => {
     setStartDate(date);
     setShowStartDatePicker(false);
+  };
+
+  // Handle Duration press - Now opens DurationModal
+  const handleDurationPress = () => {
+    setShowDurationModal(true);
+  };
+
+  // Handle Duration save - Now saves from DurationModal
+  const handleDurationSave = durationData => {
+    setDurationData(durationData);
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   const handleBlockTimePress = () => {
@@ -412,13 +677,107 @@ const RecurringTimerScreen = () => {
     );
   };
 
+  // Render Duration section (Updated - Now with DurationModal picker)
+  const renderDurationSection = () => {
+    return (
+      <View style={styles.optionContainer}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          onPress={handleDurationPress}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Duration</Text>
+              {durationData && (
+                <Text style={styles.optionSubtitle}>
+                  {durationData.formattedDuration ||
+                    `${durationData.hours}h ${durationData.minutes}m`}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <TouchableOpacity
+            onPress={handleDurationPress}
+            style={styles.plusButton}>
+            <Image
+              source={Icons.Plus}
+              style={styles.plusIcon}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Render Pomodoro section
+  const renderPomodoroSection = () => {
+    // Format pomodoro settings display
+    const formatPomodoroDisplay = () => {
+      if (!pomodoroSettings) return null;
+
+      const focusTime = pomodoroSettings.focusTime || 25;
+      const shortBreak = pomodoroSettings.shortBreak || 5;
+      const sessionsPerRound = pomodoroSettings.focusSessionsPerRound || 4;
+
+      return `${focusTime}min focus, ${shortBreak}min break, ${sessionsPerRound} sessions`;
+    };
+
+    // Calculate duration from block time for display (not from manual duration)
+    let blockTimeDuration = null;
+    if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
+      blockTimeDuration = calculateDuration(
+        blockTimeData.startTime,
+        blockTimeData.endTime,
+      );
+    }
+
+    return (
+      <View style={styles.optionContainer}>
+        <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Add Pomodoro</Text>
+              {addPomodoro && pomodoroSettings && (
+                <Text style={styles.optionSubtitle}>
+                  {formatPomodoroDisplay()}
+                </Text>
+              )}
+              {addPomodoro && blockTimeDuration && (
+                <Text style={styles.pomodoroDuration}>
+                  Duration: {blockTimeDuration.formattedDuration}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.optionRight}>
+            {renderToggle(addPomodoro, handlePomodoroToggle)}
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="Define Your Task" onBackPress={() => navigation.goBack()}>
+        <Headers
+          title="Define Your Task"
+          onBackPress={() => navigation.goBack()}>
           <TouchableOpacity onPress={handleNextPress}>
             <Text style={styles.nextText}>Next</Text>
           </TouchableOpacity>
@@ -506,7 +865,9 @@ const RecurringTimerScreen = () => {
             </View>
 
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory?.title || selectedCategory}</Text>
+              <Text style={styles.categoryText}>
+                {selectedCategory?.title || selectedCategory}
+              </Text>
               <Image
                 source={Icons.Taskhome}
                 style={styles.categoryIcon}
@@ -540,7 +901,10 @@ const RecurringTimerScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Block Time */}
+        {/* Duration - Now above Block Time and with DurationModal */}
+        {renderDurationSection()}
+
+        {/* Block Time - Now below Duration */}
         <View style={styles.optionContainer}>
           <TouchableOpacity
             style={styles.optionRow}
@@ -573,27 +937,8 @@ const RecurringTimerScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Add Pomodoro */}
-        <View style={styles.optionContainer}>
-          <TouchableOpacity style={styles.optionRow}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Clock}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Add Pomodoro</Text>
-              </View>
-            </View>
-
-            <MaterialIcons
-              name="keyboard-arrow-down"
-              size={WP(6)}
-              color="#646464"
-            />
-          </TouchableOpacity>
-        </View>
+        {/* Add Pomodoro - Now uses block time duration for calculations */}
+        {renderPomodoroSection()}
 
         {/* Priority */}
         <View
@@ -821,6 +1166,14 @@ const RecurringTimerScreen = () => {
         title="Select Start Date"
       />
 
+      {/* Duration Modal - Now implemented */}
+      <DurationModal
+        visible={showDurationModal}
+        onClose={() => setShowDurationModal(false)}
+        onSave={handleDurationSave}
+        initialData={durationData}
+      />
+
       <BlockTimeModal
         visible={showBlockTimeModal}
         onClose={() => setShowBlockTimeModal(false)}
@@ -1019,6 +1372,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  optionRight: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   categoryRight: {
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -1065,6 +1422,12 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(-0.4),
+  },
+  pomodoroDuration: {
+    fontSize: FS(1.3),
+    fontFamily: 'OpenSans-Regular',
+    color: '#888888',
+    marginTop: HP(0.2),
   },
   pendingSubtitle: {
     fontSize: FS(1.28),

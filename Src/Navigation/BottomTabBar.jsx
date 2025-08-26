@@ -2,6 +2,7 @@ import React from 'react';
 import {View, Text, StyleSheet, Image} from 'react-native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import Home from '../Pages/Home/Home';
+import PlannerScreen from '../Pages/Planner/PlannerScreen';
 import SettingsScreen from '../Pages/SettingsScreens/SettingsScreen';
 import {Icons, colors} from '../Helper/Contants';
 
@@ -17,7 +18,6 @@ const PlaceholderScreen = ({screenName}) => {
   );
 };
 
-const PlannerScreen = () => <PlaceholderScreen screenName="Planner" />;
 const AnalysisScreen = () => <PlaceholderScreen screenName="Analysis" />;
 const UpliftScreen = () => <PlaceholderScreen screenName="Uplift" />;
 

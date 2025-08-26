@@ -6,7 +6,7 @@ import AppStack from './AppStack';
 import Logo from '../assets/Images/brand.svg';
 
 const AuthNavigator = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, needsProfileSetup } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -28,12 +28,18 @@ const AuthNavigator = () => {
     );
   }
 
-  // If user is logged in, show the main app
-  if (user) {
+  if (!user) {
+    return <AuthStack />;
+  }
+
+  if (user && !needsProfileSetup) {
     return <AppStack />;
   }
 
-  // If user is not logged in, show authentication flow
+  if (user && needsProfileSetup) {
+    return <AuthStack />;
+  }
+
   return <AuthStack />;
 };
 

@@ -144,8 +144,8 @@ class MainActivity : ReactActivity() {
     private fun requestUsageAccessPermission() {
         try {
             Toast.makeText(this, "Please grant Usage Access permission for App Lock to work", Toast.LENGTH_LONG).show()
-            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-            startActivityForResult(intent, USAGE_ACCESS_REQUEST_CODE)
+        /*   val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            startActivityForResult(intent, USAGE_ACCESS_REQUEST_CODE) */
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting usage access permission: ${e.message}", e)
             Toast.makeText(this, "Please grant Usage Access permission manually", Toast.LENGTH_LONG).show()

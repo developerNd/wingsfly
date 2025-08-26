@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   Text,
   View,
@@ -9,7 +9,11 @@ import {
   Image,
   Alert,
 } from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from '@react-navigation/native';
 import Headers from '../../../../Components/Headers';
 import DatePickerModal from '../../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../../Components/BlockTime';
@@ -19,16 +23,19 @@ import CustomToast from '../../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../../Helper/Contants';
-import { taskService } from '../../../../services/api/taskService';
-import { useAuth } from '../../../../contexts/AuthContext';
-import { prepareTaskData } from '../../../../utils/taskDataHelper';
+import {taskService} from '../../../../services/api/taskService';
+import {useAuth} from '../../../../contexts/AuthContext';
+import {prepareTaskData} from '../../../../utils/taskDataHelper';
 
 const SchedulePreference = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { user } = useAuth();
+  const {user} = useAuth();
 
   const previousData = route.params || {};
+
+  // Get evaluation type from previous data
+  const evaluationType = previousData.evaluationType || null;
 
   const [endDateSelected, setEndDateSelected] = useState(false);
   const [addPomodoro, setAddPomodoro] = useState(false);
@@ -40,6 +47,7 @@ const SchedulePreference = () => {
   const [blockTimeData, setBlockTimeData] = useState(null);
   const [durationData, setDurationData] = useState(null);
   const [reminderData, setReminderData] = useState(null);
+  const [pomodoroSettings, setPomodoroSettings] = useState(null);
 
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
@@ -51,6 +59,85 @@ const SchedulePreference = () => {
   const [endDate, setEndDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
+  // Check if evaluation type is timer
+  const isTimerEvaluation = evaluationType === 'timer';
+
+  // Helper function to calculate duration from block time
+  const calculateDuration = (startTime, endTime) => {
+    if (!startTime || !endTime) return null;
+
+    // Parse time strings (assuming format like "10:00 AM" or "12:30 PM")
+    const parseTime = timeStr => {
+      const [time, period] = timeStr.split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) {
+        hour24 += 12;
+      } else if (period === 'AM' && hours === 12) {
+        hour24 = 0;
+      }
+
+      return {hours: hour24, minutes: minutes || 0};
+    };
+
+    const start = parseTime(startTime);
+    const end = parseTime(endTime);
+
+    // Calculate duration in minutes
+    const startMinutes = start.hours * 60 + start.minutes;
+    let endMinutes = end.hours * 60 + end.minutes;
+
+    // Handle case where end time is next day
+    if (endMinutes <= startMinutes) {
+      endMinutes += 24 * 60; // Add 24 hours
+    }
+
+    const durationMinutes = endMinutes - startMinutes;
+    const hours = Math.floor(durationMinutes / 60);
+    const minutes = durationMinutes % 60;
+
+    return {
+      hours,
+      minutes,
+      totalMinutes: durationMinutes,
+      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
+        minutes,
+      ).padStart(2, '0')}`,
+    };
+  };
+
+  // Load data when screen comes into focus (when returning from other screens)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (route.params && route.params.scheduleData) {
+        const scheduleData = deserializeDatesFromNavigation(
+          route.params.scheduleData,
+        );
+
+        // Restore all state from navigation params
+        if (scheduleData.startDate) setStartDate(scheduleData.startDate);
+        if (scheduleData.endDate) setEndDate(scheduleData.endDate);
+        if (scheduleData.endDateSelected !== undefined)
+          setEndDateSelected(scheduleData.endDateSelected);
+        if (scheduleData.blockTimeData)
+          setBlockTimeData(scheduleData.blockTimeData);
+        if (scheduleData.durationData)
+          setDurationData(scheduleData.durationData);
+        if (scheduleData.addPomodoro !== undefined)
+          setAddPomodoro(scheduleData.addPomodoro);
+        if (scheduleData.reminderData)
+          setReminderData(scheduleData.reminderData);
+        if (scheduleData.addReminder !== undefined)
+          setAddReminder(scheduleData.addReminder);
+        if (scheduleData.addToGoogleCalendar !== undefined)
+          setAddToGoogleCalendar(scheduleData.addToGoogleCalendar);
+        if (scheduleData.pomodoroSettings)
+          setPomodoroSettings(scheduleData.pomodoroSettings);
+      }
+    }, [route.params]),
+  );
 
   // Toast helper functions
   const showToast = (message, type = 'error') => {
@@ -97,6 +184,71 @@ const SchedulePreference = () => {
     return deserialized;
   };
 
+  // Handle Pomodoro toggle with navigation to PomodoroSettings
+  const handlePomodoroToggle = () => {
+    // Only allow pomodoro for timer evaluation type
+    if (!isTimerEvaluation) {
+      return;
+    }
+
+    if (addPomodoro) {
+      // If turning off, just disable and clear settings
+      setAddPomodoro(false);
+      setPomodoroSettings(null);
+    } else {
+      // Check if block time is available first
+      if (!blockTimeData) {
+        showToast('Please select a block time first to set up Pomodoro');
+        return;
+      }
+
+      // Calculate duration from block time for Pomodoro
+      let calculatedDuration = null;
+      if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
+        calculatedDuration = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
+      }
+
+      // Use calculated duration from block time or existing duration data
+      const durationForPomodoro = calculatedDuration || durationData;
+
+      if (!durationForPomodoro) {
+        showToast(
+          'Please select a block time first to calculate duration for Pomodoro',
+        );
+        return;
+      }
+
+      // If turning on, prepare current data and navigate to PomodoroSettings
+      const currentData = {
+        ...previousData,
+        scheduleData: {
+          startDate,
+          endDate,
+          endDateSelected,
+          blockTimeData,
+          durationData: durationForPomodoro, // Pass calculated duration
+          addPomodoro: true, // Set to true for navigation
+          reminderData,
+          addReminder,
+          addToGoogleCalendar,
+          pomodoroSettings,
+        },
+      };
+
+      // Serialize dates before navigation
+      const serializedData = {
+        ...currentData,
+        scheduleData: serializeDatesForNavigation(currentData.scheduleData),
+      };
+
+      // Navigate to PomodoroSettings screen
+      navigation.navigate('PomodoroSettings', serializedData);
+    }
+  };
+
   // Handle Done button press with validation
   const handleDonePress = async () => {
     // Hide any existing toast
@@ -111,13 +263,25 @@ const SchedulePreference = () => {
     }
 
     // Validation checks
+    if (!durationData) {
+      showToast('Select a Duration');
+      return;
+    }
+
     if (!blockTimeData) {
       showToast('Select a Block Time');
       return;
     }
 
-    if (!durationData) {
-      showToast('Select a Duration');
+    // Additional validation for timer evaluation type
+    if (isTimerEvaluation && !addPomodoro) {
+      showToast('Select a Pomodoro Timer');
+      return;
+    }
+
+    // Validate pomodoro settings if pomodoro is enabled
+    if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
+      showToast('Please configure Pomodoro settings');
       return;
     }
 
@@ -131,6 +295,7 @@ const SchedulePreference = () => {
       reminderData,
       addReminder,
       addToGoogleCalendar,
+      pomodoroSettings,
     };
 
     // Serialize dates before combining with previous data
@@ -145,32 +310,66 @@ const SchedulePreference = () => {
       // Prepare task data for database using helper function
       const taskData = prepareTaskData(finalData, scheduleData, user.id);
 
+      // Add pomodoro settings if pomodoro is enabled
+      if (addPomodoro && pomodoroSettings) {
+        // Calculate duration from block time if not available
+        let finalDuration = durationData;
+        if (
+          !finalDuration &&
+          blockTimeData &&
+          blockTimeData.startTime &&
+          blockTimeData.endTime
+        ) {
+          finalDuration = calculateDuration(
+            blockTimeData.startTime,
+            blockTimeData.endTime,
+          );
+        }
+
+        // Use the calculated or existing duration for pomodoro duration
+        taskData.pomodoroDuration = finalDuration
+          ? finalDuration.totalMinutes
+          : null;
+
+        // Store pomodoro settings
+        taskData.focusDuration = pomodoroSettings.focusTime;
+        taskData.shortBreakDuration = pomodoroSettings.shortBreak;
+        taskData.longBreakDuration = pomodoroSettings.longBreak;
+        taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
+        taskData.autoStartShortBreaks =
+          pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions =
+          pomodoroSettings.autoStartFocusSessions || false;
+
+        // Initialize pomodoro progress fields
+        taskData.pomodoroSessionsCompleted = 0;
+        taskData.pomodoroTotalSessions =
+          pomodoroSettings.focusSessionsPerRound || 4;
+      }
+
       console.log('Saving task data:', taskData);
-      
+
       // Save to database
       const savedTask = await taskService.createTask(taskData);
-      
+
       console.log('Task saved successfully:', savedTask);
-      
-      Alert.alert(
-        'Success', 
-        'Task created successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ 
+
+      Alert.alert('Success', 'Task created successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            navigation.reset({
+              index: 0,
+              routes: [
+                {
                   name: 'BottomTab',
-                  params: { newTaskCreated: true }
-                }],
-              });
-            }
-          }
-        ]
-      );
-      
+                  params: {newTaskCreated: true},
+                },
+              ],
+            });
+          },
+        },
+      ]);
     } catch (error) {
       console.error('Error saving task:', error);
       Alert.alert('Error', 'Failed to create task. Please try again.');
@@ -183,13 +382,13 @@ const SchedulePreference = () => {
       hideToast();
     }
 
-    if (!blockTimeData) {
-      showToast('Select a Block Time');
+    if (!durationData) {
+      showToast('Select a Duration');
       return;
     }
 
-    if (!durationData) {
-      showToast('Select a Duration');
+    if (!blockTimeData) {
+      showToast('Select a Block Time');
       return;
     }
 
@@ -205,6 +404,7 @@ const SchedulePreference = () => {
         reminderData,
         addReminder,
         addToGoogleCalendar,
+        pomodoroSettings,
       },
     };
 
@@ -281,23 +481,37 @@ const SchedulePreference = () => {
     }
   };
 
+  const handleDurationPress = () => {
+    setShowDurationModal(true);
+  };
+
+  const handleDurationSave = durationData => {
+    setDurationData(durationData);
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
   const handleBlockTimePress = () => {
     setShowBlockTimeModal(true);
   };
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
-    if (toastVisible) {
-      hideToast();
+
+    // Automatically calculate duration from block time
+    if (timeData && timeData.startTime && timeData.endTime) {
+      const calculatedDuration = calculateDuration(
+        timeData.startTime,
+        timeData.endTime,
+      );
+
+      // Update duration data if it's not manually set or if we want to override
+      if (!durationData) {
+        setDurationData(calculatedDuration);
+      }
     }
-  };
 
-  const handleDurationPress = () => {
-    setShowDurationModal(true);
-  };
-
-  const handleDurationSave = duration => {
-    setDurationData(duration);
     if (toastVisible) {
       hideToast();
     }
@@ -445,6 +659,47 @@ const SchedulePreference = () => {
     );
   };
 
+  const renderDurationSection = () => {
+    return (
+      <View style={styles.optionContainer}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handleDurationPress}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Duration</Text>
+              {durationData && (
+                <Text style={styles.optionSubtitle}>
+                  {durationData.formattedDuration ||
+                    `${durationData.hours}h ${durationData.minutes}m`}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.optionRight}>
+            <TouchableOpacity
+              onPress={handleDurationPress}
+              style={styles.plusButton}
+              activeOpacity={0.7}>
+              <Image
+                source={Icons.Plus}
+                style={styles.plusIcon}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const renderBlockTimeSection = () => {
     return (
       <View style={styles.optionContainer}>
@@ -485,43 +740,44 @@ const SchedulePreference = () => {
     );
   };
 
-  const renderDurationSection = () => {
+  const renderPomodoroSection = () => {
+    // Only show Pomodoro section if evaluation type is timer
+    if (!isTimerEvaluation) {
+      return null;
+    }
+
+    // Format pomodoro settings display (focus, break, sessions only)
+    const formatPomodoroDisplay = () => {
+      if (!pomodoroSettings) return null;
+
+      const focusTime = pomodoroSettings.focusTime || 25;
+      const shortBreak = pomodoroSettings.shortBreak || 5;
+      const sessionsPerRound = pomodoroSettings.focusSessionsPerRound || 4;
+
+      return `${focusTime}min focus, ${shortBreak}min break, ${sessionsPerRound} sessions`;
+    };
+
     return (
       <View style={styles.optionContainer}>
-        <TouchableOpacity
-          style={styles.optionRow}
-          activeOpacity={0.7}
-          onPress={handleDurationPress}>
+        <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
           <View style={styles.optionLeft}>
             <Image
-              source={Icons.Alarm}
+              source={Icons.Clock}
               style={styles.optionIcon}
               resizeMode="contain"
             />
             <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Duration</Text>
-              {durationData && (
+              <Text style={styles.optionTitle}>Add Pomodoro</Text>
+              {addPomodoro && pomodoroSettings && (
                 <Text style={styles.optionSubtitle}>
-                  {durationData.formattedDuration ||
-                    `${String(durationData.hours).padStart(2, '0')}:${String(
-                      durationData.minutes,
-                    ).padStart(2, '0')}`}
+                  {formatPomodoroDisplay()}
                 </Text>
               )}
             </View>
           </View>
 
           <View style={styles.optionRight}>
-            <TouchableOpacity
-              onPress={handleDurationPress}
-              style={styles.plusButton}
-              activeOpacity={0.7}>
-              <Image
-                source={Icons.Plus}
-                style={styles.plusIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
+            {renderToggle(addPomodoro, handlePomodoroToggle)}
           </View>
         </TouchableOpacity>
       </View>
@@ -625,16 +881,14 @@ const SchedulePreference = () => {
         {/* End Date Section */}
         {renderEndDateSection()}
 
-        {/* Block Time */}
-        {renderBlockTimeSection()}
-
-        {/* Duration */}
+        {/* Duration - Now above Block Time */}
         {renderDurationSection()}
 
-        {/* Add Pomodoro */}
-        {renderOptionRow(Icons.Clock, 'Add Pomodoro', true, addPomodoro, () =>
-          setAddPomodoro(!addPomodoro),
-        )}
+        {/* Block Time - Now below Duration */}
+        {renderBlockTimeSection()}
+
+        {/* Add Pomodoro - Only show for timer evaluation type */}
+        {renderPomodoroSection()}
 
         {/* Add a Reminder */}
         {renderReminderSection()}
@@ -720,20 +974,19 @@ const SchedulePreference = () => {
         title="Select End Date"
       />
 
-      {/* Block Time Modal */}
-      <BlockTimeModal
-        visible={showBlockTimeModal}
-        onClose={() => setShowBlockTimeModal(false)}
-        onSave={handleBlockTimeSave}
-      />
-
       {/* Duration Modal */}
       <DurationModal
         visible={showDurationModal}
         onClose={() => setShowDurationModal(false)}
         onSave={handleDurationSave}
-        initialHours={durationData?.hours}
-        initialMinutes={durationData?.minutes}
+        initialData={durationData}
+      />
+
+      {/* Block Time Modal */}
+      <BlockTimeModal
+        visible={showBlockTimeModal}
+        onClose={() => setShowBlockTimeModal(false)}
+        onSave={handleBlockTimeSave}
       />
 
       {/* Reminder Modal */}

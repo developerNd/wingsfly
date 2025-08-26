@@ -323,7 +323,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
             intent.data = Uri.parse("package:${reactApplicationContext.packageName}")
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            reactApplicationContext.startActivity(intent)
+            reactApplicationContext.startActivity(intent) 
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERROR", e.message)

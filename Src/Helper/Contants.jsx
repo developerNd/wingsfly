@@ -13,6 +13,7 @@ export const colors = {
   White: '#FFFFFF',
   Black: '#000000',
   Shadow: '#000',
+  ModelBackground: "#47474773"
 };
 
 export const Icons = {

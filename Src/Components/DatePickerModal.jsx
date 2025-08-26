@@ -56,6 +56,14 @@ const DatePickerModal = ({
     return new Date(year, month, 1).getDay();
   };
 
+  // Create timezone-independent date for date-only scenarios
+  const createLocalDate = (year, month, day) => {
+    // Create date at noon to avoid timezone issues
+    const date = new Date(year, month, day, 12, 0, 0, 0);
+    return date;
+  };
+
+  // Format date for display - avoiding timezone conversion
   const formatDate = date => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const months = [
@@ -99,7 +107,8 @@ const DatePickerModal = ({
   };
 
   const handleDatePress = day => {
-    const newDate = new Date(currentYear, currentMonth, day);
+    // Create timezone-independent date
+    const newDate = createLocalDate(currentYear, currentMonth, day);
     setSelectedDate(newDate);
   };
 
@@ -113,6 +122,7 @@ const DatePickerModal = ({
     const firstDay = getFirstDayOfMonth(currentMonth, currentYear);
     const days = [];
 
+    // Add empty cells for days before the first day of the month
     for (let i = 0; i < firstDay; i++) {
       days.push(
         <View key={`empty-${i}`} style={styles.dayCell}>
@@ -230,7 +240,7 @@ const DatePickerModal = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: '#47474773',
+    backgroundColor: colors.ModelBackground,
     justifyContent: 'center',
     alignItems: 'center',
   },

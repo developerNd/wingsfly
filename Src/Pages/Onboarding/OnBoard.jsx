@@ -13,30 +13,42 @@ import Continue from '../../assets/Images/continue.svg';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {routes, Icons, colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
+import {useAuth} from '../../contexts/AuthContext';
 
 const OnBoard = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const {user, completeProfileSetup} = useAuth();
 
-  const selectedGender = route.params?.selectedGender || 'Male';
+  const selectedGender =
+    route.params?.selectedGender || user?.user_metadata?.gender || 'Male';
 
-  // Determine which hiker image to show based on gender
   const getHikerImage = () => {
     return selectedGender === 'Male' ? Icons.ManHiker : Icons.WomenHiker;
   };
 
-  // Get hiker container styles based on gender
   const getHikerContainerStyle = () => {
     return selectedGender === 'Male'
-       ? styles.hikerImageContainer
-       : styles.hikerImageContainerWomen;
+      ? styles.hikerImageContainer
+      : styles.hikerImageContainerWomen;
   };
 
-  // Get hiker image styles based on gender
   const getHikerImageStyle = () => {
     return selectedGender === 'Male'
-       ? styles.hikerImage
-       : styles.hikerImageWomen;
+      ? styles.hikerImage
+      : styles.hikerImageWomen;
+  };
+
+  const handleContinue = async () => {
+    const needsSetupCompletion = route.params?.needsSetupCompletion;
+
+    if (needsSetupCompletion) {
+      try {
+        await completeProfileSetup(selectedGender);
+      } catch (error) {
+        console.error('Error completing profile setup:', error);
+      }
+    }
   };
 
   return (
@@ -66,11 +78,7 @@ const OnBoard = () => {
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() =>
-            navigation.navigate(routes.TASKSLECTION_SCREEN, {
-              selectedGender: selectedGender,
-            })
-          }
+          onPress={handleContinue}
           activeOpacity={0.8}>
           <Continue width={WP(60)} height={HP(12.5)} />
         </TouchableOpacity>
@@ -89,14 +97,14 @@ const styles = StyleSheet.create({
   backgroundImage: {
     flex: 1,
     justifyContent: 'space-between',
-    marginTop: -1, // Small negative margin to eliminate any gaps
-    marginHorizontal: -1, // Eliminate side gaps
+    marginTop: -1,
+    marginHorizontal: -1,
   },
   contentContainer: {
     width: '85%',
     alignSelf: 'center',
     marginTop: HP(7.7),
-    marginLeft: WP(1)
+    marginLeft: WP(1),
   },
   title: {
     fontSize: FS(2.7),
@@ -115,7 +123,6 @@ const styles = StyleSheet.create({
     lineHeight: FS(2.4),
     fontFamily: 'Poppins-Light',
   },
-  // Men hiker styles (current perfect styles)
   hikerImageContainer: {
     position: 'absolute',
     right: WP(6.8),
@@ -128,12 +135,12 @@ const styles = StyleSheet.create({
   },
   hikerImageContainerWomen: {
     position: 'absolute',
-    right: WP(13.8), 
-    bottom: HP(19), 
+    right: WP(13.8),
+    bottom: HP(19),
     zIndex: 1,
   },
   hikerImageWomen: {
-    width: WP(32), 
+    width: WP(32),
     height: HP(31),
   },
   button: {

@@ -33,9 +33,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class AppUsageModule extends ReactContextBaseJavaModule {
 
@@ -98,7 +100,7 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
                 return;
             }
 
-            // Get precise start and end times for today
+            // Get precise start and end times for TODAY ONLY
             Calendar calendar = Calendar.getInstance();
             calendar.set(Calendar.HOUR_OF_DAY, 0);
             calendar.set(Calendar.MINUTE, 0);
@@ -107,58 +109,38 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
             long startTime = calendar.getTimeInMillis(); // Start of today
             long endTime = System.currentTimeMillis(); // Now
 
-            Log.d(TAG, "Querying usage stats from: " + new Date(startTime) + " to: " + new Date(endTime));
+            Log.d(TAG, "Querying TODAY's usage stats from: " + new Date(startTime) + " to: " + new Date(endTime));
 
-            // Calculate accurate usage using events instead of just UsageStats
+            // Use both methods to get comprehensive usage data
             Map<String, Long> accurateUsageMap = calculateAccurateUsageFromEvents(startTime, endTime);
-
-            // Also get the regular usage stats for additional information
             List<UsageStats> stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY, startTime, endTime);
 
+            // Filter UsageStats to only include today's data
+            List<UsageStats> todayStats = filterStatsForToday(stats, startTime);
+
+            // Merge data from both sources
+            Map<String, UsageData> mergedUsageMap = mergeUsageData(accurateUsageMap, todayStats);
+
             WritableArray result = new WritableNativeArray();
             
-            if (stats != null && !accurateUsageMap.isEmpty()) {
-                // Create a map of package names to UsageStats for easy lookup
-                Map<String, UsageStats> statsMap = new HashMap<>();
-                for (UsageStats stat : stats) {
-                    statsMap.put(stat.getPackageName(), stat);
-                }
-
-                // Convert accurate usage map to list and sort
-                List<Map.Entry<String, Long>> sortedUsage = new ArrayList<>(accurateUsageMap.entrySet());
-                Collections.sort(sortedUsage, new Comparator<Map.Entry<String, Long>>() {
+            if (!mergedUsageMap.isEmpty()) {
+                // Convert to sorted list
+                List<Map.Entry<String, UsageData>> sortedUsage = new ArrayList<>(mergedUsageMap.entrySet());
+                Collections.sort(sortedUsage, new Comparator<Map.Entry<String, UsageData>>() {
                     @Override
-                    public int compare(Map.Entry<String, Long> lhs, Map.Entry<String, Long> rhs) {
-                        return Long.compare(rhs.getValue(), lhs.getValue());
+                    public int compare(Map.Entry<String, UsageData> lhs, Map.Entry<String, UsageData> rhs) {
+                        return Long.compare(rhs.getValue().totalTime, lhs.getValue().totalTime);
                     }
                 });
 
-                for (Map.Entry<String, Long> entry : sortedUsage) {
+                for (Map.Entry<String, UsageData> entry : sortedUsage) {
                     String packageName = entry.getKey();
-                    long accurateUsageTime = entry.getValue();
+                    UsageData usageData = entry.getValue();
                     
-                    // Only include apps with meaningful usage (more than 10 seconds)
-                    if (accurateUsageTime > 10000) {
-                        UsageStats usageStat = statsMap.get(packageName);
-                        WritableMap appUsage = createAccurateUsageStatsMap(packageName, accurateUsageTime, usageStat);
-                        if (appUsage != null) {
-                            result.pushMap(appUsage);
-                        }
-                    }
-                }
-            } else if (stats != null) {
-                // Fallback to regular method if event calculation fails
-                Collections.sort(stats, new Comparator<UsageStats>() {
-                    @Override
-                    public int compare(UsageStats lhs, UsageStats rhs) {
-                        return Long.compare(rhs.getTotalTimeInForeground(), lhs.getTotalTimeInForeground());
-                    }
-                });
-
-                for (UsageStats usageStat : stats) {
-                    if (usageStat.getTotalTimeInForeground() > 10000) {
-                        WritableMap appUsage = createUsageStatsMap(usageStat);
+                    // Include apps with meaningful usage (keep original 10-second threshold for accuracy)
+                    if (usageData.totalTime > 10000) {
+                        WritableMap appUsage = createEnhancedUsageStatsMap(packageName, usageData);
                         if (appUsage != null) {
                             result.pushMap(appUsage);
                         }
@@ -166,6 +148,7 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
                 }
             }
 
+            Log.d(TAG, "Returning " + result.size() + " apps with TODAY's usage data");
             promise.resolve(result);
         } catch (Exception e) {
             Log.e(TAG, "Error getting daily usage stats", e);
@@ -190,23 +173,31 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
             long startTime = calendar.getTimeInMillis();
             long endTime = System.currentTimeMillis();
 
-            // For weekly stats, we'll use the aggregated method since event calculation over 7 days might be intensive
+            // For weekly stats, use both methods but prioritize UsageStats for performance
             List<UsageStats> stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_WEEKLY, startTime, endTime);
 
+            // Also get events for apps that might be missing from UsageStats
+            Map<String, Long> eventUsageMap = calculateAccurateUsageFromEvents(startTime, endTime);
+            Map<String, UsageData> mergedUsageMap = mergeUsageData(eventUsageMap, stats);
+
             WritableArray result = new WritableNativeArray();
             
-            if (stats != null) {
-                Collections.sort(stats, new Comparator<UsageStats>() {
+            if (!mergedUsageMap.isEmpty()) {
+                List<Map.Entry<String, UsageData>> sortedUsage = new ArrayList<>(mergedUsageMap.entrySet());
+                Collections.sort(sortedUsage, new Comparator<Map.Entry<String, UsageData>>() {
                     @Override
-                    public int compare(UsageStats lhs, UsageStats rhs) {
-                        return Long.compare(rhs.getTotalTimeInForeground(), lhs.getTotalTimeInForeground());
+                    public int compare(Map.Entry<String, UsageData> lhs, Map.Entry<String, UsageData> rhs) {
+                        return Long.compare(rhs.getValue().totalTime, lhs.getValue().totalTime);
                     }
                 });
 
-                for (UsageStats usageStat : stats) {
-                    if (usageStat.getTotalTimeInForeground() > 10000) {
-                        WritableMap appUsage = createUsageStatsMap(usageStat);
+                for (Map.Entry<String, UsageData> entry : sortedUsage) {
+                    String packageName = entry.getKey();
+                    UsageData usageData = entry.getValue();
+                    
+                    if (usageData.totalTime > 10000) {
+                        WritableMap appUsage = createEnhancedUsageStatsMap(packageName, usageData);
                         if (appUsage != null) {
                             result.pushMap(appUsage);
                         }
@@ -221,14 +212,39 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
         }
     }
 
-    // New method to calculate accurate usage from events
+    // Filter UsageStats to only include apps that were actually used today
+    private List<UsageStats> filterStatsForToday(List<UsageStats> stats, long todayStartTime) {
+        List<UsageStats> todayStats = new ArrayList<>();
+        
+        if (stats == null) return todayStats;
+        
+        for (UsageStats stat : stats) {
+            // Only include apps that have been used today (lastTimeUsed is today)
+            if (stat.getLastTimeUsed() >= todayStartTime) {
+                todayStats.add(stat);
+                Log.d(TAG, stat.getPackageName() + " - Last used: " + new Date(stat.getLastTimeUsed()) + 
+                      " (included for today)");
+            } else {
+                Log.d(TAG, stat.getPackageName() + " - Last used: " + new Date(stat.getLastTimeUsed()) + 
+                      " (excluded - not used today)");
+            }
+        }
+        
+        Log.d(TAG, "Filtered UsageStats: " + todayStats.size() + " apps used today out of " + stats.size() + " total");
+        return todayStats;
+    }
+
+    // Enhanced method to calculate accurate usage from events (keeping original accuracy)
     private Map<String, Long> calculateAccurateUsageFromEvents(long startTime, long endTime) {
         Map<String, Long> usageMap = new HashMap<>();
         Map<String, Long> appStartTimes = new HashMap<>();
+        Set<String> validPackages = getInstalledPackages();
         
         try {
             UsageEvents usageEvents = usageStatsManager.queryEvents(startTime, endTime);
             UsageEvents.Event event = new UsageEvents.Event();
+            
+            Log.d(TAG, "Processing usage events from " + new Date(startTime) + " to " + new Date(endTime));
             
             while (usageEvents.hasNextEvent()) {
                 usageEvents.getNextEvent(event);
@@ -237,19 +253,36 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
                 long eventTime = event.getTimeStamp();
                 int eventType = event.getEventType();
                 
+                // Skip if package is not valid or is launcher
+                if (packageName == null || packageName.isEmpty() || 
+                    !validPackages.contains(packageName) || isLauncherPackage(packageName)) {
+                    continue;
+                }
+                
+                // IMPORTANT: Only process events that happened TODAY
+                if (eventTime < startTime) {
+                    continue; // Skip events from before today
+                }
+                
+                // Keep original accurate event handling - only RESUMED/FOREGROUND and PAUSED/BACKGROUND
                 if (eventType == UsageEvents.Event.ACTIVITY_RESUMED || 
                     eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     // App moved to foreground
                     appStartTimes.put(packageName, eventTime);
+                    
                 } else if (eventType == UsageEvents.Event.ACTIVITY_PAUSED || 
                            eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
                     // App moved to background
                     Long startTimeForApp = appStartTimes.get(packageName);
                     if (startTimeForApp != null) {
                         long sessionDuration = eventTime - startTimeForApp;
-                        if (sessionDuration > 0 && sessionDuration < 24 * 60 * 60 * 1000) { // Max 24 hours per session
+                        // Keep original strict validation (max 24 hours per session)
+                        if (sessionDuration > 0 && sessionDuration < 24 * 60 * 60 * 1000) {
                             Long currentUsage = usageMap.get(packageName);
-                            usageMap.put(packageName, (currentUsage != null ? currentUsage : 0) + sessionDuration);
+                            long newUsage = (currentUsage != null ? currentUsage : 0) + sessionDuration;
+                            usageMap.put(packageName, newUsage);
+                            Log.d(TAG, packageName + " session: " + formatDuration(sessionDuration) + 
+                                  ", total: " + formatDuration(newUsage));
                         }
                         appStartTimes.remove(packageName);
                     }
@@ -263,13 +296,14 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
                 long startTimeForApp = entry.getValue();
                 long sessionDuration = currentTime - startTimeForApp;
                 
-                if (sessionDuration > 0 && sessionDuration < 24 * 60 * 60 * 1000) { // Max 24 hours
+                // Keep original validation (max 24 hours)
+                if (sessionDuration > 0 && sessionDuration < 24 * 60 * 60 * 1000) {
                     Long currentUsage = usageMap.get(packageName);
                     usageMap.put(packageName, (currentUsage != null ? currentUsage : 0) + sessionDuration);
                 }
             }
             
-            Log.d(TAG, "Calculated accurate usage for " + usageMap.size() + " apps using events");
+            Log.d(TAG, "Event-based calculation found " + usageMap.size() + " apps with usage");
             
         } catch (Exception e) {
             Log.e(TAG, "Error calculating accurate usage from events", e);
@@ -278,8 +312,114 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
         return usageMap;
     }
 
-    // Create usage stats map with accurate time calculation
-    private WritableMap createAccurateUsageStatsMap(String packageName, long accurateUsageTime, UsageStats usageStat) {
+    // Get list of installed packages for validation
+    private Set<String> getInstalledPackages() {
+        Set<String> packages = new HashSet<>();
+        try {
+            List<ApplicationInfo> installedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA);
+            for (ApplicationInfo appInfo : installedApps) {
+                packages.add(appInfo.packageName);
+            }
+            Log.d(TAG, "Found " + packages.size() + " installed packages");
+        } catch (Exception e) {
+            Log.w(TAG, "Error getting installed packages", e);
+        }
+        return packages;
+    }
+
+    // Check if package is a launcher (to avoid inflated usage stats)
+    private boolean isLauncherPackage(String packageName) {
+        // Common launcher packages to filter out
+        return packageName.contains("launcher") || 
+               packageName.contains("homescreen") ||
+               packageName.equals("com.android.systemui") ||
+               packageName.equals("com.google.android.apps.nexuslauncher") ||
+               packageName.equals("com.miui.home") ||
+               packageName.equals("com.samsung.android.app.launcher") ||
+               packageName.equals("com.huawei.android.launcher");
+    }
+
+    // Data class to hold usage information
+    private static class UsageData {
+        long totalTime;
+        long firstTimeStamp;
+        long lastTimeStamp;
+        long lastTimeUsed;
+        boolean fromEvents;
+        boolean fromUsageStats;
+
+        UsageData(long totalTime, long firstTimeStamp, long lastTimeStamp, long lastTimeUsed) {
+            this.totalTime = totalTime;
+            this.firstTimeStamp = firstTimeStamp;
+            this.lastTimeStamp = lastTimeStamp;
+            this.lastTimeUsed = lastTimeUsed;
+        }
+    }
+
+    // Merge data from events and UsageStats - prioritize accuracy from original code
+    private Map<String, UsageData> mergeUsageData(Map<String, Long> eventUsageMap, List<UsageStats> usageStatsList) {
+        Map<String, UsageData> mergedMap = new HashMap<>();
+        
+        // First, add data from UsageStats
+        if (usageStatsList != null) {
+            for (UsageStats stat : usageStatsList) {
+                String packageName = stat.getPackageName();
+                if (packageName != null && !packageName.isEmpty() && !isLauncherPackage(packageName)) {
+                    UsageData data = new UsageData(
+                        stat.getTotalTimeInForeground(),
+                        stat.getFirstTimeStamp(),
+                        stat.getLastTimeStamp(),
+                        stat.getLastTimeUsed()
+                    );
+                    data.fromUsageStats = true;
+                    mergedMap.put(packageName, data);
+                }
+            }
+        }
+        
+        // Then, merge or add data from events - prioritize event accuracy when significantly different
+        for (Map.Entry<String, Long> entry : eventUsageMap.entrySet()) {
+            String packageName = entry.getKey();
+            long eventUsageTime = entry.getValue();
+            
+            if (mergedMap.containsKey(packageName)) {
+                // Package exists in UsageStats
+                UsageData existing = mergedMap.get(packageName);
+                long usageStatTime = existing.totalTime;
+                
+                // Only use event time if it's significantly more accurate or if UsageStats shows 0
+                // This prevents inflated times while catching missing usage
+                if (usageStatTime == 0 || 
+                    (eventUsageTime > 0 && Math.abs(eventUsageTime - usageStatTime) / (double)Math.max(eventUsageTime, usageStatTime) > 0.5)) {
+                    
+                    Log.d(TAG, packageName + " - Significant difference detected. Event: " + 
+                          formatDuration(eventUsageTime) + " vs UsageStats: " + formatDuration(usageStatTime));
+                    
+                    // Use the more reasonable time (prevent inflation)
+                    if (eventUsageTime < usageStatTime * 2) { // Don't allow more than 2x inflation
+                        existing.totalTime = eventUsageTime;
+                        existing.fromEvents = true;
+                    }
+                } else {
+                    // Use UsageStats time as it's usually more reliable for established apps
+                    Log.d(TAG, packageName + " - Using UsageStats time: " + formatDuration(usageStatTime) + 
+                          " (Event time: " + formatDuration(eventUsageTime) + ")");
+                }
+            } else {
+                // Package not in UsageStats, add from events (this catches missing apps)
+                UsageData data = new UsageData(eventUsageTime, 0, 0, 0);
+                data.fromEvents = true;
+                mergedMap.put(packageName, data);
+                Log.d(TAG, packageName + " - Added from events only: " + formatDuration(eventUsageTime));
+            }
+        }
+        
+        Log.d(TAG, "Merged usage data for " + mergedMap.size() + " packages");
+        return mergedMap;
+    }
+
+    // Create enhanced usage stats map
+    private WritableMap createEnhancedUsageStatsMap(String packageName, UsageData usageData) {
         try {
             WritableMap map = new WritableNativeMap();
             map.putString("packageName", packageName);
@@ -310,38 +450,40 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
                 map.putString("iconBase64", null);
             }
             
-            // Use accurate usage time instead of UsageStats time
-            map.putDouble("totalTimeInForeground", accurateUsageTime);
+            // Use the usage time from merged data
+            map.putDouble("totalTimeInForeground", usageData.totalTime);
+            map.putDouble("firstTimeStamp", usageData.firstTimeStamp);
+            map.putDouble("lastTimeStamp", usageData.lastTimeStamp);
+            map.putDouble("lastTimeUsed", usageData.lastTimeUsed);
             
-            // Use UsageStats data for other fields if available
-            if (usageStat != null) {
-                map.putDouble("firstTimeStamp", usageStat.getFirstTimeStamp());
-                map.putDouble("lastTimeStamp", usageStat.getLastTimeStamp());
-                map.putDouble("lastTimeUsed", usageStat.getLastTimeUsed());
-                
-                // Format last used time
-                if (usageStat.getLastTimeUsed() > 0) {
-                    SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault());
-                    map.putString("formattedLastUsed", sdf.format(new Date(usageStat.getLastTimeUsed())));
-                } else {
-                    map.putString("formattedLastUsed", "Never");
-                }
+            // Add source information for debugging
+            String source = "";
+            if (usageData.fromEvents && usageData.fromUsageStats) {
+                source = "merged";
+            } else if (usageData.fromEvents) {
+                source = "events";
+            } else if (usageData.fromUsageStats) {
+                source = "usage_stats";
+            }
+            map.putString("dataSource", source);
+            
+            // Format duration
+            map.putString("formattedDuration", formatDuration(usageData.totalTime));
+            
+            // Format last used time
+            if (usageData.lastTimeUsed > 0) {
+                SimpleDateFormat sdf = new SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault());
+                map.putString("formattedLastUsed", sdf.format(new Date(usageData.lastTimeUsed)));
             } else {
-                map.putDouble("firstTimeStamp", 0);
-                map.putDouble("lastTimeStamp", 0);
-                map.putDouble("lastTimeUsed", 0);
-                map.putString("formattedLastUsed", "Unknown");
+                map.putString("formattedLastUsed", "Never");
             }
             
-            // Format accurate duration
-            map.putString("formattedDuration", formatDuration(accurateUsageTime));
-            
-            Log.d(TAG, packageName + " - Accurate time: " + formatDuration(accurateUsageTime) + 
-                  " (" + accurateUsageTime + "ms)");
+            Log.d(TAG, packageName + " - Time: " + formatDuration(usageData.totalTime) + 
+                  " (" + usageData.totalTime + "ms), Source: " + source);
             
             return map;
         } catch (Exception e) {
-            Log.e(TAG, "Error creating accurate usage stats map for " + packageName, e);
+            Log.e(TAG, "Error creating enhanced usage stats map for " + packageName, e);
             return null;
         }
     }
@@ -400,6 +542,7 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
                 return;
             }
 
+            // Get precise start and end times for TODAY ONLY
             Calendar calendar = Calendar.getInstance();
             calendar.set(Calendar.HOUR_OF_DAY, 0);
             calendar.set(Calendar.MINUTE, 0);
@@ -408,41 +551,36 @@ public class AppUsageModule extends ReactContextBaseJavaModule {
             long startTime = calendar.getTimeInMillis();
             long endTime = System.currentTimeMillis();
 
-            // Use accurate calculation for most used apps
-            Map<String, Long> accurateUsageMap = calculateAccurateUsageFromEvents(startTime, endTime);
+            // Use enhanced merging for most used apps
+            Map<String, Long> eventUsageMap = calculateAccurateUsageFromEvents(startTime, endTime);
             List<UsageStats> stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY, startTime, endTime);
 
+            // Filter to today's data only
+            List<UsageStats> todayStats = filterStatsForToday(stats, startTime);
+            Map<String, UsageData> mergedUsageMap = mergeUsageData(eventUsageMap, todayStats);
+
             WritableArray result = new WritableNativeArray();
             
-            if (!accurateUsageMap.isEmpty()) {
-                // Create a map of package names to UsageStats for easy lookup
-                Map<String, UsageStats> statsMap = new HashMap<>();
-                if (stats != null) {
-                    for (UsageStats stat : stats) {
-                        statsMap.put(stat.getPackageName(), stat);
-                    }
-                }
-
+            if (!mergedUsageMap.isEmpty()) {
                 // Convert to sorted list
-                List<Map.Entry<String, Long>> sortedUsage = new ArrayList<>(accurateUsageMap.entrySet());
-                Collections.sort(sortedUsage, new Comparator<Map.Entry<String, Long>>() {
+                List<Map.Entry<String, UsageData>> sortedUsage = new ArrayList<>(mergedUsageMap.entrySet());
+                Collections.sort(sortedUsage, new Comparator<Map.Entry<String, UsageData>>() {
                     @Override
-                    public int compare(Map.Entry<String, Long> lhs, Map.Entry<String, Long> rhs) {
-                        return Long.compare(rhs.getValue(), lhs.getValue());
+                    public int compare(Map.Entry<String, UsageData> lhs, Map.Entry<String, UsageData> rhs) {
+                        return Long.compare(rhs.getValue().totalTime, lhs.getValue().totalTime);
                     }
                 });
 
                 int count = 0;
-                for (Map.Entry<String, Long> entry : sortedUsage) {
+                for (Map.Entry<String, UsageData> entry : sortedUsage) {
                     if (count >= limit) break;
                     
                     String packageName = entry.getKey();
-                    long accurateUsageTime = entry.getValue();
+                    UsageData usageData = entry.getValue();
                     
-                    if (accurateUsageTime > 10000) { // More than 10 seconds
-                        UsageStats usageStat = statsMap.get(packageName);
-                        WritableMap appUsage = createAccurateUsageStatsMap(packageName, accurateUsageTime, usageStat);
+                    if (usageData.totalTime > 10000) { // More than 10 seconds
+                        WritableMap appUsage = createEnhancedUsageStatsMap(packageName, usageData);
                         if (appUsage != null) {
                             result.pushMap(appUsage);
                             count++;

@@ -3,7 +3,7 @@ import {FlatList, Text, View, StyleSheet, TouchableOpacity} from 'react-native';
 import {colors} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
 
-const Calender = ({ onDateSelect, selectedDate: externalSelectedDate }) => {
+const Calender = ({onDateSelect, selectedDate: externalSelectedDate}) => {
   const [days, setDays] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
 
@@ -76,42 +76,33 @@ const Calender = ({ onDateSelect, selectedDate: externalSelectedDate }) => {
         data={days}
         keyExtractor={(item, index) => `${item.fullDate}-${index}`}
         renderItem={({item}) => {
-          const isSelected = (externalSelectedDate || selectedDate) === item.fullDate;
-          const isToday = item.isToday;
+          const isSelected =
+            (externalSelectedDate || selectedDate) === item.fullDate;
 
           return (
             <TouchableOpacity onPress={() => handleSelect(item.fullDate)}>
-              <View
-                style={[
-                  styles.card,
-                  (isSelected || isToday) && styles.selectedCard,
-                ]}>
+              <View style={[styles.card, isSelected && styles.selectedCard]}>
                 <View style={styles.dayContainer}>
                   <Text
-                    style={[
-                      styles.dayText,
-                      (isSelected || isToday) && styles.selectedText,
-                    ]}>
+                    style={[styles.dayText, isSelected && styles.selectedText]}>
                     {item.weekday}
                   </Text>
                 </View>
                 <View
                   style={[
                     styles.dateContainer,
-                    (isSelected || isToday) && styles.selectedDateContainer,
+                    isSelected && styles.selectedDateContainer,
                   ]}>
                   <Text
                     style={[
                       styles.dateText,
-                      (isSelected || isToday) && styles.selectedText,
+                      isSelected && styles.selectedText,
                     ]}>
                     {item.day}
                   </Text>
                 </View>
 
-                {(isSelected || isToday) && (
-                  <View style={styles.bottomIndicator} />
-                )}
+                {isSelected && <View style={styles.bottomIndicator} />}
               </View>
             </TouchableOpacity>
           );

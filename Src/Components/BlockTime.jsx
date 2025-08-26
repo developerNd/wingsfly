@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -6,595 +6,1084 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Vibration,
+  Animated,
+  Platform,
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
+import Sound from 'react-native-sound';
 
 const BlockTimeModal = ({visible, onClose, onSave}) => {
-  const [startHour, setStartHour] = useState(11);
-  const [startMinute, setStartMinute] = useState(40);
-  const [startPeriod, setStartPeriod] = useState('AM');
-  const [endHour, setEndHour] = useState(12);
-  const [endMinute, setEndMinute] = useState(30);
-  const [endPeriod, setEndPeriod] = useState('PM');
+  // REF-BASED STATE - Never triggers re-renders
+  const stateRef = useRef({
+    startHour: 11,
+    startMinute: 30,
+    startPeriod: 'AM',
+    endHour: 12,
+    endMinute: 30,
+    endPeriod: 'AM',
+  });
 
-  // Scroll position states for color calculation
-  const [startHourScroll, setStartHourScroll] = useState(0);
-  const [startMinuteScroll, setStartMinuteScroll] = useState(0);
-  const [startPeriodScroll, setStartPeriodScroll] = useState(0);
-  const [endHourScroll, setEndHourScroll] = useState(0);
-  const [endMinuteScroll, setEndMinuteScroll] = useState(0);
-  const [endPeriodScroll, setEndPeriodScroll] = useState(0);
+  // ENHANCED SCROLL ENGINE WITH OPTIMIZED INFINITE SCROLLING
+  const scrollEngine = useRef({
+    startHour: {
+      lastY: 0,
+      lastTime: 0,
+      velocity: 0,
+      isActive: false,
+      targetValue: 11,
+      animFrame: null,
+      snapTimeout: null,
+      lastSoundTime: 0,
+      momentumDecay: 0.94,
+      dampingActive: false,
+      isScrolling: false,
+      velocityHistory: [],
+      smoothStopActive: false,
+      lastCenterValue: null,
+      lastCenterIndex: -1,
+      isSnapping: false,
+      // OPTIMIZED: Pre-calculate repositioning thresholds
+      minThreshold: 0,
+      maxThreshold: 0,
+      repositionOffset: 0,
+      isRepositioning: false,
+    },
+    startMinute: {
+      lastY: 0,
+      lastTime: 0,
+      velocity: 0,
+      isActive: false,
+      targetValue: 30,
+      animFrame: null,
+      snapTimeout: null,
+      lastSoundTime: 0,
+      momentumDecay: 0.94,
+      dampingActive: false,
+      isScrolling: false,
+      velocityHistory: [],
+      smoothStopActive: false,
+      lastCenterValue: null,
+      lastCenterIndex: -1,
+      isSnapping: false,
+      minThreshold: 0,
+      maxThreshold: 0,
+      repositionOffset: 0,
+      isRepositioning: false,
+    },
+    startPeriod: {
+      lastY: 0,
+      lastTime: 0,
+      velocity: 0,
+      isActive: false,
+      targetValue: 'AM',
+      animFrame: null,
+      snapTimeout: null,
+      lastSoundTime: 0,
+      momentumDecay: 0.96,
+      dampingActive: false,
+      isScrolling: false,
+      velocityHistory: [],
+      smoothStopActive: false,
+      lastCenterValue: null,
+      lastCenterIndex: -1,
+      isSnapping: false,
+    },
+    endHour: {
+      lastY: 0,
+      lastTime: 0,
+      velocity: 0,
+      isActive: false,
+      targetValue: 12,
+      animFrame: null,
+      snapTimeout: null,
+      lastSoundTime: 0,
+      momentumDecay: 0.94,
+      dampingActive: false,
+      isScrolling: false,
+      velocityHistory: [],
+      smoothStopActive: false,
+      lastCenterValue: null,
+      lastCenterIndex: -1,
+      isSnapping: false,
+      minThreshold: 0,
+      maxThreshold: 0,
+      repositionOffset: 0,
+      isRepositioning: false,
+    },
+    endMinute: {
+      lastY: 0,
+      lastTime: 0,
+      velocity: 0,
+      isActive: false,
+      targetValue: 30,
+      animFrame: null,
+      snapTimeout: null,
+      lastSoundTime: 0,
+      momentumDecay: 0.94,
+      dampingActive: false,
+      isScrolling: false,
+      velocityHistory: [],
+      smoothStopActive: false,
+      lastCenterValue: null,
+      lastCenterIndex: -1,
+      isSnapping: false,
+      minThreshold: 0,
+      maxThreshold: 0,
+      repositionOffset: 0,
+      isRepositioning: false,
+    },
+    endPeriod: {
+      lastY: 0,
+      lastTime: 0,
+      velocity: 0,
+      isActive: false,
+      targetValue: 'AM',
+      animFrame: null,
+      snapTimeout: null,
+      lastSoundTime: 0,
+      momentumDecay: 0.96,
+      dampingActive: false,
+      isScrolling: false,
+      velocityHistory: [],
+      smoothStopActive: false,
+      lastCenterValue: null,
+      lastCenterIndex: -1,
+      isSnapping: false,
+    },
+  });
 
-  const startHourScrollRef = useRef(null);
-  const startMinuteScrollRef = useRef(null);
-  const startPeriodScrollRef = useRef(null);
-  const endHourScrollRef = useRef(null);
-  const endMinuteScrollRef = useRef(null);
-  const endPeriodScrollRef = useRef(null);
+  // ANIMATED VALUES
+  const animatedValues = useRef({
+    startHour: new Animated.Value(0),
+    startMinute: new Animated.Value(0),
+    startPeriod: new Animated.Value(0),
+    endHour: new Animated.Value(0),
+    endMinute: new Animated.Value(0),
+    endPeriod: new Animated.Value(0),
+  });
 
-  const hours = Array.from({length: 12}, (_, i) => i + 1);
-  const minutes = Array.from({length: 60}, (_, i) => i);
-  const startPeriods = ['AM', 'PM'];
-  const endPeriods = ['PM', 'AM'];
+  const scrollRefs = useRef({});
 
-  const ITEM_HEIGHT = HP(2.5);
-  const VISIBLE_ITEMS = 7;
-  const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
-  const CENTER_INDEX = Math.floor(VISIBLE_ITEMS / 2);
+  // OPTIMIZED PERFORMANCE CONSTANTS
+  const ENGINE = useMemo(
+    () => ({
+      hours: Array.from({length: 12}, (_, i) => i + 1),
+      minutes: Array.from({length: 60}, (_, i) => i),
+      periods: ['AM', 'PM'],
+      ITEM_HEIGHT: HP(3.5),
+      CENTER_INDEX: 3,
+      BUFFER_SIZE: 4,
+      SCROLL_THROTTLE: 1,
+      SNAP_DELAY: 120,
+      SOUND_THROTTLE: 30,
+      VIB_THROTTLE: 30,
+      VELOCITY_SMOOTH: 0.82,
+      MOMENTUM_THRESHOLD: 0.15,
+      FAST_SCROLL_THRESHOLD: 5,
+      ULTRA_FAST_THRESHOLD: 10,
+      MOMENTUM_DAMPING: 0.96,
+      ROTATION_FACTOR: 15,
+      SCALE_FACTOR: 0.85,
+      SMOOTH_STOP_THRESHOLD: 2.5,
+      VELOCITY_HISTORY_SIZE: 4,
+      SMOOTH_STOP_DURATION: 350,
+      DECELERATION_CURVE: 0.9,
+      SNAP_TOLERANCE: 0.8,
+      // OPTIMIZED: Reduced repositioning buffer for faster transitions
+      REPOSITION_BUFFER: 2, // Reduced from 4 to 2
+      REPOSITION_THRESHOLD: 1.5, // New threshold for earlier repositioning
+    }),
+    [],
+  );
 
-  const createExtendedArray = array => {
-    return [...array.slice(-3), ...array, ...array.slice(0, 3)];
-  };
+  // OPTIMIZED ARRAYS WITH BETTER INFINITE SCROLLING STRUCTURE
+  const ARRAYS = useMemo(() => {
+    // OPTIMIZED: Create more efficient infinite arrays
+    const hoursExtended = [
+      ...ENGINE.hours.slice(-ENGINE.BUFFER_SIZE), // [9, 10, 11, 12]
+      ...ENGINE.hours, // [1-12]
+      ...ENGINE.hours.slice(0, ENGINE.BUFFER_SIZE), // [1, 2, 3, 4]
+    ];
 
-  // Initialize scroll positions when modal becomes visible
+    const minutesExtended = [
+      ...ENGINE.minutes.slice(-ENGINE.BUFFER_SIZE), // [56, 57, 58, 59]
+      ...ENGINE.minutes, // [0-59]
+      ...ENGINE.minutes.slice(0, ENGINE.BUFFER_SIZE), // [0, 1, 2, 3]
+    ];
+
+    return {
+      hours: hoursExtended,
+      minutes: minutesExtended,
+      periods: ENGINE.periods,
+    };
+  }, [ENGINE]);
+
+  // SOUND POOL
+  const audioEngine = useRef({
+    scrollPool: [],
+    selectSound: null,
+    poolIndex: 0,
+    ready: false,
+    lastVibTime: 0,
+  });
+
+  // IMMEDIATE SOUND INITIALIZATION
   useEffect(() => {
+    const initAudio = () => {
+      try {
+        const scrollSounds = Array(3)
+          .fill(null)
+          .map(() => {
+            try {
+              const sound = new Sound('tic.wav', Sound.MAIN_BUNDLE, () => {});
+              sound.setVolume(1);
+              return sound;
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter(Boolean);
+
+        const selectSound = new Sound('tic.wav', Sound.MAIN_BUNDLE, () => {});
+        selectSound.setVolume(1);
+
+        audioEngine.current = {
+          scrollPool: scrollSounds,
+          selectSound,
+          poolIndex: 0,
+          ready: true,
+          lastVibTime: 0,
+        };
+      } catch (error) {
+        console.warn('Audio init failed:', error);
+        audioEngine.current.ready = false;
+      }
+    };
+
     if (visible) {
-      setTimeout(() => {
-        const initialOffset = 3 * ITEM_HEIGHT;
+      initAudio();
+    }
 
-        // Set initial positions for start time
-        const startHourIndex = hours.indexOf(startHour);
-        const startMinuteIndex = minutes.indexOf(startMinute);
+    return () => {
+      Object.values(scrollEngine.current).forEach(engine => {
+        if (engine.animFrame) cancelAnimationFrame(engine.animFrame);
+        if (engine.snapTimeout) clearTimeout(engine.snapTimeout);
+      });
 
-        if (startHourScrollRef.current && startHourIndex !== -1) {
-          startHourScrollRef.current.scrollTo({
-            y: startHourIndex * ITEM_HEIGHT + initialOffset,
-            animated: false,
-          });
+      audioEngine.current.scrollPool.forEach(sound => sound?.release?.());
+      audioEngine.current.selectSound?.release?.();
+    };
+  }, [visible]);
+
+  // SMOOTH DIGIT TRANSITION SYSTEM
+  const smoothDigitTransition = useRef({
+    startHour: {currentPos: 0, targetPos: 0, animating: false},
+    startMinute: {currentPos: 0, targetPos: 0, animating: false},
+    startPeriod: {currentPos: 0, targetPos: 0, animating: false},
+    endHour: {currentPos: 0, targetPos: 0, animating: false},
+    endMinute: {currentPos: 0, targetPos: 0, animating: false},
+    endPeriod: {currentPos: 0, targetPos: 0, animating: false},
+  });
+
+  // VELOCITY TRACKING
+  const updateVelocityHistory = useCallback(
+    (scrollType, velocity) => {
+      const engine = scrollEngine.current[scrollType];
+
+      engine.velocityHistory = engine.velocityHistory || [];
+      engine.velocityHistory.push(velocity);
+
+      if (engine.velocityHistory.length > ENGINE.VELOCITY_HISTORY_SIZE) {
+        engine.velocityHistory.shift();
+      }
+
+      const avgVelocity =
+        engine.velocityHistory.reduce((a, b) => a + b, 0) /
+        engine.velocityHistory.length;
+      return avgVelocity;
+    },
+    [ENGINE],
+  );
+
+  // ENHANCED AUDIO FUNCTIONS WITH STRONGER VIBRATION
+  const playScrollSound = useCallback(
+    (force = false) => {
+      const audio = audioEngine.current;
+      const now = Date.now();
+
+      if (!audio.ready) return;
+
+      if (!force && now - audio.lastVibTime < ENGINE.SOUND_THROTTLE) return;
+
+      const sound = audio.scrollPool[audio.poolIndex];
+      if (sound) {
+        sound.stop(() => sound.play());
+        audio.poolIndex = (audio.poolIndex + 1) % audio.scrollPool.length;
+        audio.lastVibTime = now;
+      }
+    },
+    [ENGINE.SOUND_THROTTLE],
+  );
+
+  // ENHANCED VIBRATION WITH STRONGER INTENSITY
+  const triggerVibration = useCallback(
+    (intensity = 'light', force = false) => {
+      const audio = audioEngine.current;
+      const now = Date.now();
+
+      if (!force && now - audio.lastVibTime < ENGINE.VIB_THROTTLE) return;
+
+      try {
+        let duration;
+        if (Platform.OS === 'ios') {
+          duration =
+            intensity === 'strong' ? 70 : intensity === 'medium' ? 50 : 30;
+        } else {
+          duration =
+            intensity === 'strong' ? 80 : intensity === 'medium' ? 50 : 30;
         }
 
-        if (startMinuteScrollRef.current && startMinuteIndex !== -1) {
-          startMinuteScrollRef.current.scrollTo({
-            y: startMinuteIndex * ITEM_HEIGHT + initialOffset,
-            animated: false,
-          });
+        Vibration.vibrate(duration);
+        audio.lastVibTime = now;
+      } catch (error) {
+        console.warn('Vibration failed:', error);
+      }
+    },
+    [ENGINE.VIB_THROTTLE],
+  );
+
+  const playSelectSound = useCallback(() => {
+    const sound = audioEngine.current.selectSound;
+    if (sound && audioEngine.current.ready) {
+      sound.play();
+    }
+    triggerVibration('strong', true);
+  }, [triggerVibration]);
+
+  // ENHANCED SMOOTH STOP SYSTEM
+  const initiateSmoothStop = useCallback(
+    (scrollType, currentY, velocity) => {
+      const engine = scrollEngine.current[scrollType];
+      const scrollRef = scrollRefs.current[scrollType];
+
+      if (!scrollRef || engine.smoothStopActive || engine.isSnapping) return;
+
+      engine.smoothStopActive = true;
+      engine.isScrolling = false;
+      engine.isSnapping = true;
+
+      const rawIndex = currentY / ENGINE.ITEM_HEIGHT;
+      const targetIndex = Math.round(rawIndex);
+      const targetY = targetIndex * ENGINE.ITEM_HEIGHT;
+
+      const distance = Math.abs(targetY - currentY);
+
+      if (distance > ENGINE.SNAP_TOLERANCE) {
+        const baseDuration =
+          velocity > ENGINE.FAST_SCROLL_THRESHOLD
+            ? ENGINE.SMOOTH_STOP_DURATION
+            : Math.min(ENGINE.SMOOTH_STOP_DURATION * 0.6, distance * 10);
+
+        const smoothStopEasing = t => {
+          return (
+            1 -
+            Math.pow(1 - t, velocity > ENGINE.FAST_SCROLL_THRESHOLD ? 2.2 : 1.8)
+          );
+        };
+
+        Animated.timing(animatedValues.current[scrollType], {
+          toValue: targetY,
+          duration: baseDuration,
+          useNativeDriver: false,
+          easing: smoothStopEasing,
+        }).start(() => {
+          engine.smoothStopActive = false;
+          engine.isSnapping = false;
+          smoothDigitTransition.current[scrollType].currentPos = targetY;
+          smoothDigitTransition.current[scrollType].targetPos = targetY;
+        });
+
+        scrollRef.scrollTo({
+          y: targetY,
+          animated: true,
+        });
+      } else {
+        engine.smoothStopActive = false;
+        engine.isSnapping = false;
+      }
+    },
+    [ENGINE],
+  );
+
+  // OPTIMIZED VALUE CALCULATION - Pre-computed for better performance
+  const calculateValueFromPosition = useCallback(
+    (scrollType, y, originalArray, isInfinite) => {
+      const rawIndex = y / ENGINE.ITEM_HEIGHT;
+      const currentCenterIndex = Math.round(rawIndex);
+
+      if (isInfinite) {
+        // OPTIMIZED: Faster modulo calculation with pre-computed values
+        const adjustedIndex = currentCenterIndex - ENGINE.BUFFER_SIZE;
+        const arrayLength = originalArray.length;
+
+        // Use bitwise operations for faster modulo when possible
+        let actualIndex;
+        if (arrayLength === 12 || arrayLength === 60) {
+          // For common cases, use optimized calculation
+          actualIndex =
+            ((adjustedIndex % arrayLength) + arrayLength) % arrayLength;
+        } else {
+          actualIndex =
+            ((adjustedIndex % arrayLength) + arrayLength) % arrayLength;
         }
 
-        // Set initial positions for end time
-        const endHourIndex = hours.indexOf(endHour);
-        const endMinuteIndex = minutes.indexOf(endMinute);
+        return {
+          value: originalArray[actualIndex],
+          centerIndex: currentCenterIndex,
+          actualIndex: actualIndex,
+        };
+      } else {
+        const clampedIndex = Math.max(
+          0,
+          Math.min(ENGINE.periods.length - 1, currentCenterIndex),
+        );
+        return {
+          value: ENGINE.periods[clampedIndex],
+          centerIndex: currentCenterIndex,
+          actualIndex: clampedIndex,
+        };
+      }
+    },
+    [ENGINE],
+  );
 
-        if (endHourScrollRef.current && endHourIndex !== -1) {
-          endHourScrollRef.current.scrollTo({
-            y: endHourIndex * ITEM_HEIGHT + initialOffset,
-            animated: false,
-          });
+  // OPTIMIZED INFINITE SCROLL REPOSITIONING - Much faster logic
+  const handleInfiniteScrollRepositioning = useCallback(
+    (scrollType, y, originalArray) => {
+      const engine = scrollEngine.current[scrollType];
+      const scrollRef = scrollRefs.current[scrollType];
+
+      if (!scrollRef || engine.isSnapping || engine.isRepositioning)
+        return false;
+
+      // OPTIMIZED: Pre-calculated thresholds for faster checking
+      if (engine.minThreshold === 0) {
+        engine.minThreshold = ENGINE.REPOSITION_BUFFER * ENGINE.ITEM_HEIGHT;
+        engine.maxThreshold =
+          (originalArray.length +
+            ENGINE.BUFFER_SIZE * ENGINE.REPOSITION_THRESHOLD) *
+          ENGINE.ITEM_HEIGHT;
+        engine.repositionOffset = originalArray.length * ENGINE.ITEM_HEIGHT;
+      }
+
+      // OPTIMIZED: Single condition check instead of multiple
+      let newPosition = null;
+
+      if (y < engine.minThreshold) {
+        newPosition = y + engine.repositionOffset;
+      } else if (y > engine.maxThreshold) {
+        newPosition = y - engine.repositionOffset;
+      }
+
+      if (newPosition !== null) {
+        engine.isRepositioning = true;
+
+        // OPTIMIZED: Use immediate repositioning without animation frame delay
+        scrollRef.scrollTo({y: newPosition, animated: false});
+        animatedValues.current[scrollType].setValue(newPosition);
+        smoothDigitTransition.current[scrollType].currentPos = newPosition;
+        smoothDigitTransition.current[scrollType].targetPos = newPosition;
+        engine.lastY = newPosition;
+        engine.lastCenterIndex = Math.round(newPosition / ENGINE.ITEM_HEIGHT);
+
+        // OPTIMIZED: Quick reset of repositioning flag
+        requestAnimationFrame(() => {
+          engine.isRepositioning = false;
+        });
+
+        return true;
+      }
+
+      return false;
+    },
+    [ENGINE],
+  );
+
+  // ENHANCED SCROLL HANDLER WITH OPTIMIZED INFINITE SCROLLING
+  const createScrollHandler = useCallback(
+    (scrollType, originalArray, isInfinite = true) => {
+      return event => {
+        const y = event.nativeEvent.contentOffset.y;
+        const engine = scrollEngine.current[scrollType];
+        const transition = smoothDigitTransition.current[scrollType];
+        const now = Date.now();
+        const prevY = engine.lastY;
+
+        // Skip if currently snapping or repositioning
+        if (engine.isSnapping || engine.isRepositioning) {
+          return;
         }
 
-        if (endMinuteScrollRef.current && endMinuteIndex !== -1) {
-          endMinuteScrollRef.current.scrollTo({
-            y: endMinuteIndex * ITEM_HEIGHT + initialOffset,
-            animated: false,
-          });
+        // OPTIMIZED: Handle infinite scroll repositioning first and early exit if repositioned
+        if (
+          isInfinite &&
+          handleInfiniteScrollRepositioning(scrollType, y, originalArray)
+        ) {
+          return;
         }
 
-        if (startPeriodScrollRef.current) {
-          const startPeriodIndex = startPeriods.indexOf(startPeriod);
-          if (startPeriodIndex !== -1) {
-            const targetPosition = startPeriodIndex * ITEM_HEIGHT;
-            startPeriodScrollRef.current.scrollTo({
-              y: targetPosition,
-              animated: false,
-            });
-            setStartPeriodScroll(targetPosition);
+        // Enhanced velocity calculation
+        const deltaY = Math.abs(y - prevY);
+        const timeDelta = Math.max(1, now - (engine.lastTime || now));
+        const rawVelocity = (deltaY / timeDelta) * 16.67;
+
+        engine.velocity =
+          engine.velocity * ENGINE.VELOCITY_SMOOTH +
+          rawVelocity * (1 - ENGINE.VELOCITY_SMOOTH);
+        const avgVelocity = updateVelocityHistory(scrollType, engine.velocity);
+        engine.lastTime = now;
+
+        engine.isScrolling = deltaY > 0.5;
+
+        const isFastScroll = avgVelocity > ENGINE.FAST_SCROLL_THRESHOLD;
+        const isSlowScroll = avgVelocity < ENGINE.SMOOTH_STOP_THRESHOLD;
+
+        // IMMEDIATE ANIMATED VALUE UPDATE
+        animatedValues.current[scrollType].setValue(y);
+        transition.currentPos = y;
+
+        // OPTIMIZED: Use pre-computed value calculation
+        const result = calculateValueFromPosition(
+          scrollType,
+          y,
+          originalArray,
+          isInfinite,
+        );
+
+        // OPTIMIZED: Combined center detection and value update
+        if (engine.lastCenterIndex !== result.centerIndex) {
+          engine.lastCenterIndex = result.centerIndex;
+
+          if (engine.lastCenterValue !== result.value) {
+            engine.lastCenterValue = result.value;
+
+            // ENHANCED FEEDBACK
+            playScrollSound(true);
+            triggerVibration('medium', true);
           }
         }
 
-        if (endPeriodScrollRef.current) {
-          const endPeriodIndex = endPeriods.indexOf(endPeriod);
-          if (endPeriodIndex !== -1) {
-            const targetPosition = endPeriodIndex * ITEM_HEIGHT;
-            endPeriodScrollRef.current.scrollTo({
-              y: targetPosition,
-              animated: false,
-            });
-            setEndPeriodScroll(targetPosition);
+        // UPDATE STATE REF
+        if (engine.targetValue !== result.value) {
+          engine.targetValue = result.value;
+          stateRef.current[scrollType] = result.value;
+        }
+
+        // ENHANCED SNAP HANDLING
+        engine.isActive = true;
+
+        if (engine.snapTimeout) clearTimeout(engine.snapTimeout);
+
+        const snapDelay = isSlowScroll
+          ? 80
+          : isFastScroll
+          ? 180
+          : ENGINE.SNAP_DELAY;
+
+        engine.snapTimeout = setTimeout(() => {
+          if (
+            !transition.animating &&
+            !engine.smoothStopActive &&
+            !engine.isSnapping &&
+            !engine.isRepositioning
+          ) {
+            const currentY = y;
+            const currentVelocity = avgVelocity;
+
+            if (currentVelocity > ENGINE.SMOOTH_STOP_THRESHOLD) {
+              initiateSmoothStop(scrollType, currentY, currentVelocity);
+            } else {
+              // Quick snap for very slow scrolling
+              const rawIndex = currentY / ENGINE.ITEM_HEIGHT;
+              const targetIndex = Math.round(rawIndex);
+              const snapY = targetIndex * ENGINE.ITEM_HEIGHT;
+              const scrollRef = scrollRefs.current[scrollType];
+
+              if (
+                scrollRef &&
+                Math.abs(currentY - snapY) > ENGINE.SNAP_TOLERANCE
+              ) {
+                engine.isSnapping = true;
+                scrollRef.scrollTo({y: snapY, animated: true});
+
+                setTimeout(() => {
+                  animatedValues.current[scrollType].setValue(snapY);
+                  transition.currentPos = snapY;
+                  transition.targetPos = snapY;
+                  engine.isSnapping = false;
+                }, 100);
+              }
+            }
+
+            engine.isActive = false;
+          }
+          engine.snapTimeout = null;
+        }, snapDelay);
+
+        engine.lastY = y;
+      };
+    },
+    [
+      ENGINE,
+      updateVelocityHistory,
+      initiateSmoothStop,
+      playScrollSound,
+      triggerVibration,
+      calculateValueFromPosition,
+      handleInfiniteScrollRepositioning,
+    ],
+  );
+
+  // STATIC HANDLERS
+  const HANDLERS = useMemo(
+    () => ({
+      startHour: createScrollHandler('startHour', ENGINE.hours, true),
+      startMinute: createScrollHandler('startMinute', ENGINE.minutes, true),
+      startPeriod: createScrollHandler('startPeriod', ENGINE.periods, false),
+      endHour: createScrollHandler('endHour', ENGINE.hours, true),
+      endMinute: createScrollHandler('endMinute', ENGINE.minutes, true),
+      endPeriod: createScrollHandler('endPeriod', ENGINE.periods, false),
+    }),
+    [createScrollHandler, ENGINE],
+  );
+
+  // POSITION CALCULATION HELPER
+  const getInitialPosition = useCallback(
+    (scrollType, value) => {
+      if (scrollType.includes('Hour')) {
+        const index = ENGINE.hours.indexOf(value);
+        if (index === -1) return ENGINE.BUFFER_SIZE * ENGINE.ITEM_HEIGHT;
+        return (index + ENGINE.BUFFER_SIZE) * ENGINE.ITEM_HEIGHT;
+      } else if (scrollType.includes('Minute')) {
+        const numericValue =
+          typeof value === 'string' ? parseInt(value, 10) : value;
+        const index = ENGINE.minutes.indexOf(numericValue);
+        if (index === -1) return ENGINE.BUFFER_SIZE * ENGINE.ITEM_HEIGHT;
+        return (index + ENGINE.BUFFER_SIZE) * ENGINE.ITEM_HEIGHT;
+      } else if (scrollType.includes('Period')) {
+        const index = ENGINE.periods.indexOf(value);
+        if (index === -1) return ENGINE.CENTER_INDEX * ENGINE.ITEM_HEIGHT;
+        return (index + ENGINE.CENTER_INDEX) * ENGINE.ITEM_HEIGHT;
+      }
+      return 0;
+    },
+    [ENGINE],
+  );
+
+  // OPTIMIZED INITIALIZATION - Faster setup with pre-calculated thresholds
+  useEffect(() => {
+    if (!visible) return;
+
+    // Calculate all positions immediately
+    const positions = {
+      startHour: getInitialPosition('startHour', stateRef.current.startHour),
+      startMinute: getInitialPosition(
+        'startMinute',
+        stateRef.current.startMinute,
+      ),
+      startPeriod: getInitialPosition(
+        'startPeriod',
+        stateRef.current.startPeriod,
+      ),
+      endHour: getInitialPosition('endHour', stateRef.current.endHour),
+      endMinute: getInitialPosition('endMinute', stateRef.current.endMinute),
+      endPeriod: getInitialPosition('endPeriod', stateRef.current.endPeriod),
+    };
+
+    // OPTIMIZED: Pre-calculate infinite scroll thresholds
+    Object.entries(scrollEngine.current).forEach(([key, engine]) => {
+      if (key.includes('Hour') || key.includes('Minute')) {
+        const originalArray = key.includes('Hour')
+          ? ENGINE.hours
+          : ENGINE.minutes;
+        engine.minThreshold = ENGINE.REPOSITION_BUFFER * ENGINE.ITEM_HEIGHT;
+        engine.maxThreshold =
+          (originalArray.length +
+            ENGINE.BUFFER_SIZE * ENGINE.REPOSITION_THRESHOLD) *
+          ENGINE.ITEM_HEIGHT;
+        engine.repositionOffset = originalArray.length * ENGINE.ITEM_HEIGHT;
+      }
+    });
+
+    const timer = setTimeout(() => {
+      Object.entries(positions).forEach(([key, pos]) => {
+        const ref = scrollRefs.current[key];
+        const engine = scrollEngine.current[key];
+        if (ref && pos >= 0) {
+          ref.scrollTo({y: pos, animated: false});
+          animatedValues.current[key].setValue(pos);
+          smoothDigitTransition.current[key].currentPos = pos;
+          smoothDigitTransition.current[key].targetPos = pos;
+          engine.lastY = pos;
+          engine.lastCenterIndex = Math.round(pos / ENGINE.ITEM_HEIGHT);
+
+          // Initialize center value tracking
+          const originalArray = key.includes('Hour')
+            ? ENGINE.hours
+            : key.includes('Minute')
+            ? ENGINE.minutes
+            : ENGINE.periods;
+          const isInfinite = !key.includes('Period');
+
+          if (isInfinite) {
+            const centerIndex = Math.round(pos / ENGINE.ITEM_HEIGHT);
+            const adjustedIndex = centerIndex - ENGINE.BUFFER_SIZE;
+            const actualIndex =
+              ((adjustedIndex % originalArray.length) + originalArray.length) %
+              originalArray.length;
+            engine.lastCenterValue = originalArray[actualIndex];
+          } else {
+            const centerIndex = Math.round(pos / ENGINE.ITEM_HEIGHT);
+            const clampedIndex = Math.max(
+              0,
+              Math.min(ENGINE.periods.length - 1, centerIndex),
+            );
+            engine.lastCenterValue = ENGINE.periods[clampedIndex];
           }
         }
-      }, 100);
-    }
-  }, [
-    visible,
-    startHour,
-    startMinute,
-    startPeriod,
-    endHour,
-    endMinute,
-    endPeriod,
-  ]);
+      });
+    }, 15); // Further reduced for faster initialization
 
-  const getTextColorByPosition = absoluteIndex => {
-    switch (absoluteIndex) {
-      case 0:
-        return '#E8E8E8';
-      case 1:
-        return '#D0D0D0';
-      case 2:
-        return '#B8B8B8';
-      case 3:
-        return '#6A6565';
-      case 4:
-        return '#B8B8B8';
-      case 5:
-        return '#D0D0D0';
-      case 6:
-        return '#E8E8E8';
-      default:
-        return '#CCCCCC';
-    }
-  };
+    return () => clearTimeout(timer);
+  }, [visible, ENGINE, getInitialPosition]);
 
-  // scroll handlers with infinite scrolling logic (for hours and minutes)
-  const handleInfiniteScroll = (
-    event,
-    setter,
-    setScrollPos,
-    originalArray,
-    scrollRef,
-  ) => {
-    const y = event.nativeEvent.contentOffset.y;
-    const index = Math.round(y / ITEM_HEIGHT);
+  // ENHANCED ANIMATED PERIOD TEXT COMPONENT
+  const AnimatedPeriodText = React.memo(({animatedValue, index, children}) => {
+    const [fontWeight, setFontWeight] = useState('400');
 
-    setScrollPos(y);
+    useEffect(() => {
+      const listener = animatedValue.addListener(({value}) => {
+        const centerPosition = index * ENGINE.ITEM_HEIGHT;
+        const distance = Math.abs(value - centerPosition);
+        const threshold = ENGINE.ITEM_HEIGHT * 0.4;
 
-    let actualIndex = index - 3;
+        const newWeight = distance < threshold ? '700' : '400';
+        if (fontWeight !== newWeight) {
+          setFontWeight(newWeight);
+        }
+      });
 
-    if (actualIndex < 0) {
-      actualIndex = originalArray.length + actualIndex;
-    } else if (actualIndex >= originalArray.length) {
-      actualIndex = actualIndex - originalArray.length;
-    }
+      return () => animatedValue.removeListener(listener);
+    }, [animatedValue, index, fontWeight]);
 
-    const value =
-      originalArray[
-        Math.max(0, Math.min(originalArray.length - 1, actualIndex))
-      ];
-    setter(value);
-
-    // Handle boundary wrapping
-    if (index <= 2) {
-      const newPosition =
-        (originalArray.length + index - 3) * ITEM_HEIGHT + 3 * ITEM_HEIGHT;
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({y: newPosition, animated: false});
-        setScrollPos(newPosition);
-      }, 0);
-    } else if (index >= originalArray.length + 3) {
-      const newPosition =
-        (index - originalArray.length) * ITEM_HEIGHT + 3 * ITEM_HEIGHT;
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({y: newPosition, animated: false});
-        setScrollPos(newPosition);
-      }, 0);
-    }
-  };
-
-  // Fixed period scroll handler
-  const handlePeriodScroll = (
-    event,
-    setPeriod,
-    setScrollPos,
-    periodsArray,
-    scrollRef,
-  ) => {
-    const y = event.nativeEvent.contentOffset.y;
-    setScrollPos(y);
-
-    const itemIndex = Math.round(y / ITEM_HEIGHT);
-
-    const clampedIndex = Math.max(
-      0,
-      Math.min(periodsArray.length - 1, itemIndex),
+    return (
+      <Animated.Text
+        style={[
+          styles.timeText,
+          styles.periodText,
+          {
+            color: animatedValue.interpolate({
+              inputRange: [
+                (index - 0.5) * ENGINE.ITEM_HEIGHT,
+                index * ENGINE.ITEM_HEIGHT,
+                (index + 0.5) * ENGINE.ITEM_HEIGHT,
+              ],
+              outputRange: [
+                'rgba(255,255,255,0.5)',
+                'rgba(255,255,255,0.95)',
+                'rgba(255,255,255,0.5)',
+              ],
+              extrapolate: 'clamp',
+            }),
+            fontSize: animatedValue.interpolate({
+              inputRange: [
+                (index - 0.5) * ENGINE.ITEM_HEIGHT,
+                index * ENGINE.ITEM_HEIGHT,
+                (index + 0.5) * ENGINE.ITEM_HEIGHT,
+              ],
+              outputRange: [FS(1.8), FS(2.0), FS(1.8)],
+              extrapolate: 'clamp',
+            }),
+            fontWeight: fontWeight,
+          },
+        ]}>
+        {children}
+      </Animated.Text>
     );
-    const value = periodsArray[clampedIndex];
-    setPeriod(value);
+  });
 
-    const snapPosition = clampedIndex * ITEM_HEIGHT;
-    if (Math.abs(y - snapPosition) > 5) {
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({y: snapPosition, animated: true});
-        setScrollPos(snapPosition);
-      }, 0);
-    }
-  };
+  // ENHANCED TIME ITEM
+  const TimeItem = React.memo(
+    ({item, index, scrollType, onPress, isMinute, isPeriod}) => {
+      const animatedValue = animatedValues.current[scrollType];
 
-  const handleHourScroll = (event, setHour, setScrollPos, scrollRef) => {
-    handleInfiniteScroll(event, setHour, setScrollPos, hours, scrollRef);
-  };
+      // PERIOD ITEMS
+      if (isPeriod) {
+        return (
+          <Animated.View style={styles.timeItem}>
+            <TouchableOpacity
+              style={styles.timeItemTouchable}
+              onPress={onPress}
+              activeOpacity={0.7}>
+              <AnimatedPeriodText animatedValue={animatedValue} index={index}>
+                {item}
+              </AnimatedPeriodText>
+            </TouchableOpacity>
+          </Animated.View>
+        );
+      }
 
-  const handleMinuteScroll = (event, setMinute, setScrollPos, scrollRef) => {
-    handleInfiniteScroll(event, setMinute, setScrollPos, minutes, scrollRef);
-  };
-
-  const calculateItemPosition = (
-    itemIndex,
-    scrollPosition,
-    isPeriod = false,
-  ) => {
-    if (isPeriod) {
-      // For periods, calculate position relative to center
-      const scrollIndex = Math.round(scrollPosition / ITEM_HEIGHT);
-      const relativePosition = itemIndex - scrollIndex + CENTER_INDEX;
-      return Math.max(0, Math.min(6, relativePosition));
-    } else {
-      // For hours and minutes (infinite scroll)
-      const scrollIndex = Math.floor(
-        (scrollPosition + ITEM_HEIGHT / 2) / ITEM_HEIGHT,
+      // ENHANCED ANIMATED ITEMS
+      return (
+        <Animated.View
+          style={[
+            styles.timeItem,
+            {
+              transform: [
+                {perspective: 1200},
+                {
+                  rotateX: animatedValue.interpolate({
+                    inputRange: [
+                      (index - 2.5) * ENGINE.ITEM_HEIGHT,
+                      (index - 1) * ENGINE.ITEM_HEIGHT,
+                      index * ENGINE.ITEM_HEIGHT,
+                      (index + 1) * ENGINE.ITEM_HEIGHT,
+                      (index + 2.5) * ENGINE.ITEM_HEIGHT,
+                    ],
+                    outputRange: ['45deg', '15deg', '0deg', '-15deg', '-45deg'],
+                    extrapolate: 'clamp',
+                  }),
+                },
+                {
+                  scale: animatedValue.interpolate({
+                    inputRange: [
+                      (index - 2) * ENGINE.ITEM_HEIGHT,
+                      (index - 1) * ENGINE.ITEM_HEIGHT,
+                      index * ENGINE.ITEM_HEIGHT,
+                      (index + 1) * ENGINE.ITEM_HEIGHT,
+                      (index + 2) * ENGINE.ITEM_HEIGHT,
+                    ],
+                    outputRange: [
+                      ENGINE.SCALE_FACTOR,
+                      0.92,
+                      1.0,
+                      0.92,
+                      ENGINE.SCALE_FACTOR,
+                    ],
+                    extrapolate: 'clamp',
+                  }),
+                },
+              ],
+              opacity: animatedValue.interpolate({
+                inputRange: [
+                  (index - 2.5) * ENGINE.ITEM_HEIGHT,
+                  (index - 1) * ENGINE.ITEM_HEIGHT,
+                  index * ENGINE.ITEM_HEIGHT,
+                  (index + 1) * ENGINE.ITEM_HEIGHT,
+                  (index + 2.5) * ENGINE.ITEM_HEIGHT,
+                ],
+                outputRange: [0.3, 0.7, 1.0, 0.7, 0.3],
+                extrapolate: 'clamp',
+              }),
+            },
+          ]}>
+          <TouchableOpacity
+            style={styles.timeItemTouchable}
+            onPress={onPress}
+            activeOpacity={0.7}>
+            <Animated.Text
+              style={[
+                styles.timeText,
+                {
+                  color: animatedValue.interpolate({
+                    inputRange: [
+                      (index - 0.5) * ENGINE.ITEM_HEIGHT,
+                      index * ENGINE.ITEM_HEIGHT,
+                      (index + 0.5) * ENGINE.ITEM_HEIGHT,
+                    ],
+                    outputRange: [
+                      'rgba(255,255,255,0.6)',
+                      'rgba(255,255,255,0.95)',
+                      'rgba(255,255,255,0.6)',
+                    ],
+                    extrapolate: 'clamp',
+                  }),
+                  fontSize: animatedValue.interpolate({
+                    inputRange: [
+                      (index - 0.5) * ENGINE.ITEM_HEIGHT,
+                      index * ENGINE.ITEM_HEIGHT,
+                      (index + 0.5) * ENGINE.ITEM_HEIGHT,
+                    ],
+                    outputRange: [FS(2.4), FS(2.6), FS(2.4)],
+                    extrapolate: 'clamp',
+                  }),
+                  fontWeight: animatedValue.interpolate({
+                    inputRange: [
+                      (index - 0.5) * ENGINE.ITEM_HEIGHT,
+                      index * ENGINE.ITEM_HEIGHT,
+                      (index + 0.5) * ENGINE.ITEM_HEIGHT,
+                    ],
+                    outputRange: ['400', '700', '400'],
+                    extrapolate: 'clamp',
+                  }),
+                },
+              ]}>
+              {isMinute ? String(item).padStart(2, '0') : item}
+            </Animated.Text>
+          </TouchableOpacity>
+        </Animated.View>
       );
-      const relativeIndex =
-        (itemIndex - scrollIndex + CENTER_INDEX + VISIBLE_ITEMS) %
-        VISIBLE_ITEMS;
-      return relativeIndex;
-    }
-  };
+    },
+    (prev, next) => {
+      return prev.item === next.item && prev.scrollType === next.scrollType;
+    },
+  );
 
-  const renderTimeColumn = (
-    items,
-    selectedValue,
-    onSelect,
-    scrollHandler,
-    scrollRef,
-    scrollPosition,
-    isMinute = false,
-    isPeriod = false,
-    columnType = '',
-  ) => {
-    if (isPeriod) {
+  // OPTIMIZED COLUMN RENDERER
+  const renderTimeColumn = useCallback(
+    (items, scrollType, isMinute = false, isPeriod = false) => {
+      const handleItemPress = item => {
+        playSelectSound();
+
+        stateRef.current[scrollType] = item;
+        scrollEngine.current[scrollType].targetValue = item;
+
+        const targetPos = getInitialPosition(scrollType, item);
+        const ref = scrollRefs.current[scrollType];
+
+        if (!ref || targetPos < 0) return;
+
+        const engine = scrollEngine.current[scrollType];
+        engine.isSnapping = true;
+
+        requestAnimationFrame(() => {
+          ref.scrollTo({y: targetPos, animated: true});
+          animatedValues.current[scrollType].setValue(targetPos);
+          smoothDigitTransition.current[scrollType].currentPos = targetPos;
+          smoothDigitTransition.current[scrollType].targetPos = targetPos;
+          scrollEngine.current[scrollType].lastY = targetPos;
+          scrollEngine.current[scrollType].lastCenterIndex = Math.round(
+            targetPos / ENGINE.ITEM_HEIGHT,
+          );
+
+          // Reset snapping state after animation
+          setTimeout(() => {
+            engine.isSnapping = false;
+          }, 300);
+        });
+      };
+
       return (
         <View
           style={[
             styles.timeColumnContainer,
-            styles.periodColumn,
-            {height: PICKER_HEIGHT},
+            isMinute && styles.minuteColumn,
+            isPeriod && styles.periodColumn,
           ]}>
           <ScrollView
-            ref={scrollRef}
+            ref={ref => (scrollRefs.current[scrollType] = ref)}
             style={styles.timeColumn}
             showsVerticalScrollIndicator={false}
-            snapToInterval={ITEM_HEIGHT}
+            snapToInterval={ENGINE.ITEM_HEIGHT}
             snapToAlignment="start"
-            decelerationRate="fast"
+            decelerationRate={ENGINE.MOMENTUM_DAMPING}
+            onScroll={HANDLERS[scrollType]}
+            scrollEventThrottle={ENGINE.SCROLL_THROTTLE}
+            removeClippedSubviews={false}
+            bounces={!isPeriod}
+            bouncesZoom={false}
+            overScrollMode={isPeriod ? 'never' : 'auto'}
             contentContainerStyle={[
-              styles.timeColumnContent,
+              styles.infiniteScrollContent,
               {
-                paddingTop: CENTER_INDEX * ITEM_HEIGHT,
-                paddingBottom: CENTER_INDEX * ITEM_HEIGHT,
+                paddingTop: ENGINE.CENTER_INDEX * ENGINE.ITEM_HEIGHT,
+                paddingBottom: ENGINE.CENTER_INDEX * ENGINE.ITEM_HEIGHT,
               },
-            ]}
-            onScroll={e => {
-              const y = e.nativeEvent.contentOffset.y;
-              const setScrollState =
-                columnType === 'startPeriod'
-                  ? setStartPeriodScroll
-                  : setEndPeriodScroll;
-              setScrollState(y);
-            }}
-            scrollEventThrottle={16}
-            onMomentumScrollEnd={e =>
-              scrollHandler(
-                e,
-                onSelect,
-                columnType === 'startPeriod'
-                  ? setStartPeriodScroll
-                  : setEndPeriodScroll,
-                items,
-                scrollRef,
-              )
-            }
-            onScrollEndDrag={e =>
-              scrollHandler(
-                e,
-                onSelect,
-                columnType === 'startPeriod'
-                  ? setStartPeriodScroll
-                  : setEndPeriodScroll,
-                items,
-                scrollRef,
-              )
-            }>
-            {items.map((item, index) => {
-              const position = calculateItemPosition(
-                index,
-                scrollPosition,
-                true,
-              );
-              return (
-                <View
-                  key={`${item}-${index}`}
-                  style={[
-                    styles.timeItem,
-                    styles.periodItem,
-                    {height: ITEM_HEIGHT},
-                  ]}>
-                  <TouchableOpacity
-                    style={styles.timeItemTouchable}
-                    onPress={() => {
-                      onSelect(item);
-                      const targetPosition = index * ITEM_HEIGHT;
-                      if (scrollRef.current) {
-                        scrollRef.current.scrollTo({
-                          y: targetPosition,
-                          animated: true,
-                        });
-                      }
-                      const setScrollState =
-                        columnType === 'startPeriod'
-                          ? setStartPeriodScroll
-                          : setEndPeriodScroll;
-                      setScrollState(targetPosition);
-                    }}>
-                    <Text
-                      style={[
-                        styles.timeText,
-                        styles.periodText,
-                        {color: getTextColorByPosition(position)},
-                      ]}>
-                      {item}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
+            ]}>
+            {items.map((item, index) => (
+              <TimeItem
+                key={`${scrollType}-${item}-${index}`}
+                item={item}
+                index={index}
+                scrollType={scrollType}
+                onPress={() => handleItemPress(item)}
+                isMinute={isMinute}
+                isPeriod={isPeriod}
+              />
+            ))}
           </ScrollView>
         </View>
       );
-    }
+    },
+    [ENGINE, HANDLERS, playSelectSound, getInitialPosition],
+  );
 
-    // Extended array for infinite scrolling (hours and minutes)
-    const extendedItems = createExtendedArray(items);
-
-    return (
-      <View
-        style={[
-          styles.timeColumnContainer,
-          isMinute && styles.minuteColumn,
-          {height: PICKER_HEIGHT},
-        ]}>
-        <ScrollView
-          ref={scrollRef}
-          style={styles.timeColumn}
-          showsVerticalScrollIndicator={false}
-          snapToInterval={ITEM_HEIGHT}
-          decelerationRate="fast"
-          contentContainerStyle={[
-            styles.infiniteScrollContent,
-            {
-              paddingTop: CENTER_INDEX * ITEM_HEIGHT,
-              paddingBottom: CENTER_INDEX * ITEM_HEIGHT,
-            },
-          ]}
-          onScroll={e => {
-            const y = e.nativeEvent.contentOffset.y;
-            const setScrollState =
-              columnType === 'startHour'
-                ? setStartHourScroll
-                : columnType === 'startMinute'
-                ? setStartMinuteScroll
-                : columnType === 'endHour'
-                ? setEndHourScroll
-                : setEndMinuteScroll;
-            setScrollState(y);
-          }}
-          scrollEventThrottle={16}
-          onMomentumScrollEnd={e => {
-            const setScrollState =
-              columnType === 'startHour'
-                ? setStartHourScroll
-                : columnType === 'startMinute'
-                ? setStartMinuteScroll
-                : columnType === 'endHour'
-                ? setEndHourScroll
-                : setEndMinuteScroll;
-            scrollHandler(e, onSelect, setScrollState, scrollRef);
-          }}
-          onScrollEndDrag={e => {
-            const setScrollState =
-              columnType === 'startHour'
-                ? setStartHourScroll
-                : columnType === 'startMinute'
-                ? setStartMinuteScroll
-                : columnType === 'endHour'
-                ? setEndHourScroll
-                : setEndMinuteScroll;
-            scrollHandler(e, onSelect, setScrollState, scrollRef);
-          }}>
-          {extendedItems.map((item, index) => {
-            const position = calculateItemPosition(index, scrollPosition);
-
-            return (
-              <View
-                key={`${item}-${index}`}
-                style={[styles.timeItem, {height: ITEM_HEIGHT}]}>
-                <TouchableOpacity
-                  style={styles.timeItemTouchable}
-                  onPress={() => {
-                    onSelect(item);
-                    const originalIndex = items.indexOf(item);
-                    const targetPosition =
-                      originalIndex * ITEM_HEIGHT + 3 * ITEM_HEIGHT;
-                    if (scrollRef.current) {
-                      scrollRef.current.scrollTo({
-                        y: targetPosition,
-                        animated: true,
-                      });
-                    }
-                  }}>
-                  <Text
-                    style={[
-                      styles.timeText,
-                      {color: getTextColorByPosition(position)},
-                    ]}>
-                    {isMinute ? String(item).padStart(2, '0') : item}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </ScrollView>
-      </View>
-    );
-  };
-
-  const renderTimePicker = (
-    title,
-    hour,
-    minute,
-    period,
-    onHourChange,
-    onMinuteChange,
-    onPeriodChange,
-    hourRef,
-    minuteRef,
-    periodRef,
-    isStart = true,
-  ) => {
-    const hourScroll = isStart ? startHourScroll : endHourScroll;
-    const minuteScroll = isStart ? startMinuteScroll : endMinuteScroll;
-    const periodScroll = isStart ? startPeriodScroll : endPeriodScroll;
-    const periodsArray = isStart ? startPeriods : endPeriods;
-
-    return (
+  // TIME PICKER
+  const renderTimePicker = useCallback(
+    (title, prefix) => (
       <View style={styles.timePickerContainer}>
         <Text style={styles.timePickerTitle}>{title}</Text>
         <View style={styles.timePickerWrapper}>
-          <View style={styles.timeColumnHighlight} />
+          <View style={styles.centerSelectionBox} />
           <View style={styles.timePickerColumns}>
-            {renderTimeColumn(
-              hours,
-              hour,
-              onHourChange,
-              handleHourScroll,
-              hourRef,
-              hourScroll,
-              false,
-              false,
-              isStart ? 'startHour' : 'endHour',
-            )}
-            <View style={styles.minutesPeriodContainer}>
-              {renderTimeColumn(
-                minutes,
-                minute,
-                onMinuteChange,
-                handleMinuteScroll,
-                minuteRef,
-                minuteScroll,
-                true,
-                false,
-                isStart ? 'startMinute' : 'endMinute',
-              )}
-              {renderTimeColumn(
-                periodsArray,
-                period,
-                onPeriodChange,
-                handlePeriodScroll,
-                periodRef,
-                periodScroll,
-                false,
-                true,
-                isStart ? 'startPeriod' : 'endPeriod',
-              )}
+            {renderTimeColumn(ARRAYS.hours, `${prefix}Hour`, false, false)}
+            <View style={styles.separatorContainer}>
+              <Text style={styles.timeSeparator}>:</Text>
             </View>
+            {renderTimeColumn(ARRAYS.minutes, `${prefix}Minute`, true, false)}
+            {renderTimeColumn(ARRAYS.periods, `${prefix}Period`, false, true)}
           </View>
         </View>
       </View>
-    );
-  };
+    ),
+    [ARRAYS, renderTimeColumn],
+  );
 
-  const handleSave = () => {
+  // SAVE HANDLER
+  const handleSave = useCallback(() => {
+    const state = stateRef.current;
     const timeData = {
-      startTime: `${startHour}:${String(startMinute).padStart(
+      startTime: `${state.startHour}:${String(state.startMinute).padStart(
         2,
         '0',
-      )} ${startPeriod}`,
-      endTime: `${endHour}:${String(endMinute).padStart(2, '0')} ${endPeriod}`,
+      )} ${state.startPeriod}`,
+      endTime: `${state.endHour}:${String(state.endMinute).padStart(2, '0')} ${
+        state.endPeriod
+      }`,
     };
     onSave(timeData);
     onClose();
-  };
+  }, [onSave, onClose]);
 
   return (
     <Modal
       visible={visible}
-      animationType="fade"
-      transparent={true}
-      onRequestClose={onClose}>
-      <TouchableOpacity
-        style={styles.modalOverlay}
-        activeOpacity={1}
-        onPress={onClose}>
-        <TouchableOpacity
-          style={styles.modalContainer}
-          activeOpacity={1}
-          onPress={e => e.stopPropagation()}>
-          {/* Header */}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+      hardwareAccelerated>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.header}>
+            <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
             <Text style={styles.headerTitle}>Block Time</Text>
-          </View>
-
-          {/* Content */}
-          <View style={styles.content}>
-            <View style={styles.timePickersContainer}>
-              {/* Start Time */}
-              {renderTimePicker(
-                'Start Time',
-                startHour,
-                startMinute,
-                startPeriod,
-                setStartHour,
-                setStartMinute,
-                setStartPeriod,
-                startHourScrollRef,
-                startMinuteScrollRef,
-                startPeriodScrollRef,
-                true,
-              )}
-
-              {/* End Time */}
-              {renderTimePicker(
-                'End Time',
-                endHour,
-                endMinute,
-                endPeriod,
-                setEndHour,
-                setEndMinute,
-                setEndPeriod,
-                endHourScrollRef,
-                endMinuteScrollRef,
-                endPeriodScrollRef,
-                false,
-              )}
-            </View>
-            {/* Save Button */}
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleSave}
-              activeOpacity={0.7}>
+            <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
               <Text style={styles.saveButtonText}>Save</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
+
+          <View style={styles.content}>
+            <View style={styles.timePickersContainer}>
+              {renderTimePicker('Start Time', 'start')}
+              {renderTimePicker('End Time', 'end')}
+            </View>
+          </View>
+        </View>
+      </View>
     </Modal>
   );
 };
@@ -602,159 +1091,161 @@ const BlockTimeModal = ({visible, onClose, onSave}) => {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: '#47474773',
+    backgroundColor: colors.ModelBackground,
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContainer: {
-    width: WP(88),
-    backgroundColor: colors.White,
-    borderRadius: WP(2),
-    overflow: 'hidden',
-    marginBottom: HP(6),
+    width: WP(90),
+    backgroundColor: '#1C1C1E',
+    borderRadius: WP(3),
+    paddingBottom: HP(2.5),
+    maxHeight: HP(78),
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 10},
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
   },
   header: {
-    backgroundColor: colors.Primary,
-    paddingVertical: HP(2.2),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: WP(6),
+    paddingHorizontal: WP(4),
+    paddingVertical: HP(1.8),
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255, 255, 255, 0.15)',
   },
   headerTitle: {
     fontSize: FS(2.2),
     fontFamily: 'OpenSans-SemiBold',
-    color: colors.White,
+    color: '#F5F5F5',
+    textAlign: 'center',
   },
-  closeButton: {
-    width: WP(8),
-    height: WP(8),
-    justifyContent: 'center',
-    alignItems: 'center',
+  cancelButton: {
+    paddingVertical: HP(0.5),
+    paddingHorizontal: WP(2),
   },
-  closeButtonText: {
-    fontSize: FS(3.5),
-    color: colors.White,
-    lineHeight: FS(3.5),
-    marginTop: HP(-0.5),
+  cancelButtonText: {
+    fontSize: FS(1.8),
+    fontFamily: 'OpenSans-Regular',
+    color: '#FF9500',
+  },
+  saveButton: {
+    paddingVertical: HP(0.5),
+    paddingHorizontal: WP(2),
+  },
+  saveButtonText: {
+    fontSize: FS(1.8),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#FF9500',
   },
   content: {
-    backgroundColor: colors.White,
-    paddingBottom: HP(2),
+    backgroundColor: '#1C1C1E',
+    paddingTop: HP(2),
   },
   timePickersContainer: {
     flexDirection: 'row',
-    paddingHorizontal: WP(4.5),
-    paddingTop: HP(2),
+    paddingHorizontal: WP(3),
+    justifyContent: 'space-between',
   },
   timePickerContainer: {
     flex: 1,
-    marginHorizontal: WP(2),
+    marginHorizontal: WP(1),
   },
   timePickerWrapper: {
     position: 'relative',
+    height: HP(24.5),
+    overflow: 'hidden',
+    borderRadius: WP(2),
   },
   timePickerTitle: {
-    fontSize: FS(1.5),
+    fontSize: FS(1.8),
     fontFamily: 'OpenSans-SemiBold',
-    color: '#6A6565',
-    marginBottom: HP(1),
+    color: '#F5F5F5',
+    marginBottom: HP(1.5),
     textAlign: 'center',
-    marginRight: WP(6.5),
   },
   timePickerColumns: {
     flexDirection: 'row',
-    borderRadius: WP(2),
-    paddingHorizontal: WP(-1),
-    paddingVertical: HP(0.5),
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
   },
   timeColumnContainer: {
-    flex: 1,
-    marginHorizontal: WP(0.5),
+    height: '100%',
     justifyContent: 'center',
-  },
-
-  minutesPeriodContainer: {
     flex: 1,
-    flexDirection: 'row',
-    marginLeft: WP(-5),
-    alignItems: 'stretch',
-    minWidth: WP(8),
   },
   minuteColumn: {
-    flex: 1,
+    marginHorizontal: WP(0),
+    paddingHorizontal: WP(0),
   },
   periodColumn: {
-    flex: 0.5,
-    marginLeft: WP(-8),
-    minWidth: WP(8),
+    flex: 0.6,
+    marginLeft: WP(1.2),
+    marginRight: WP(4.2),
+    paddingHorizontal: WP(0.3),
   },
   timeColumn: {
     flex: 1,
   },
-  timeColumnContent: {
-    alignItems: 'center',
-  },
   infiniteScrollContent: {
     alignItems: 'center',
   },
-  timeColumnHighlight: {
+  centerSelectionBox: {
     position: 'absolute',
-    top: 3 * HP(2.66),
-    left: WP(1.4),
-    right: WP(-1),
-    height: HP(2.5),
-    width: WP(33),
-    backgroundColor: '#E2E2E2',
-    borderRadius: WP(0.5),
-    zIndex: -1,
+    top: '50%',
+    left: WP(1),
+    right: WP(1),
+    height: HP(3.7),
+    marginTop: -HP(1.85),
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: WP(2),
+    zIndex: 5,
   },
   timeItem: {
     width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  periodItem: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: WP(1),
+    height: HP(3.5),
   },
   timeItemTouchable: {
     width: '100%',
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: WP(1),
   },
   timeText: {
-    fontSize: FS(1.6),
+    fontSize: FS(2.5),
     fontFamily: 'OpenSans-SemiBold',
+    color: 'rgba(255, 255, 255, 0.6)',
     textAlign: 'center',
+    includeFontPadding: false,
     textAlignVertical: 'center',
   },
   periodText: {
-    fontSize: FS(1.4),
-    fontFamily: 'OpenSans-SemiBold',
-    textAlign: 'center',
+    fontSize: FS(1.9),
+    fontFamily: 'OpenSans-Medium',
+    fontWeight: '300',
   },
-  selectedTimeText: {
-    fontSize: FS(1.8),
-    fontFamily: 'OpenSans-SemiBold',
-    color: '#6A6565',
-    textAlign: 'center',
-    textAlignVertical: 'center',
-  },
-  saveButton: {
-    backgroundColor: colors.Primary,
-    paddingVertical: HP(1.5),
-    borderRadius: WP(2),
-    marginHorizontal: WP(6),
-    marginTop: HP(1),
+  separatorContainer: {
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: WP(0.5),
+    height: '100%',
+    marginTop: HP(-0.2),
+    marginLeft: HP(-0.5),
   },
-  saveButtonText: {
-    color: colors.White,
-    fontSize: FS(1.8),
-    fontFamily: 'OpenSans-SemiBold',
+  timeSeparator: {
+    fontSize: FS(2.8),
+    fontFamily: 'OpenSans-Regular',
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    opacity: 0.9,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 });
 

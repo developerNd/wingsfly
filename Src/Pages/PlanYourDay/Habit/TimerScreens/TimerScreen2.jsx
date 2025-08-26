@@ -51,6 +51,14 @@ const FrequencyScreen = () => {
   // states for repeat selector
   const [isRepeatFlexible, setIsRepeatFlexible] = useState(false);
   const [isRepeatAlternateDays, setIsRepeatAlternateDays] = useState(false);
+  // NEW: States for repeat data
+  const [repeatData, setRepeatData] = useState({
+    everyDays: null,
+    activityDays: null,
+    restDays: null,
+    isRepeatFlexible: false,
+    isRepeatAlternateDays: false,
+  });
 
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
@@ -129,6 +137,12 @@ const FrequencyScreen = () => {
     setToastVisible(false);
   };
 
+  // NEW: Handler for repeat data changes
+  const handleRepeatDataChange = data => {
+    setRepeatData(data);
+    console.log('Repeat data updated:', data);
+  };
+
   // Validation function
   const validateSelection = () => {
     switch (selectedFrequency) {
@@ -157,7 +171,18 @@ const FrequencyScreen = () => {
         }
         break;
       case 'Repeat':
-        // any specific validation for repeat if needed
+        // Validate repeat data
+        if (repeatData.isRepeatAlternateDays) {
+          if (!repeatData.activityDays || !repeatData.restDays) {
+            showToast('Please enter both activity and rest days');
+            return false;
+          }
+        } else {
+          if (!repeatData.everyDays) {
+            showToast('Please enter number of days for repeat');
+            return false;
+          }
+        }
         break;
       default:
         // 'Every Day' doesn't need validation
@@ -184,6 +209,9 @@ const FrequencyScreen = () => {
       selectedPeriod,
       isRepeatFlexible,
       isRepeatAlternateDays,
+      everyDays: repeatData.everyDays,
+      activityDays: repeatData.activityDays,
+      restDays: repeatData.restDays,
     };
 
     const navigationData = {
@@ -191,6 +219,7 @@ const FrequencyScreen = () => {
       frequencyData,
     };
 
+    console.log('Navigation data with repeat info:', navigationData);
     navigation.navigate('SchedulePreference', navigationData);
   };
 
@@ -320,6 +349,14 @@ const FrequencyScreen = () => {
     if (frequency !== 'Repeat') {
       setIsRepeatFlexible(false);
       setIsRepeatAlternateDays(false);
+      // NEW: Reset repeat data when frequency changes
+      setRepeatData({
+        everyDays: null,
+        activityDays: null,
+        restDays: null,
+        isRepeatFlexible: false,
+        isRepeatAlternateDays: false,
+      });
     }
 
     console.log('Selected frequency:', frequency);
@@ -649,6 +686,7 @@ const FrequencyScreen = () => {
                     isVisible={selectedFrequency === 'Repeat'}
                     onFlexibleToggle={handleRepeatFlexibleToggle}
                     onAlternateDaysToggle={handleRepeatAlternateDaysToggle}
+                    onRepeatDataChange={handleRepeatDataChange}
                   />
                 )}
               </View>

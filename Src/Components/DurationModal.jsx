@@ -342,7 +342,7 @@ const DurationModal = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: '#47474773',
+    backgroundColor: colors.ModelBackground,
     justifyContent: 'center',
     alignItems: 'center',
   },

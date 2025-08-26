@@ -14,27 +14,33 @@ import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
 import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
+import DurationModal from '../../../Components/DurationModal';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
 import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../Helper/Contants';
-import { taskService } from '../../../services/api/taskService';
-import { useAuth } from '../../../contexts/AuthContext';
+import {taskService} from '../../../services/api/taskService';
+import {useAuth} from '../../../contexts/AuthContext';
 
 const RecurringYesorNoScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { user } = useAuth();
+  const {user} = useAuth();
 
   // Task form states
   const [taskTitle, setTaskTitle] = useState('');
-  
+
   // Get category data from route params
-  const selectedCategoryParam = route.params?.selectedCategory || { title: 'Work and Career', image: Icons.Work };
-  const [selectedCategory, setSelectedCategory] = useState(selectedCategoryParam);
-  
+  const selectedCategoryParam = route.params?.selectedCategory || {
+    title: 'Work and Career',
+    image: Icons.Work,
+  };
+  const [selectedCategory, setSelectedCategory] = useState(
+    selectedCategoryParam,
+  );
+
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
@@ -43,17 +49,18 @@ const RecurringYesorNoScreen = () => {
   const [taskFocused, setTaskFocused] = useState(false);
 
   // Feature states
-  const [addPomodoro, setAddPomodoro] = useState(false);
   const [addReminder, setAddReminder] = useState(false);
   const [addToGoogleCalendar, setAddToGoogleCalendar] = useState(false);
   const [showBlockTimeModal, setShowBlockTimeModal] = useState(false);
+  const [showDurationModal, setShowDurationModal] = useState(false); // Added duration modal state
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [blockTimeData, setBlockTimeData] = useState(null);
+  const [durationData, setDurationData] = useState(null);
   const [reminderData, setReminderData] = useState(null);
 
-  // Toast states - ADD THESE
+  // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('error');
@@ -141,7 +148,7 @@ const RecurringYesorNoScreen = () => {
         taskType: 'Recurring',
         evaluationType: 'yesNo',
         userId: user.id,
-        
+
         // Visual and display properties
         time: blockTimeData?.startTime || null,
         timeColor: '#E4EBF3',
@@ -149,7 +156,7 @@ const RecurringYesorNoScreen = () => {
         image: null,
         hasFlag: true,
         priority: priority || 'Important',
-        
+
         // Repetition and frequency settings (default for recurring tasks)
         frequencyType: 'Every Day',
         selectedWeekdays: [],
@@ -163,70 +170,71 @@ const RecurringYesorNoScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-        
+
         // Scheduling settings
-        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
-        
+
         // Block time settings
         blockTimeEnabled: !!blockTimeData,
         blockTimeData: blockTimeData,
-        
+
         // Duration settings
-        durationEnabled: false,
-        durationData: null,
-        
+        durationEnabled: !!durationData,
+        durationData: durationData,
+
         // Reminder settings
         reminderEnabled: addReminder,
         reminderData: reminderData,
-        
-        // Additional features
-        addPomodoro: addPomodoro,
+
+        // Additional features (removed addPomodoro)
         addToGoogleCalendar: addToGoogleCalendar,
         isPendingTask: isPendingTask,
-        
+
         // Goal linking
         linkedGoalId: null,
         linkedGoalTitle: null,
         linkedGoalType: null,
-        
+
         // Notes
         note: note,
-        
+
         // Progress tracking
         progress: null,
       };
 
       console.log('Saving recurring Yes/No task data:', taskData);
-      
+
       // Save to database
       const savedTask = await taskService.createTask(taskData);
-      
+
       console.log('Recurring Yes/No task saved successfully:', savedTask);
-      
-      Alert.alert(
-        'Success', 
-        'Recurring task created successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ 
+
+      Alert.alert('Success', 'Recurring task created successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            navigation.reset({
+              index: 0,
+              routes: [
+                {
                   name: 'BottomTab',
-                  params: { newTaskCreated: true }
-                }],
-              });
-            }
-          }
-        ]
-      );
-      
+                  params: {newTaskCreated: true},
+                },
+              ],
+            });
+          },
+        },
+      ]);
     } catch (error) {
       console.error('Error saving recurring Yes/No task:', error);
-      Alert.alert('Error', 'Failed to create recurring task. Please try again.');
+      Alert.alert(
+        'Error',
+        'Failed to create recurring task. Please try again.',
+      );
     }
   };
 
@@ -283,6 +291,19 @@ const RecurringYesorNoScreen = () => {
   const handleStartDateSelect = date => {
     setStartDate(date);
     setShowStartDatePicker(false);
+  };
+
+  // Updated duration handlers
+  const handleDurationPress = () => {
+    setShowDurationModal(true);
+  };
+
+  const handleDurationSave = durationData => {
+    setDurationData(durationData);
+    // Hide toast when duration is saved
+    if (toastVisible) {
+      hideToast();
+    }
   };
 
   const handleBlockTimePress = () => {
@@ -418,6 +439,48 @@ const RecurringYesorNoScreen = () => {
               />
             )}
             {customRight && customRight}
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Updated Duration section (now with picker instead of auto-calculation)
+  const renderDurationSection = () => {
+    return (
+      <View style={styles.optionContainer}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handleDurationPress}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Duration</Text>
+              {durationData && (
+                <Text style={styles.optionSubtitle}>
+                  {durationData.hours > 0 && `${durationData.hours}h `}
+                  {durationData.minutes > 0 && `${durationData.minutes}m`}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.optionRight}>
+            <TouchableOpacity
+              onPress={handleDurationPress}
+              style={styles.plusButton}
+              activeOpacity={0.7}>
+              <Image
+                source={Icons.Plus}
+                style={styles.plusIcon}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </View>
@@ -758,7 +821,9 @@ const RecurringYesorNoScreen = () => {
             </View>
 
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory?.title || selectedCategory}</Text>
+              <Text style={styles.categoryText}>
+                {selectedCategory?.title || selectedCategory}
+              </Text>
               <Image
                 source={Icons.Taskhome}
                 style={styles.categoryIcon}
@@ -784,11 +849,11 @@ const RecurringYesorNoScreen = () => {
           () => setShowStartDatePicker(true),
         )}
 
-        {/* Block Time */}
-        {renderBlockTimeSection()}
+        {/* Duration - NOW ABOVE Block Time */}
+        {renderDurationSection()}
 
-        {/* Add Pomodoro - Removed toggle */}
-        {renderOptionRow(Icons.Clock, 'Add Pomodoro')}
+        {/* Block Time - NOW BELOW Duration */}
+        {renderBlockTimeSection()}
 
         {/* Priority with dropdown */}
         {renderPrioritySection()}
@@ -857,6 +922,14 @@ const RecurringYesorNoScreen = () => {
         title="Select Start Date"
       />
 
+      {/* Duration Modal - NEW */}
+      <DurationModal
+        visible={showDurationModal}
+        onClose={() => setShowDurationModal(false)}
+        onSave={handleDurationSave}
+        initialData={durationData}
+      />
+
       {/* Block Time Modal */}
       <BlockTimeModal
         visible={showBlockTimeModal}
@@ -880,7 +953,7 @@ const RecurringYesorNoScreen = () => {
         initialNote={note}
       />
 
-      {/* Custom Toast - ADD THIS */}
+      {/* Custom Toast */}
       <CustomToast
         visible={toastVisible}
         message={toastMessage}

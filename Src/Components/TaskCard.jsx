@@ -1,12 +1,23 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {View, Text, StyleSheet, Image, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
 import {useNavigation} from '@react-navigation/native';
+import DeleteTaskModal from './DeleteTaskModal';
 
-const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
+const TaskCard = ({
+  item,
+  checkboxState,
+  onToggle,
+  onTaskCompleted,
+  onTaskDelete,
+  onTaskUpdate,
+  selectedDate,
+  taskCompletions,
+}) => {
   const navigation = useNavigation();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Helper function to get image source from category name
   const getImageSource = categoryName => {
@@ -77,11 +88,7 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
       case 'yesNo':
         return (
           <View style={styles.staticCircle}>
-            <Icon
-              name="check"
-              size={WP(3.2)}
-              color={colors.Black}
-            />
+            <Icon name="check" size={WP(3.2)} color={colors.Black} />
           </View>
         );
       case 'checklist':
@@ -100,11 +107,91 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
     }
   };
 
+  // Function to get in-progress icon with same background colors as initial icons
+  const getInProgressIcon = () => {
+    return (
+      <View style={styles.inProgressCircle}>
+        <Image source={Icons.More} style={styles.moreIcon} />
+      </View>
+    );
+  };
+
+  // UPDATED: Enhanced function to determine if task is in progress based on completion data
+  const isTaskInProgress = () => {
+    const completion = taskCompletions?.[item.id];
+
+    if (!completion) return false;
+
+    // If task is already completed, don't show in-progress
+    if (completion.is_completed === true) return false;
+
+    switch (item.type) {
+      case 'timer':
+        // UPDATED: Timer is in progress if:
+        // 1. Timer value exists and is greater than 0 (some time has been tracked)
+        // 2. Task is not marked as completed
+        // Check both timer_value (seconds) and timer_minutes for backward compatibility
+        const timerValueSeconds = completion.timer_value || 0;
+        const timerValueMinutes = completion.timer_minutes || 0;
+        const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
+
+        return totalTimerValue > 0 && !completion.is_completed;
+
+      case 'numeric':
+        // In progress if numeric_value > 0 but not completed
+        return completion.numeric_value > 0 && !completion.is_completed;
+
+      case 'checklist':
+        // In progress if some items are completed but not all
+        if (
+          completion.checklist_items &&
+          completion.checklist_items.length > 0
+        ) {
+          const completedItems = completion.checklist_items.filter(
+            checklistItem => checklistItem.completed,
+          );
+          return (
+            completedItems.length > 0 &&
+            completedItems.length < completion.checklist_items.length
+          );
+        }
+        return false;
+
+      case 'yesNo':
+        // yesNo tasks are either completed or not, no in-progress state
+        return false;
+
+      case 'task':
+      default:
+        // Regular tasks don't have in-progress states
+        return false;
+    }
+  };
+
   const handleCheckboxPress = () => {
     if (item.type === 'checklist') {
+      console.log(
+        'TaskCard - Navigating to TaskEvaluation with selectedDate:',
+        selectedDate,
+      );
       navigation.navigate('TaskEvaluation', {
         taskData: item,
         taskId: item.id,
+        selectedDate: selectedDate,
+      });
+      return;
+    }
+
+    // UPDATED: Handle timer tasks - navigate to PomodoroTimerScreen if timer task
+    if (item.type === 'timer') {
+      console.log(
+        'TaskCard - Navigating to PomodoroTimerScreen with selectedDate:',
+        selectedDate,
+      );
+      navigation.navigate('PomodoroTimerScreen', {
+        task: item,
+        taskId: item.id,
+        selectedDate: selectedDate,
       });
       return;
     }
@@ -112,9 +199,33 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
     onToggle();
   };
 
+  // Handle task card regular press - no action (removed delete functionality)
+  const handleTaskPress = () => {
+    // You can add navigation or other functionality here if needed
+    // For now, this does nothing as delete is moved to long press
+  };
+
+  // Handle long press for delete confirmation modal
+  const handleLongPress = () => {
+    setShowDeleteModal(true);
+  };
+
+  // Handle delete confirmation from modal
+  const handleDeleteConfirm = () => {
+    setShowDeleteModal(false);
+    if (onTaskDelete) {
+      onTaskDelete(item.id);
+    }
+  };
+
+  // Handle delete cancellation
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false);
+  };
+
   const renderCheckbox = () => {
-    // For all completed states (2, 3, 4), use consistent green checklist styling
-    if (checkboxState === 2 || checkboxState === 3 || checkboxState === 4) {
+    // Check for completion first (highest priority)
+    if (checkboxState === 4) {
       return (
         <View style={styles.completedContainer}>
           <View style={styles.checkedBox}>
@@ -123,73 +234,102 @@ const TaskCard = ({item, checkboxState, onToggle, onTaskCompleted}) => {
         </View>
       );
     }
-    
-    // For uncompleted state (1), show original type-specific icon for all task types
+
+    // Check for in-progress state based on actual data
+    if (isTaskInProgress()) {
+      return getInProgressIcon();
+    }
+
+    // For loading states (2, 3) that are not in-progress, show initial icon
+    if (checkboxState === 2 || checkboxState === 3) {
+      return getInitialIconInsideRadio();
+    }
+
+    // For uncompleted state (1), show original type-specific icon
     return getInitialIconInsideRadio();
   };
 
   return (
-    <View style={styles.taskContainer}>
-      <Image source={getImageSource(item.category)} style={styles.taskImage} />
-      <View style={styles.taskInfo}>
-        <Text style={styles.taskTitle}>{item.title}</Text>
-
-        <View style={styles.taskMeta}>
-          <View
-            style={[
-              styles.timeBox,
-              {backgroundColor: item.timeColor || '#0E4C92'},
-            ]}>
-            <Icon
-              name="access-time"
-              size={WP(2.1)}
-              color={getTimeIconColor()}
-              marginRight={WP(0.5)}
-            />
-            <Icon
-              name="hourglass-top"
-              size={WP(2.1)}
-              color={getTimeIconColor()}
-              marginRight={WP(0.3)}
-            />
-            <Text style={[styles.timeText, {color: getTimeTextColor()}]}>
-              {item.time}
-            </Text>
-          </View>
-
-          {item.progress && (
-            <View style={styles.progressContainer}>
-              <Text style={styles.progressText}>{item.progress}</Text>
-            </View>
-          )}
-
-          <View style={styles.tagsContainer}>
-            <View style={styles.combinedTagContainer}>
-              {item.tags.map((tag, index) => (
-                <Text key={index} style={styles.tagText}>
-                  {tag}
-                  {index < item.tags.length - 1 && (
-                    <Text style={styles.separator}> | </Text>
-                  )}
-                </Text>
-              ))}
-              {item.hasFlag && (
-                <View style={styles.flagContainer}>
-                  <Icon name="flag" size={WP(3.2)} color={getFlagColor()} />
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-        <View style={styles.bottomBorder} />
-      </View>
-
+    <>
       <TouchableOpacity
-        style={styles.checkboxContainer}
-        onPress={handleCheckboxPress}>
-        {renderCheckbox()}
+        style={styles.taskContainer}
+        onPress={handleTaskPress}
+        onLongPress={handleLongPress}
+        delayLongPress={800} // Increased to 800ms for better UX
+        activeOpacity={0.8}>
+        <Image
+          source={getImageSource(item.category)}
+          style={styles.taskImage}
+        />
+        <View style={styles.taskInfo}>
+          <Text style={styles.taskTitle}>{item.title}</Text>
+
+          <View style={styles.taskMeta}>
+            <View
+              style={[
+                styles.timeBox,
+                {backgroundColor: item.timeColor || '#0E4C92'},
+              ]}>
+              <Icon
+                name="access-time"
+                size={WP(2.1)}
+                color={getTimeIconColor()}
+                marginRight={WP(0.5)}
+              />
+              <Icon
+                name="hourglass-top"
+                size={WP(2.1)}
+                color={getTimeIconColor()}
+                marginRight={WP(0.3)}
+              />
+              <Text style={[styles.timeText, {color: getTimeTextColor()}]}>
+                {item.time}
+              </Text>
+            </View>
+
+            {item.progress && (
+              <View style={styles.progressContainer}>
+                <Text style={styles.progressText}>{item.progress}</Text>
+              </View>
+            )}
+
+            <View style={styles.tagsContainer}>
+              <View style={styles.combinedTagContainer}>
+                {item.tags &&
+                  item.tags.map((tag, index) => (
+                    <Text key={index} style={styles.tagText}>
+                      {tag}
+                      {index < item.tags.length - 1 && (
+                        <Text style={styles.separator}> | </Text>
+                      )}
+                    </Text>
+                  ))}
+                {item.hasFlag && (
+                  <View style={styles.flagContainer}>
+                    <Icon name="flag" size={WP(3.2)} color={getFlagColor()} />
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+          <View style={styles.bottomBorder} />
+        </View>
+
+        <TouchableOpacity
+          style={styles.checkboxContainer}
+          onPress={handleCheckboxPress}>
+          {renderCheckbox()}
+        </TouchableOpacity>
       </TouchableOpacity>
-    </View>
+
+      {/* Custom Delete Modal */}
+      <DeleteTaskModal
+        visible={showDeleteModal}
+        taskTitle={item.title}
+        onCancel={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+      />
+    </>
   );
 };
 
@@ -320,7 +460,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   checkedBox: {
     width: WP(5.3),
     height: WP(5.3),
@@ -328,6 +467,21 @@ const styles = StyleSheet.create({
     borderRadius: WP(2.65),
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // UPDATED: In-progress state uses same background color as initial icons
+  inProgressCircle: {
+    width: WP(5.3),
+    height: WP(5.3),
+    borderRadius: WP(2.65),
+    backgroundColor: '#E7E7E7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moreIcon: {
+    width: WP(3.5),
+    height: WP(3.5),
+    resizeMode: 'contain',
+    tintColor: '#6C6C6C',
   },
 });
 

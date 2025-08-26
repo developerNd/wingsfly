@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 48 48">
+  <!-- Generator: Adobe Illustrator 29.0.1, SVG Export Plug-In . SVG Version: 2.1.0 Build 192)  -->
+  <defs>
+    <style>
+      .st0 {
+        mix-blend-mode: multiply;
+        opacity: .35;
+      }
+
+      .st1 {
+        stroke-width: 1.56px;
+      }
+
+      .st1, .st2, .st3, .st4, .st5 {
+        stroke: #000;
+        stroke-miterlimit: 10;
+      }
+
+      .st1, .st3, .st4, .st5 {
+        fill: none;
+      }
+
+      .st6 {
+        isolation: isolate;
+      }
+
+      .st2, .st5 {
+        stroke-width: .92px;
+      }
+
+      .st3 {
+        stroke-linecap: round;
+        stroke-width: 1.61px;
+      }
+
+      .st4 {
+        filter: url(#drop-shadow-2);
+        stroke-width: 1.65px;
+      }
+
+      .st7 {
+        fill: url(#linear-gradient);
+        filter: url(#drop-shadow-1);
+      }
+
+      .st8 {
+        display: none;
+      }
+    </style>
+    <linearGradient id="linear-gradient" x1="23.89" y1="36.86" x2="24.28" y2="-9.68" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ccc"/>
+      <stop offset=".35" stop-color="#e3e3e3"/>
+      <stop offset=".74" stop-color="#f7f7f7"/>
+      <stop offset="1" stop-color="#fff"/>
+    </linearGradient>
+    <filter id="drop-shadow-1" x=".73" y=".73" width="46.54" height="46.54" filterUnits="userSpaceOnUse">
+      <feOffset dx=".31" dy=".31"/>
+      <feGaussianBlur result="blur" stdDeviation="1.53"/>
+      <feFlood flood-color="#000" flood-opacity=".25"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+    <filter id="drop-shadow-2" x="6.68" y="6.68" width="34.65" height="34.65" filterUnits="userSpaceOnUse">
+      <feOffset dx=".82" dy=".82"/>
+      <feGaussianBlur result="blur1" stdDeviation=".82"/>
+      <feFlood flood-color="#000" flood-opacity=".35"/>
+      <feComposite in2="blur1" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <g class="st6">
+    <g id="Layer_1">
+      <circle class="st7" cx="24" cy="24" r="23.27"/>
+    </g>
+    <g id="Layer_2" class="st8">
+      <g>
+        <polyline class="st1" points="40 24.58 23.95 11.56 17.97 16.45 13.98 19.7 8 24.58"/>
+        <path class="st1" d="M17.97,12.23v4.21l-3.99,3.26v-7.47c0-.44.36-.81.81-.81h2.38c.44,0,.81.36.81.81Z"/>
+        <path class="st1" d="M12.39,23.12l-.03,12.27c0,.65.52,1.18,1.17,1.18h4.89c.63,0,1.15-.51,1.14-1.15v-6.03c0-.53.43-.96.95-.96h6.21c.59,0,1.07.48,1.07,1.07v6.06c0,.55.45,1,1,1h5.17c.69,0,1.25-.56,1.25-1.25l.03-12.74"/>
+      </g>
+    </g>
+    <g id="Layer_3" class="st8">
+      <g>
+        <g>
+          <image class="st0" width="35" height="31" transform="translate(8.99 8.99)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAgCAYAAAB6kdqOAAAACXBIWXMAAAsSAAALEgHS3X78AAAA4ElEQVRYhe3YMU7DQBBA0Rdi0aZDKBUNokC5Rm6AxEk5AgcJSkURESoi7FBkFywSshW7zXxpZI9d7NfMruQxwXkmo/uLFDCkqM50JDPDLa7wgR32rYSmuMMjFljjVYMqdemaK3Sf8pmf9jURkgTGgk1otvBfhFCJECoRQiVCqEQIlQihEiFUIoRKhFCJ7sSz/G19WclhGMWRUJ4+Fin/rCCzxQob9N2vlwPmeMDS/89lfZJ5wjM2eVCcOFTmOuW7CjJ53T3e8YJtnu1zq27UHxJ7h3at8HbqZ0OLk/e9sb8ABH4nN80xjDUAAAAASUVORK5CYII="/>
+          <polyline class="st3" points="12 12.19 12 36.78 40.19 36.78"/>
+        </g>
+        <g>
+          <image class="st0" width="7" height="17" transform="translate(13.99 18.99)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAASCAYAAABmQp92AAAACXBIWXMAAAsSAAALEgHS3X78AAAAc0lEQVQokd3RsQrCYAyF0VPbvZujmziI7+OL+wIFJ6eOivy6JJAK0sHNQOBe8iWBhF+jK3oTCS1SX4oj9tjijgdeCfQ44IwTrrihDR8TjuHHXJdAQrVhKb7FfwD1Dg3PohdAw4xL+Dmh/Gaeehd+Smj13W/YOxXjSZdS0AAAAABJRU5ErkJggg=="/>
+          <line class="st3" x1="17.03" y1="22.26" x2="17.03" y2="32.66"/>
+        </g>
+        <g>
+          <image class="st0" width="6" height="25" transform="translate(18.99 10.99)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAcAAAAaCAYAAAB7GkaWAAAACXBIWXMAAAsSAAALEgHS3X78AAAAcUlEQVQoke3SMQoCUQyE4c9d++0s7cRCvI8X9wLCVlavVCTYvCxBZHvBQCDDP4FAhpXalHnoDYEYC5hwwA4PPBOOOOKCM2bctx+bp64nDAnTUM3LAV/rD38O1mcHXmVeYKDh2nVDZDQzQ/uub2iruX0DfKYS+g8S4moAAAAASUVORK5CYII="/>
+          <line class="st3" x1="21.73" y1="13.54" x2="21.73" y2="32.66"/>
+        </g>
+        <g>
+          <image class="st0" width="7" height="21" transform="translate(22.99 14.99)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAWCAYAAAD9091gAAAACXBIWXMAAAsSAAALEgHS3X78AAAAdElEQVQoke3SsQrCUAyF4c+2ezdHt+Igvo8v7gsITk53tEhwuZV4Ubo5GQicQ35CIIeV2jS+qw2B6JvhiAlb3DFnoMceJxxxxW34sOFQ/YguAws0JP066Gv9gZ8B7bMCj6TfgEDBufqCyJFb8rCr/oKymsknnzMS8plf9psAAAAASUVORK5CYII="/>
+          <line class="st3" x1="26.43" y1="17.9" x2="26.43" y2="32.66"/>
+        </g>
+        <g>
+          <image class="st0" width="7" height="14" transform="translate(27.99 21.99)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAPCAYAAADZCo4zAAAACXBIWXMAAAsSAAALEgHS3X78AAAAc0lEQVQYlc3RsQrCQBCE4U9jn87SLlhI3scX9wUEK6uUBjnT7MJGkLQuDMxw/+1yt2zUrvh9CFpIVw57DDjihRmfBDqcccWIB55oh68Ol8h9jksgoXphbX7VPwD1FQ3v4ldAw4Rb5Cmh3EV+1CnyPaHNZS14UhXflvLCBgAAAABJRU5ErkJggg=="/>
+          <line class="st3" x1="31.13" y1="24.61" x2="31.13" y2="32.66"/>
+        </g>
+        <g>
+          <image class="st0" width="6" height="21" transform="translate(32.99 14.99)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAcAAAAWCAYAAAAM2IbtAAAACXBIWXMAAAsSAAALEgHS3X78AAAAcUlEQVQoke3SsQrCUAyF4c/WvZujmziI7+OL+wJCJ6c7KhJcbkoQ6eJqIJDDn0BIDiuxKfXQEwIxFjDhgB0eeCYcccQFZ8y4bz8mT11PGBJmQ21eFvgaf/gTrIcPvEq9wEDDteuGSJvkP/dd39BWPfQGL9kS8lzIOKkAAAAASUVORK5CYII="/>
+          <line class="st3" x1="35.49" y1="17.9" x2="35.49" y2="32.66"/>
+        </g>
+      </g>
+    </g>
+    <g id="Layer_4" class="st8">
+      <g>
+        <path d="M35.48,15.9c2.69,0,4.88,2.19,4.88,4.88v5.7c0,2.69-2.19,4.88-4.88,4.88H13.37c-2.69,0-4.88-2.19-4.88-4.88v-5.7c0-2.69,2.19-4.88,4.88-4.88h22.11M35.48,14.25H13.37c-3.6,0-6.52,2.92-6.52,6.52v5.7c0,3.6,2.92,6.52,6.52,6.52h22.11c3.6,0,6.52-2.92,6.52-6.52v-5.7c0-3.6-2.92-6.52-6.52-6.52h0Z"/>
+        <path d="M23.13,20.73l4.01,2.31-4.01,2.31v-4.63M21.49,17.89v10.31l8.93-5.16-8.93-5.16h0Z"/>
+      </g>
+    </g>
+    <g id="Layer_5" class="st8">
+      <g>
+        <circle class="st5" cx="24.04" cy="24.04" r="16.96"/>
+        <path class="st2" d="M22.66,7.22v2.26c0,.52.42.95.95.95h.39c.52,0,.95-.43.95-.95v-2.26h-2.29Z"/>
+        <path class="st2" d="M40.55,22.66h-2.26c-.52,0-.95.42-.95.95v.39c0,.52.43.95.95.95h2.26v-2.29Z"/>
+        <path class="st2" d="M24.95,40.71v-2.26c0-.52-.42-.95-.95-.95h-.39c-.52,0-.95.42-.95.95v2.26s2.29,0,2.29,0Z"/>
+        <path class="st2" d="M7.37,24.95h2.26c.52,0,.95-.42.95-.95v-.39c0-.52-.43-.95-.95-.95h-2.26v2.29Z"/>
+        <polyline class="st5" points="23.73 13.49 23.73 24.95 18.31 29.92"/>
+      </g>
+    </g>
+    <g id="Layer_6">
+      <path class="st4" d="M38.89,21.07h-3.84c-.66,0-1.24-.4-1.5-1.01,0,0,0-.01,0-.02-.25-.61-.13-1.31.34-1.78l2.72-2.72c.63-.63.63-1.65,0-2.28l-1.86-1.86c-.63-.63-1.65-.63-2.28,0l-2.72,2.72c-.47.47-1.17.59-1.78.34,0,0-.01,0-.02,0-.61-.25-1.01-.84-1.01-1.5v-3.84c0-.89-.72-1.61-1.61-1.61h-2.64c-.89,0-1.61.72-1.61,1.61v3.84c0,.66-.4,1.24-1.01,1.5,0,0-.01,0-.02,0-.61.25-1.31.13-1.78-.34l-2.72-2.72c-.63-.63-1.65-.63-2.28,0l-1.86,1.86c-.63.63-.63,1.65,0,2.28l2.72,2.72c.47.47.59,1.17.34,1.78,0,0,0,.01,0,.02-.25.61-.84,1.01-1.5,1.01h-3.84c-.89,0-1.61.72-1.61,1.61v2.64c0,.89.72,1.61,1.61,1.61h3.84c.66,0,1.24.4,1.5,1.01,0,0,0,.01,0,.02.25.61.13,1.31-.34,1.78l-2.72,2.72c-.63.63-.63,1.65,0,2.28l1.86,1.86c.63.63,1.65.63,2.28,0l2.72-2.72c.47-.47,1.17-.59,1.78-.34,0,0,.01,0,.02,0,.61.25,1.01.84,1.01,1.5v3.84c0,.89.72,1.61,1.61,1.61h2.64c.89,0,1.61-.72,1.61-1.61v-3.84c0-.66.4-1.24,1.01-1.5,0,0,.01,0,.02,0,.61-.25,1.31-.13,1.78.34l2.72,2.72c.63.63,1.65.63,2.28,0l1.86-1.86c.63-.63.63-1.65,0-2.28l-2.72-2.72c-.47-.47-.59-1.17-.34-1.78,0,0,0-.01,0-.02.25-.61.84-1.01,1.5-1.01h3.84c.89,0,1.61-.72,1.61-1.61v-2.64c0-.89-.72-1.61-1.61-1.61ZM24.18,28.45c-2.56,0-4.63-2.07-4.63-4.63s2.07-4.63,4.63-4.63,4.63,2.07,4.63,4.63-2.07,4.63-4.63,4.63Z"/>
+    </g>
+  </g>
+</svg>

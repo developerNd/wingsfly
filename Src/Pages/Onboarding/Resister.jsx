@@ -14,6 +14,7 @@ import { colors, routes } from '../../Helper/Contants';
 import Logo from '../../assets/Images/brand.svg';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../../supabase';
+import { HP, WP, FS } from '../../utils/dimentions';
 
 const Register = () => {
   const [username, setUserName] = useState('');
@@ -38,6 +39,7 @@ const Register = () => {
         data: {
           username: username,
           mobile: mobile,
+          profile_setup_complete: false, // Flag to track profile setup
         },
       },
     });
@@ -47,16 +49,7 @@ const Register = () => {
     if (error) {
       Alert.alert('Signup Failed', error.message);
     } else {
-      Alert.alert(
-        'Signup Success', 
-        'Account created successfully! Please check your email for verification.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate(routes.LOGIN_SCREEN)
-          }
-        ]
-      );
+      navigation.navigate(routes.GENDERSELECTION_SCREEN);
     }
   };
 
@@ -68,7 +61,7 @@ const Register = () => {
       style={styles.container}
     >
       <SafeAreaView style={styles.container}>
-        <Logo width={100} height={100} style={styles.logo} />
+        <Logo width={WP(28)} height={WP(28)} style={styles.logo} />
         <View style={styles.innerContainer}>
           <Text style={styles.signText}>Create an Account</Text>
           <Text style={styles.signsmallText}>
@@ -141,60 +134,60 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   logo: {
-    height: 100,
-    width: 100,
+    height: WP(28),
+    width: WP(28),
     alignSelf: 'center',
-    marginTop: 20,
+    marginTop: HP(2.5),
   },
   innerContainer: {
     width: '80%',
     alignSelf: 'center',
-    marginTop: 15,
+    marginTop: HP(2),
   },
   signText: {
-    fontSize: 28,
+    fontSize: FS(3.8),
     fontWeight: 'bold',
     color: colors.Shadow,
     letterSpacing: 1,
   },
   signsmallText: {
-    marginTop: 10,
-    fontSize: 14,
+    marginTop: HP(1.2),
+    fontSize: FS(1.9),
     fontWeight: '500',
     color: 'gray',
   },
   inputContainer: {
-    marginTop: 20,
+    marginTop: HP(2.5),
   },
   inputbox: {
     width: '100%',
-    height: 50,
-    backgroundColor: '#fff',
-    marginTop: 20,
-    borderRadius: 8,
-    paddingLeft: 15,
+    height: HP(6.6),
+    backgroundColor: colors.White,
+    marginTop: HP(2.5),
+    borderRadius: WP(2),
+    paddingLeft: WP(4),
   },
   loginButton: {
-    height: 50,
+    height: HP(6.6),
     backgroundColor: colors.Primary,
-    marginTop: 30,
-    borderRadius: 10,
+    marginTop: HP(3.8),
+    borderRadius: WP(2.5),
   },
   disabledButton: {
     backgroundColor: '#ccc',
   },
   loginButtonText: {
-    color: '#fff',
-    fontSize: 18,
+    color: colors.White,
+    fontSize: FS(2.3),
     fontWeight: '500',
     letterSpacing: 1,
   },
   signupContainer: {
-    marginTop: 25,
+    marginTop: HP(3.1),
     alignSelf: 'center',
   },
   signupText: {
-    fontSize: 14,
+    fontSize: FS(1.8),
     color: colors.Shadow,
   },
   signupLink: {

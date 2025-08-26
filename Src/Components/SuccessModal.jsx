@@ -94,7 +94,10 @@ const SuccessConditionModal = ({visible, onClose, onConfirm}) => {
       presentationStyle="overFullScreen"
       supportedOrientations={['portrait']}>
       <View style={styles.modalWrapper}>
-        <StatusBar backgroundColor="#47474773" barStyle="dark-content" />
+        <StatusBar
+          backgroundColor={colors.ModelBackground}
+          barStyle="dark-content"
+        />
         <TouchableWithoutFeedback onPress={handleOverlayPress}>
           <View style={styles.container}>
             {/* Light overlay to show background content */}
@@ -234,7 +237,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#47474773',
+    backgroundColor: colors.ModelBackground,
     width: WP(100),
     height: HP(100),
   },

@@ -59,6 +59,9 @@
 		<string>Inter-Medium.ttf</string>
 		<string>Poppins-Light.ttf</string>
 		<string>Poppins-SemiBold.ttf</string>
+		<string>Europa-Grotesk-SH-Bold.otf</string>
+		<string>Orbitron-Bold.ttf</string>
+		<string>XB YasBdIt.ttf</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

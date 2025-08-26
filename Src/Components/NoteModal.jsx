@@ -14,7 +14,7 @@ import CustomToast from './CustomToast';
 
 const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
   const [note, setNote] = useState(initialNote);
-  
+
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -47,15 +47,15 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
       showToast('Enter a note');
       return;
     }
-    
+
     onSave(note.trim());
     hideToast();
     onClose();
   };
 
-  const handleNoteChange = (text) => {
+  const handleNoteChange = text => {
     setNote(text);
-    
+
     if (toastVisible) {
       hideToast();
     }
@@ -70,7 +70,7 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
       presentationStyle="overFullScreen"
       statusBarTranslucent={true}>
       <StatusBar
-        backgroundColor="#47474773"
+        backgroundColor={colors.ModelBackground}
         barStyle="light-content"
         translucent={true}
       />
@@ -127,7 +127,7 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: '#47474773',
+    backgroundColor: colors.ModelBackground,
     justifyContent: 'center',
     alignItems: 'center',
   },

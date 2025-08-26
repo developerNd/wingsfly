@@ -25,6 +25,9 @@
 		C1455D4DD6354870A9EB627C /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8FE61088CBD54B618E3234C5 /* Inter-Medium.ttf */; };
 		FA8EE0FF47F24317BFE6B281 /* Poppins-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 711BD7A554C943BEBC65A3F7 /* Poppins-Light.ttf */; };
 		A9E1BD81D0E642BBA66B1439 /* Poppins-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3D12603E7AC64B89AF3E5A4A /* Poppins-SemiBold.ttf */; };
+		E8D22FDCFCA943BB9376E9D4 /* Europa-Grotesk-SH-Bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = D53B60E0A4834F89A02E3306 /* Europa-Grotesk-SH-Bold.otf */; };
+		9A1CD4ED79654489AEFFA32D /* Orbitron-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F0F17C0BDFE24C529F99134C /* Orbitron-Bold.ttf */; };
+		C80E2CB2B4FA4D2AAF2CF0E8 /* XB YasBdIt.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F63622C5F1454AC6AE9F4275 /* XB YasBdIt.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,6 +69,9 @@
 		8FE61088CBD54B618E3234C5 /* Inter-Medium.ttf */ = {isa = PBXFileReference; name = "Inter-Medium.ttf"; path = "../src/assets/fonts/Inter-Medium.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 		711BD7A554C943BEBC65A3F7 /* Poppins-Light.ttf */ = {isa = PBXFileReference; name = "Poppins-Light.ttf"; path = "../src/assets/fonts/Poppins-Light.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 		3D12603E7AC64B89AF3E5A4A /* Poppins-SemiBold.ttf */ = {isa = PBXFileReference; name = "Poppins-SemiBold.ttf"; path = "../src/assets/fonts/Poppins-SemiBold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		D53B60E0A4834F89A02E3306 /* Europa-Grotesk-SH-Bold.otf */ = {isa = PBXFileReference; name = "Europa-Grotesk-SH-Bold.otf"; path = "../src/assets/fonts/Europa-Grotesk-SH-Bold.otf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		F0F17C0BDFE24C529F99134C /* Orbitron-Bold.ttf */ = {isa = PBXFileReference; name = "Orbitron-Bold.ttf"; path = "../src/assets/fonts/Orbitron-Bold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		F63622C5F1454AC6AE9F4275 /* XB YasBdIt.ttf */ = {isa = PBXFileReference; name = "XB YasBdIt.ttf"; path = "../src/assets/fonts/XB YasBdIt.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -185,6 +191,9 @@
 				8FE61088CBD54B618E3234C5 /* Inter-Medium.ttf */,
 				711BD7A554C943BEBC65A3F7 /* Poppins-Light.ttf */,
 				3D12603E7AC64B89AF3E5A4A /* Poppins-SemiBold.ttf */,
+				D53B60E0A4834F89A02E3306 /* Europa-Grotesk-SH-Bold.otf */,
+				F0F17C0BDFE24C529F99134C /* Orbitron-Bold.ttf */,
+				F63622C5F1454AC6AE9F4275 /* XB YasBdIt.ttf */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -296,6 +305,9 @@
 				C1455D4DD6354870A9EB627C /* Inter-Medium.ttf in Resources */,
 				FA8EE0FF47F24317BFE6B281 /* Poppins-Light.ttf in Resources */,
 				A9E1BD81D0E642BBA66B1439 /* Poppins-SemiBold.ttf in Resources */,
+				E8D22FDCFCA943BB9376E9D4 /* Europa-Grotesk-SH-Bold.otf in Resources */,
+				9A1CD4ED79654489AEFFA32D /* Orbitron-Bold.ttf in Resources */,
+				C80E2CB2B4FA4D2AAF2CF0E8 /* XB YasBdIt.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -6,6 +6,10 @@
       "sha1": "14d891190f1fab11734fb60aebc85817f9ad01f3"
     },
     {
+      "path": "src/assets/fonts/Europa-Grotesk-SH-Bold.otf",
+      "sha1": "c41707f5b024c3f02f5b13c880e597d37450f63a"
+    },
+    {
       "path": "src/assets/fonts/Inter-Medium.ttf",
       "sha1": "d135ba8c8d7b74a8878a4a73794ddfa739fa7348"
     },
@@ -26,6 +30,10 @@
       "sha1": "15802d67c7f19cee76d4c46dc62735da9c05f6e1"
     },
     {
+      "path": "src/assets/fonts/Orbitron-Bold.ttf",
+      "sha1": "216014e8feaf538874f86d970a8c821e094109e7"
+    },
+    {
       "path": "src/assets/fonts/Poppins-Light.ttf",
       "sha1": "e247a92158e112f8bf7b638c8d95381d66b00dbb"
     },
@@ -40,6 +48,10 @@
     {
       "path": "src/assets/fonts/Roboto-SemiBold.ttf",
       "sha1": "9ca139684fe902c8310dd82991648376ac9838db"
+    },
+    {
+      "path": "src/assets/fonts/XB YasBdIt.ttf",
+      "sha1": "cae0dcfd6a002791d7d85cee939c6a8cb95d8dc8"
     }
   ]
 }

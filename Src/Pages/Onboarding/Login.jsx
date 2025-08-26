@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -7,19 +7,80 @@ import {
     SafeAreaView,
     TouchableOpacity,
     Alert,
+    StatusBar,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import LinearGradient from 'react-native-linear-gradient';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import CustomButton from '../../Components/CustomButton';
 import { colors, routes } from '../../Helper/Contants';
 import Logo from '../../assets/Images/brand.svg';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../../supabase';
+import { HP, WP, FS } from '../../utils/dimentions';
+
+// Storage keys for remember me functionality
+const STORAGE_KEYS = {
+    REMEMBER_ME: 'remember_me',
+    SAVED_EMAIL: 'saved_email',
+    SAVED_PASSWORD: 'saved_password',
+};
 
 const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
     const navigation = useNavigation();
+
+    // Load saved credentials when component mounts
+    useEffect(() => {
+        loadSavedCredentials();
+    }, []);
+
+    const loadSavedCredentials = async () => {
+        try {
+            const savedRememberMe = await AsyncStorage.getItem(STORAGE_KEYS.REMEMBER_ME);
+            
+            if (savedRememberMe === 'true') {
+                const savedEmail = await AsyncStorage.getItem(STORAGE_KEYS.SAVED_EMAIL);
+                const savedPassword = await AsyncStorage.getItem(STORAGE_KEYS.SAVED_PASSWORD);
+                
+                if (savedEmail) setEmail(savedEmail);
+                if (savedPassword) setPassword(savedPassword);
+                setRememberMe(true);
+            }
+        } catch (error) {
+            console.error('Error loading saved credentials:', error);
+        }
+    };
+
+    const saveCredentials = async (emailToSave, passwordToSave) => {
+        try {
+            if (rememberMe) {
+                await AsyncStorage.setItem(STORAGE_KEYS.REMEMBER_ME, 'true');
+                await AsyncStorage.setItem(STORAGE_KEYS.SAVED_EMAIL, emailToSave);
+                await AsyncStorage.setItem(STORAGE_KEYS.SAVED_PASSWORD, passwordToSave);
+            } else {
+                // Clear saved credentials if remember me is unchecked
+                await AsyncStorage.removeItem(STORAGE_KEYS.REMEMBER_ME);
+                await AsyncStorage.removeItem(STORAGE_KEYS.SAVED_EMAIL);
+                await AsyncStorage.removeItem(STORAGE_KEYS.SAVED_PASSWORD);
+            }
+        } catch (error) {
+            console.error('Error saving credentials:', error);
+        }
+    };
+
+    const clearSavedCredentials = async () => {
+        try {
+            await AsyncStorage.removeItem(STORAGE_KEYS.REMEMBER_ME);
+            await AsyncStorage.removeItem(STORAGE_KEYS.SAVED_EMAIL);
+            await AsyncStorage.removeItem(STORAGE_KEYS.SAVED_PASSWORD);
+        } catch (error) {
+            console.error('Error clearing credentials:', error);
+        }
+    };
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -39,7 +100,19 @@ const Login = () => {
         if (error) {
             Alert.alert('Login Failed', error.message);
         } else {
+            // Save credentials if login is successful
+            await saveCredentials(email, password);
             console.log('Login successful');
+        }
+    };
+
+    const handleRememberMeToggle = async () => {
+        const newRememberMeState = !rememberMe;
+        setRememberMe(newRememberMeState);
+        
+        // If unchecking remember me, clear saved credentials immediately
+        if (!newRememberMeState) {
+            await clearSavedCredentials();
         }
     };
 
@@ -51,7 +124,7 @@ const Login = () => {
             style={styles.container}
         >
             <SafeAreaView style={styles.container}>
-                <Logo width={100} height={100} style={styles.logo} />
+                <Logo width={WP(28)} height={WP(28)} style={styles.logo} />
                 <View style={styles.innerContainer}>
                     <Text style={styles.signText}>Sign in to your Account</Text>
                     <Text style={styles.signsmallText}>
@@ -77,6 +150,24 @@ const Login = () => {
                             editable={!loading}
                         />
                     </View>
+
+                    {/* Remember Me Checkbox */}
+                    <TouchableOpacity 
+                        style={styles.rememberMeContainer} 
+                        onPress={handleRememberMeToggle}
+                        disabled={loading}
+                    >
+                        <View style={[styles.checkbox, rememberMe && styles.checkedCheckbox]}>
+                            {rememberMe && (
+                                <MaterialIcons 
+                                    name="check" 
+                                    size={FS(1.6)} 
+                                    color={colors.White} 
+                                />
+                            )}
+                        </View>
+                        <Text style={styles.rememberMeText}>Remember Me</Text>
+                    </TouchableOpacity>
 
                     <CustomButton
                         buttonStyle={[styles.loginButton, loading && styles.disabledButton]}
@@ -114,76 +205,102 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     logo: {
-        height: 100,
-        width: 100,
+        height: WP(25),
+        width: WP(25),
         alignSelf: 'center',
-        marginTop: 20,
+        marginTop: HP(2.5),
     },
     innerContainer: {
         width: '80%',
         alignSelf: 'center',
-        marginTop: 15,
+        marginTop: HP(2),
     },
     signText: {
-        fontSize: 32,
+        fontSize: FS(4.3),
         fontWeight: 'bold',
         color: colors.Shadow,
         letterSpacing: 1,
     },
     signsmallText: {
-        marginTop: 10,
-        fontSize: 14,
+        marginTop: HP(1.2),
+        fontSize: FS(1.9),
         fontWeight: '500',
         color: 'gray',
     },
     inputContainer: {
-        marginTop: 20,
+        marginTop: HP(3),
     },
     inputbox: {
         width: '100%',
-        height: 50,
-        backgroundColor: '#fff',
-        marginTop: 25,
-        borderRadius: 8,
-        paddingLeft: 15,
+        height: HP(6.6),
+        backgroundColor: colors.White,
+        marginTop: HP(3.1),
+        borderRadius: WP(2),
+        paddingLeft: WP(4),
+    },
+    rememberMeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: HP(2.5),
+        marginLeft: WP(1),
+    },
+    checkbox: {
+        width: WP(4.5),
+        height: WP(4.5),
+        borderWidth: 2,
+        borderColor: colors.Primary,
+        borderRadius: WP(1),
+        marginRight: WP(2.5),
+        backgroundColor: colors.White,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    checkedCheckbox: {
+        backgroundColor: colors.Primary,
+        borderColor: colors.Primary,
+    },
+    rememberMeText: {
+        fontSize: FS(1.8),
+        color: colors.Shadow,
+        fontWeight: '500',
     },
     loginButton: {
-        height: 50,
+        height: HP(6.6),
         backgroundColor: colors.Primary,
-        marginTop: 30,
-        borderRadius: 10,
+        marginTop: HP(3.8),
+        borderRadius: WP(2.5),
     },
     disabledButton: {
         backgroundColor: '#ccc',
     },
     loginButtonText: {
-        color: '#fff',
-        fontSize: 20,
+        color: colors.White,
+        fontSize: FS(2.4),
         fontWeight: '500',
         letterSpacing: 1,
     },
     separator: {
         flexDirection: 'row',
-        marginTop: 40,
+        marginTop: HP(5),
         justifyContent: 'space-around',
         alignItems: 'center',
     },
     line: {
-        width: '40%',
-        height: 1,
+        width: WP(33),
+        height: HP(0.15),
         backgroundColor: 'gray',
     },
     orText: {
         textAlign: 'center',
-        fontSize: 14,
+        fontSize: FS(1.6),
         color: colors.Shadow,
     },
     signupContainer: {
-        marginTop: 25,
+        marginTop: HP(3.1),
         alignSelf: 'center',
     },
     signupText: {
-        fontSize: 14,
+        fontSize: FS(1.8),
         color: colors.Shadow,
     },
     signupLink: {

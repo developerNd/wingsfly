@@ -88,6 +88,8 @@ const AppUsageScreen = () => {
       setLoading(true);
       setError(null);
 
+      console.log(`Loading ${currentPeriod} usage data...`);
+      
       let stats;
       if (currentPeriod === 'daily') {
         stats = await AppUsageModule.getDailyUsageStats();
@@ -95,17 +97,31 @@ const AppUsageScreen = () => {
         stats = await AppUsageModule.getWeeklyUsageStats();
       }
 
+      console.log(`Raw stats received: ${stats?.length || 0} apps`);
+
       // Filter out system apps if needed
-      let filteredStats = stats;
+      let filteredStats = stats || [];
       if (!showSystemApps) {
-        filteredStats = stats.filter(app => !app.isSystemApp);
+        filteredStats = filteredStats.filter(app => !app.isSystemApp);
       }
 
-      // Only show apps with meaningful usage time (more than 10 seconds)
+      // Only show apps with meaningful usage time (more than 10 seconds for accuracy)
       filteredStats = filteredStats.filter(app => app.totalTimeInForeground > 10000);
 
       // Remove duplicate apps to prevent key conflicts
       filteredStats = removeDuplicateApps(filteredStats);
+
+      // Sort by usage time (descending)
+      filteredStats.sort((a, b) => b.totalTimeInForeground - a.totalTimeInForeground);
+
+      console.log(`Filtered stats: ${filteredStats.length} apps`);
+      
+      // Log some debug info about data sources
+      const eventCount = filteredStats.filter(app => app.dataSource === 'events').length;
+      const usageStatsCount = filteredStats.filter(app => app.dataSource === 'usage_stats').length;
+      const mergedCount = filteredStats.filter(app => app.dataSource === 'merged').length;
+      
+      console.log(`Data sources - Events: ${eventCount}, UsageStats: ${usageStatsCount}, Merged: ${mergedCount}`);
 
       setUsageStats(filteredStats);
     } catch (err) {
@@ -123,16 +139,20 @@ const AppUsageScreen = () => {
       // Show instructions to user
       Alert.alert(
         'Permission Required',
-        'Please enable "Usage access" for WingsFly in the settings that just opened. Then return to the app.',
+        'Please enable "Usage access" for WingsFly in the settings that just opened. Then return to the app and tap "Check Permission Again".',
         [
           {
-            text: 'OK',
+            text: 'Check Permission Again',
             onPress: () => {
               // Check permission again after user returns
               setTimeout(() => {
                 checkPermissionAndLoadData();
               }, 1000);
             },
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
           },
         ],
       );
@@ -155,12 +175,17 @@ const AppUsageScreen = () => {
     try {
       const events = await AppUsageModule.getAppUsageEvents(app.packageName);
       
+      let dataSourceInfo = '';
+      if (app.dataSource) {
+        dataSourceInfo = `\nData Source: ${app.dataSource}`;
+      }
+      
       Alert.alert(
         app.appName,
         `Package: ${app.packageName}\n` +
         `Usage Time: ${app.formattedDuration}\n` +
         `Last Used: ${app.formattedLastUsed}\n` +
-        `Events Today: ${events.length}`,
+        `Events Today: ${events.length}${dataSourceInfo}`,
         [
           {text: 'OK', style: 'default'},
           {
@@ -217,6 +242,16 @@ const AppUsageScreen = () => {
     return appColors[Math.abs(hash) % appColors.length];
   };
 
+  // Get data source indicator color
+  const getDataSourceColor = (dataSource) => {
+    switch (dataSource) {
+      case 'events': return '#4ECDC4';
+      case 'usage_stats': return '#45B7D1';
+      case 'merged': return '#96CEB4';
+      default: return '#DDD';
+    }
+  };
+
   const AppIcon = ({item, index}) => {
     const [imageLoadError, setImageLoadError] = useState(false);
 
@@ -262,9 +297,16 @@ const AppUsageScreen = () => {
           <Text style={styles.packageName} numberOfLines={1}>
             {item.packageName}
           </Text>
-          {item.isSystemApp && (
-            <Text style={styles.systemLabel}>System App</Text>
-          )}
+          <View style={styles.labelsContainer}>
+            {item.isSystemApp && (
+              <Text style={styles.systemLabel}>System App</Text>
+            )}
+            {item.dataSource && (
+              <Text style={[styles.dataSourceLabel, {backgroundColor: getDataSourceColor(item.dataSource) + '20', color: getDataSourceColor(item.dataSource)}]}>
+                {item.dataSource}
+              </Text>
+            )}
+          </View>
         </View>
         
         <View style={styles.usageInfo}>
@@ -403,6 +445,9 @@ const AppUsageScreen = () => {
           <Text style={styles.emptySubText}>
             Try using some apps and then refresh this screen.
           </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadUsageData}>
+            <Text style={styles.retryButtonText}>Refresh Data</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -554,6 +599,11 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     marginBottom: HP(0.2),
   },
+  labelsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: WP(1),
+  },
   systemLabel: {
     fontSize: FS(0.9),
     fontFamily: 'OpenSans-Regular',
@@ -563,6 +613,15 @@ const styles = StyleSheet.create({
     paddingVertical: HP(0.1),
     borderRadius: WP(0.8),
     alignSelf: 'flex-start',
+  },
+  dataSourceLabel: {
+    fontSize: FS(0.8),
+    fontFamily: 'OpenSans-Medium',
+    paddingHorizontal: WP(1.5),
+    paddingVertical: HP(0.1),
+    borderRadius: WP(0.8),
+    alignSelf: 'flex-start',
+    textTransform: 'uppercase',
   },
   usageInfo: {
     alignItems: 'flex-end',
@@ -659,6 +718,7 @@ const styles = StyleSheet.create({
     color: colors.Shadow,
     textAlign: 'center',
     opacity: 0.7,
+    marginBottom: HP(2),
   },
 });
 

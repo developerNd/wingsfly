@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, Image, StyleSheet, Animated, KeyboardAvoi
 import { colors, routes, Icons } from '../../Helper/Contants';
 import CustomButton from '../../Components/CustomButton';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../../contexts/AuthContext';
+import { HP, WP, FS } from '../../utils/dimentions';
 
 const GenderSelection = ({ onContinue }) => {
     const [selectedGender, setSelectedGender] = useState('');
@@ -10,7 +12,8 @@ const GenderSelection = ({ onContinue }) => {
     const scaleFemale = new Animated.Value(1);
     const scaleMale = new Animated.Value(1);
 
-    const navigation = useNavigation()
+    const navigation = useNavigation();
+    const { completeProfileSetup } = useAuth();
 
     const handlePress = (gender) => {
         if (gender === 'Female') {
@@ -44,9 +47,20 @@ const GenderSelection = ({ onContinue }) => {
     };
 
     const handleContinue = async () => {
-        navigation.navigate(routes.ONBOARD_SCREEN, { 
-            selectedGender: selectedGender 
-        });
+        if (!selectedGender) return;
+        
+        setLoading(true);
+        
+        try {
+            navigation.navigate(routes.ONBOARD_SCREEN, { 
+                selectedGender: selectedGender,
+                needsSetupCompletion: true
+            });
+        } catch (error) {
+            console.error('Navigation error:', error);
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -104,11 +118,12 @@ const GenderSelection = ({ onContinue }) => {
 
                 {selectedGender && (
                     <CustomButton
-                        buttonStyle={styles.continueButton}
+                        buttonStyle={[styles.continueButton, loading && styles.disabledButton]}
                         TextStyle={styles.continueButtonText}
-                        text="Continue"
+                        text={loading ? "Setting up..." : "Continue"}
                         loading={loading}
                         onClick={handleContinue}
+                        disabled={loading}
                     />
                 )}
             </View>
@@ -126,47 +141,47 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingBottom: 20,
+        paddingHorizontal: WP(5),
+        paddingBottom: HP(2.5),
     },
     title: {
-        fontSize: 22,
+        fontSize: FS(2.9),
         fontWeight: 'bold',
-        marginBottom: 40,
+        marginBottom: HP(5),
         color: colors.Primary,
     },
     options: {
         width: '100%',
         flexDirection: 'row',
         justifyContent: 'space-evenly',
-        marginBottom: 30,
+        marginBottom: HP(3.7),
     },
     option: {
         alignItems: 'center',
-        marginHorizontal: 10,
+        marginHorizontal: WP(2.5),
     },
     box: {
-        height: 120,
-        width: 120,
-        borderRadius: 12,
+        height: WP(33.5),
+        width: WP(33.5),
+        borderRadius: WP(3),
         backgroundColor: '#ddd',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: HP(1.2),
         elevation: 5,
     },
     selectedBox: {
         borderColor: colors.Primary,
-        borderWidth: 3,
+        borderWidth: WP(0.75),
     },
     image: {
-        height: 60,
-        width: 60,
+        height: WP(16),
+        width: WP(16),
         resizeMode: 'contain',
     },
     label: {
-        marginTop: 8,
-        fontSize: 16,
+        marginTop: HP(1),
+        fontSize: FS(2.1),
         color: colors.Shadow,
     },
     selectedLabel: {
@@ -175,17 +190,20 @@ const styles = StyleSheet.create({
     },
     continueButton: {
         width: '80%',
-        height: 50,
+        height: HP(6.6),
         backgroundColor: colors.Primary,
-        marginTop: 20,
-        borderRadius: 10,
+        marginTop: HP(2.5),
+        borderRadius: WP(2.5),
         justifyContent: 'center',
         alignItems: 'center',
         elevation: 5,
     },
+    disabledButton: {
+        backgroundColor: '#ccc',
+    },
     continueButtonText: {
-        color: '#fff',
-        fontSize: 18,
+        color: colors.White,
+        fontSize: FS(2.3),
         fontWeight: '500',
     },
 });
