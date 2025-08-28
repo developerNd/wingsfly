@@ -40,6 +40,7 @@ import SortingScreen from '../Pages/ChecklistScreens/SortingScreen';
 import PomoScreen from '../Pages/PomodoroScreens/PomoScreen';
 import PomodoroTimerScreen from '../Pages/PomodoroScreens/PomodoroScreen';
 import PomodoroSettings from '../Pages/PomodoroScreens/PomodoroSettings';
+import AchievementScreen from '../Pages/PomodoroScreens/AchievementScreen';
 
 import AppBlockerScreen from '../Pages/SettingsScreens/AppBlockerScreen';
 
@@ -121,6 +122,9 @@ function AppStack() {
       <Stack.Screen name="AppBlockerScreen" component={AppBlockerScreen} />
 
       <Stack.Screen name="PomoScreen" component={PomoScreen} />
+      <Stack.Screen name="AchievementScreen" component={AchievementScreen} />
+       
+
     </Stack.Navigator>
   );
 }

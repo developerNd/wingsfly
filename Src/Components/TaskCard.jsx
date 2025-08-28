@@ -188,7 +188,7 @@ const TaskCard = ({
         'TaskCard - Navigating to PomodoroTimerScreen with selectedDate:',
         selectedDate,
       );
-      navigation.navigate('PomodoroTimerScreen', {
+      navigation.navigate('PomoScreen', {
         task: item,
         taskId: item.id,
         selectedDate: selectedDate,

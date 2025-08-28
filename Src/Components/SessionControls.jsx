@@ -1,96 +1,150 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
+import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
+
+import SkipButtonSvg from '../assets/Images/Pomodoro-screen/dark-grey-bttn.svg';
+import EndButtonSvg from '../assets/Images/Pomodoro-screen/dark-grey-bttn.svg';
+import PlayButtonSvg from '../assets/Images/Pomodoro-screen/dark-grey-bttn.svg';
 
 const SessionControls = ({
   isRunning,
   isTransitioning,
   isPomodoroBlocking,
   isOnBreak,
+  isCompleted,
   onStartPause,
   onStop,
+  onSkip,
+  currentTime = 0,
+  targetTime = 0,
 }) => {
-  const getControlButtonStyle = () => {
+  const getPlayButtonIcon = () => {
+    if (isCompleted) {
+      return 'check';
+    }
     if (isTransitioning) {
-      return styles.buttonDisabled;
+      return 'hourglass-empty';
     }
-    
-    if (!isTransitioning && isPomodoroBlocking && !isOnBreak) {
-      return styles.controlButtonBlocked;
-    }
-    
-    if (!isTransitioning && isRunning && !isPomodoroBlocking && !isOnBreak) {
-      return styles.controlButtonPaused;
-    }
-    
-    if (!isTransitioning && isOnBreak) {
-      return styles.controlButtonBreak;
-    }
-    
-    return styles.controlButton;
+    return isRunning ? 'pause' : 'play-arrow';
   };
 
-  const getControlButtonText = () => {
+  const getPlayButtonColor = () => {
     if (isTransitioning) {
-      return 'Transitioning...';
+      return '#CCCCCC';
     }
-    
-    if (isRunning) {
-      if (isOnBreak) {
-        return 'Pause Break';
-      } else if (isPomodoroBlocking) {
-        return 'Pause Session';
-      } else {
-        return 'Resume Blocking';
-      }
-    } else {
-      if (isOnBreak) {
-        return 'Start Break';
-      } else {
-        return 'Start Session';
-      }
+    if (isCompleted) {
+      return '#4CAF50'; // Green for completed
+    }
+    return colors.White;
+  };
+
+  // Determine if skip should be disabled
+  const shouldDisableSkip = () => {
+    return isCompleted || isTransitioning || (currentTime === 0 && !isRunning);
+  };
+
+  // Determine if end should be disabled
+  const shouldDisableEnd = () => {
+    return isTransitioning;
+  };
+
+  const handlePlayPress = () => {
+    onStartPause();
+  };
+
+  const handleSkipPress = () => {
+    if (!shouldDisableSkip()) {
+      onSkip();
+    }
+  };
+
+  const handleEndPress = () => {
+    if (!shouldDisableEnd()) {
+      onStop();
     }
   };
 
   return (
     <View style={styles.controlsContainer}>
-      <TouchableOpacity
-        style={[styles.stopButton, isTransitioning && styles.buttonDisabled]}
-        onPress={onStop}
-        activeOpacity={0.8}
-        disabled={isTransitioning}>
-        <Icon name="stop" size={WP(6)} color={isTransitioning ? '#CCCCCC' : colors.Black} />
-        <Text style={[styles.buttonLabel, isTransitioning && styles.buttonLabelDisabled]}>
-          Reset
-        </Text>
-      </TouchableOpacity>
-
-      <View style={styles.mainControlContainer}>
-        <TouchableOpacity
+      {/* Skip Button */}
+      <View style={styles.button}>
+        <SkipButtonSvg
+          width={WP(18)}
+          height={HP(9)}
           style={[
-            styles.controlButton,
-            getControlButtonStyle()
+            styles.buttonBackground,
+            shouldDisableSkip() && styles.disabledButton,
           ]}
-          onPress={onStartPause}
-          activeOpacity={0.8}
-          disabled={isTransitioning}>
-          <Icon
-            name={isRunning ? 'pause' : 'play-arrow'}
-            size={WP(8)}
-            color={isTransitioning ? '#CCCCCC' : colors.White}
-          />
+          preserveAspectRatio="none"
+        />
+        <TouchableOpacity
+          style={styles.buttonTouchable}
+          onPress={handleSkipPress}
+          activeOpacity={shouldDisableSkip() ? 1 : 0.8}
+          disabled={shouldDisableSkip()}>
+          <Text
+            style={[
+              styles.buttonText,
+              shouldDisableSkip() && styles.buttonTextDisabled,
+            ]}>
+            Skip
+          </Text>
         </TouchableOpacity>
-        
-        <Text style={[styles.controlButtonText, isTransitioning && styles.buttonLabelDisabled]}>
-          {getControlButtonText()}
-        </Text>
+      </View>
+
+      {/* Play/Pause Button in Center */}
+      <View style={styles.playButton}>
+        <PlayButtonSvg
+          width={WP(25)}
+          height={HP(12)}
+          style={[
+            styles.buttonBackground,
+            isCompleted && styles.completedButton,
+          ]}
+          preserveAspectRatio="none"
+        />
+        <TouchableOpacity
+          style={styles.playButtonTouchable}
+          onPress={handlePlayPress}
+          activeOpacity={isTransitioning ? 1 : 0.8}
+          disabled={isTransitioning && !isCompleted}>
+          <View style={styles.playButtonContent}>
+            <Icon
+              name={getPlayButtonIcon()}
+              size={FS(7)}
+              color={getPlayButtonColor()}
+              style={styles.playIcon}
+            />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* End Button */}
+      <View style={styles.button}>
+        <EndButtonSvg
+          width={WP(18)}
+          height={HP(9)}
+          style={[
+            styles.buttonBackground,
+            shouldDisableEnd() && styles.disabledButton,
+          ]}
+          preserveAspectRatio="none"
+        />
+        <TouchableOpacity
+          style={styles.buttonTouchable}
+          onPress={handleEndPress}
+          activeOpacity={shouldDisableEnd() ? 1 : 0.8}
+          disabled={shouldDisableEnd()}>
+          <Text
+            style={[
+              styles.buttonText,
+              shouldDisableEnd() && styles.buttonTextDisabled,
+            ]}>
+            End
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -99,60 +153,74 @@ const SessionControls = ({
 const styles = StyleSheet.create({
   controlsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: WP(25),
-    paddingVertical: HP(3),
-    paddingBottom: HP(10),
+    alignItems: 'center',
+    marginBottom: HP(3),
+    paddingHorizontal: WP(10),
+    position: 'relative',
   },
-  stopButton: {
+  button: {
+    position: 'relative',
+    width: WP(18),
+    height: HP(9),
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: HP(1),
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  playButton: {
+    position: 'relative',
+    width: WP(25),
+    height: HP(12),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  buttonLabel: {
-    fontSize: FS(1.4),
-    fontFamily: 'Inter-Medium',
-    color: colors.Black,
-    marginTop: HP(0.5),
+  buttonBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 1,
   },
-  buttonLabelDisabled: {
+  disabledButton: {
+    opacity: 0.5,
+  },
+  completedButton: {
+    opacity: 1,
+  },
+  buttonTouchable: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  playButtonTouchable: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  playButtonContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: {
+    fontSize: FS(2),
+    fontFamily: 'Poppins-SemiBold',
+    color: colors.White,
+    textAlign: 'center',
+  },
+  buttonTextDisabled: {
     color: '#CCCCCC',
   },
-  mainControlContainer: {
-    alignItems: 'center',
-  },
-  controlButton: {
-    width: WP(16),
-    height: WP(16),
-    backgroundColor: colors.Black,
-    borderRadius: WP(8),
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: colors.Shadow,
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  controlButtonBlocked: {
-    backgroundColor: '#FF6B35',
-  },
-  controlButtonPaused: {
-    backgroundColor: '#FFA726',
-  },
-  controlButtonBreak: {
-    backgroundColor: '#4CAF50',
-  },
-  controlButtonText: {
-    fontSize: FS(1.4),
-    fontFamily: 'Inter-Medium',
-    color: colors.Black,
-    marginTop: HP(1),
+  playIcon: {
     textAlign: 'center',
+    backgroundColor: 'transparent',
   },
 });
 
