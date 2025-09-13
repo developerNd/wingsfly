@@ -11,7 +11,7 @@ import {
 import Headers from '../../Components/Headers';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
-import {useAuth} from '../../contexts/AuthContext'; 
+import {useAuth} from '../../contexts/AuthContext';
 
 const SettingsScreen = ({navigation}) => {
   const {signOut} = useAuth();
@@ -24,8 +24,8 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('PomoScreen');
   };
 
-  const handleAppreciationPress = () => {
-    navigation.navigate('AchievementScreen');
+  const handleAppUsagePress = () => {
+    navigation.navigate('AppUsageScreen');
   };
 
   const handleLogout = () => {
@@ -43,7 +43,7 @@ const SettingsScreen = ({navigation}) => {
           onPress: performLogout,
         },
       ],
-      {cancelable: true}
+      {cancelable: true},
     );
   };
 
@@ -56,24 +56,26 @@ const SettingsScreen = ({navigation}) => {
     }
   };
 
-  const SettingItem = ({title, onPress, showArrow = true, isDestructive = false}) => (
+  const SettingItem = ({
+    title,
+    onPress,
+    showArrow = true,
+    isDestructive = false,
+  }) => (
     <TouchableOpacity
       style={styles.settingItem}
       onPress={onPress}
-      activeOpacity={0.7}
-    >
+      activeOpacity={0.7}>
       <View style={styles.settingContent}>
-        <Text style={[
-          styles.settingTitle,
-          isDestructive && styles.destructiveText
-        ]}>
+        <Text
+          style={[
+            styles.settingTitle,
+            isDestructive && styles.destructiveText,
+          ]}>
           {title}
         </Text>
         {showArrow && (
-          <Text style={[
-            styles.arrow,
-            isDestructive && styles.destructiveText
-          ]}>
+          <Text style={[styles.arrow, isDestructive && styles.destructiveText]}>
             ›
           </Text>
         )}
@@ -84,45 +86,27 @@ const SettingsScreen = ({navigation}) => {
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
-      
+
       <View style={styles.headerWrapper}>
         <Headers title="Settings" />
       </View>
 
       <ScrollView
         style={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-      >
+        showsVerticalScrollIndicator={false}>
         {/* Apps Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Apps</Text>
           <View style={styles.sectionContent}>
-            <SettingItem
-              title="App Lock"
-              onPress={handleManageAppsPress}
-            />
+            <SettingItem title="App Lock" onPress={handleManageAppsPress} />
           </View>
         </View>
 
-        {/* Productivity Section */}
+        {/* App Usage Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Productivity</Text>
+          <Text style={styles.sectionTitle}>App Usage</Text>
           <View style={styles.sectionContent}>
-            <SettingItem
-              title="Pomodoro"
-              onPress={handlePomodoroPress}
-            />
-          </View>
-        </View>
-
-        {/* Appreciation Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Appreciation</Text>
-          <View style={styles.sectionContent}>
-            <SettingItem
-              title="Achievements"
-              onPress={handleAppreciationPress}
-            />
+            <SettingItem title="App Usage" onPress={handleAppUsagePress} />
           </View>
         </View>
 

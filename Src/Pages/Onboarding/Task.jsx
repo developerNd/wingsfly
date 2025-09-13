@@ -4,21 +4,36 @@ import { colors, Icons } from '../../Helper/Contants';
 import Headers from '../../Components/Headers';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { HP, WP, FS } from '../../utils/dimentions';
+import { useAuth } from '../../contexts/AuthContext';
 
 const TaskCard = () => {
     const navigation = useNavigation();
     const route = useRoute();
+    const { user } = useAuth();
 
-    const selectedGender = route.params?.selectedGender || 'Male';
+    // Get selectedGender from multiple sources with fallback
+    const selectedGender = 
+        route.params?.selectedGender || 
+        user?.user_metadata?.gender || 
+        'Male';
+
+    console.log('=== TaskCard Debug ===');
+    console.log('Route params:', route.params);
+    console.log('Selected gender:', selectedGender);
+    console.log('User metadata gender:', user?.user_metadata?.gender);
     
     const getTaskImages = () => {
+        console.log('Getting task images for gender:', selectedGender);
+        
         if (selectedGender === 'Female') {
+            console.log('Returning female images');
             return {
                 task1: Icons.WomenTask1, 
                 task2: Icons.WomenTask3,
                 task3: Icons.WomenTask2,
             };
         } else {
+            console.log('Returning male images');
             return {
                 task1: Icons.Task1, 
                 task2: Icons.Task2,
@@ -28,8 +43,9 @@ const TaskCard = () => {
     };
 
     const taskImages = getTaskImages();
+    console.log('Task images being used:', taskImages);
 
-    // Navigation handlers
+    // Navigation handlers - pass selectedGender to all navigation calls
     const handleLongTermGoalPress = () => {
         navigation.navigate('CategoryLongTerm', {
             goalType: 'longTerm',

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Modal,
   Image,
+  StatusBar,
 } from 'react-native';
 import {Icons, colors} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
@@ -18,6 +19,10 @@ const DeleteTaskModal = ({visible, taskTitle, onCancel, onConfirm}) => {
       animationType="fade"
       onRequestClose={onCancel}>
       <View style={styles.overlay}>
+        <StatusBar
+          backgroundColor={colors.ModelBackground}
+          barStyle="dark-content"
+        />
         <View style={styles.modalContainer}>
           {/* Title with Logo */}
           <View style={styles.titleRow}>

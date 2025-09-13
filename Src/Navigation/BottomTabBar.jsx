@@ -4,6 +4,8 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import Home from '../Pages/Home/Home';
 import PlannerScreen from '../Pages/Planner/PlannerScreen';
 import SettingsScreen from '../Pages/SettingsScreens/SettingsScreen';
+import TaskAnalyticsScreen from '../Pages/PlanYourDay/AnalysisScreens/AnalysisScreen';
+import ChallengesScreen from '../Pages/ChallengesScreen/ChallengesTab';
 import {Icons, colors} from '../Helper/Contants';
 
 const Tab = createBottomTabNavigator();
@@ -17,9 +19,6 @@ const PlaceholderScreen = ({screenName}) => {
     </View>
   );
 };
-
-const AnalysisScreen = () => <PlaceholderScreen screenName="Analysis" />;
-const UpliftScreen = () => <PlaceholderScreen screenName="Uplift" />;
 
 const BottomTabNavigator = () => {
   return (
@@ -82,9 +81,10 @@ const BottomTabNavigator = () => {
       })}>
       <Tab.Screen name="Home" component={Home} />
       <Tab.Screen name="Planner" component={PlannerScreen} />
-      <Tab.Screen name="Analysis" component={AnalysisScreen} />
-      <Tab.Screen name="Uplift" component={UpliftScreen} />
+      <Tab.Screen name="Analysis" component={TaskAnalyticsScreen} />
+      <Tab.Screen name="Uplift" component={ChallengesScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
+      
     </Tab.Navigator>
   );
 };

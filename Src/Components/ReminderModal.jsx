@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -8,14 +8,25 @@ import {
   TextInput,
   ScrollView,
   Image,
+  StatusBar
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors, Icons} from '../Helper/Contants';
+import ReminderTimeModal from './ReminderTimeModal';
 
-const ReminderModal = ({visible, onClose, onSave, initialData = null}) => {
-  const [reminderTime, setReminderTime] = useState(
-    initialData?.time || '12:00',
-  );
+const ReminderModal = ({visible, onClose, onSave, initialData = null, blockTimeData = null}) => {
+  // Get initial time from blockTimeData if available, otherwise use default
+  const getInitialTime = () => {
+    if (initialData?.time) {
+      return initialData.time;
+    }
+    if (blockTimeData?.startTime) {
+      return blockTimeData.startTime;
+    }
+    return '11:12';
+  };
+
+  const [reminderTime, setReminderTime] = useState(getInitialTime());
   const [selectedType, setSelectedType] = useState(
     initialData?.type || 'notification',
   );
@@ -27,6 +38,29 @@ const ReminderModal = ({visible, onClose, onSave, initialData = null}) => {
     initialData?.hoursBefore || '',
   );
   const [showScheduleOptions, setShowScheduleOptions] = useState(false);
+  const [showDurationModal, setShowDurationModal] = useState(false);
+
+  // Update reminder time when blockTimeData changes
+  useEffect(() => {
+    if (blockTimeData?.startTime && !initialData?.time) {
+      // Convert time like "2:30 PM" to just "14:30" format
+      const convertTo24Hour = (timeStr) => {
+        const [time, period] = timeStr.split(' ');
+        const [hours, minutes] = time.split(':');
+        let hour24 = parseInt(hours);
+        
+        if (period === 'PM' && hour24 !== 12) {
+          hour24 += 12;
+        } else if (period === 'AM' && hour24 === 12) {
+          hour24 = 0;
+        }
+        
+        return `${hour24.toString().padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+      };
+      
+      setReminderTime(convertTo24Hour(blockTimeData.startTime));
+    }
+  }, [blockTimeData, initialData]);
 
   const reminderTypes = [
     {
@@ -46,6 +80,47 @@ const ReminderModal = ({visible, onClose, onSave, initialData = null}) => {
     },
   ];
 
+  // Initialize time picker values when showing time picker
+  const convertTimeToMinutes = (timeStr) => {
+    try {
+      if (timeStr.includes(' ')) {
+        // Handle 12-hour format like "2:30 PM"
+        const [time, period] = timeStr.split(' ');
+        const [hours, minutes] = time.split(':').map(Number);
+        
+        let hour24 = hours;
+        if (period === 'PM' && hours !== 12) {
+          hour24 += 12;
+        } else if (period === 'AM' && hours === 12) {
+          hour24 = 0;
+        }
+        
+        return hour24 * 60 + minutes;
+      } else {
+        // Handle 24-hour format like "14:30"
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        return hours * 60 + minutes;
+      }
+    } catch (error) {
+      return 0; // Default to midnight if parsing fails
+    }
+  };
+
+  const convertMinutesToTime = (totalMinutes) => {
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = totalMinutes % 60;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  const handleTimeChange = (durationData) => {
+    // Convert duration data to 24-hour time format
+    const totalMinutes = (durationData.hours * 60) + durationData.minutes;
+    const timeString = convertMinutesToTime(totalMinutes);
+    setReminderTime(timeString);
+    setShowDurationModal(false);
+  };
+
   // Filter schedule options based on current selection
   const getScheduleOptions = () => {
     const allOptions = [
@@ -59,6 +134,16 @@ const ReminderModal = ({visible, onClose, onSave, initialData = null}) => {
     }
 
     return allOptions;
+  };
+
+  const handleTimeConfirm = () => {
+    const formattedTime = `${selectedHour}:${selectedMinute} ${selectedPeriod}`;
+    setReminderTime(formattedTime);
+    setShowTimePicker(false);
+  };
+
+  const handleTimeCancelPicker = () => {
+    setShowTimePicker(false);
   };
 
   const handleSave = () => {
@@ -76,6 +161,36 @@ const ReminderModal = ({visible, onClose, onSave, initialData = null}) => {
 
   const handleCancel = () => {
     onClose();
+  };
+
+  const renderScrollPicker = (data, selectedValue, onSelect) => {
+    return (
+      <ScrollView 
+        style={styles.pickerColumn}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.pickerContent}
+      >
+        {data.map((item, index) => (
+          <TouchableOpacity
+            key={index}
+            style={[
+              styles.pickerItem,
+              selectedValue === item && styles.pickerItemSelected,
+            ]}
+            onPress={() => onSelect(item)}
+          >
+            <Text
+              style={[
+                styles.pickerItemText,
+                selectedValue === item && styles.pickerItemTextSelected,
+              ]}
+            >
+              {item}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    );
   };
 
   const renderInitialView = () => (
@@ -133,10 +248,14 @@ const ReminderModal = ({visible, onClose, onSave, initialData = null}) => {
           <Text style={styles.headerTitle1}>New reminder</Text>
         </View>
 
-        <View style={styles.timeContainer}>
+        <TouchableOpacity 
+          style={styles.timeContainer}
+          onPress={() => setShowDurationModal(true)}
+          activeOpacity={0.7}
+        >
           <Text style={styles.timeText}>{reminderTime}</Text>
           <Text style={styles.timeSubText}>New reminder</Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.typeContainer}>
           <Text style={styles.sectionTitle}>New reminder</Text>
@@ -245,17 +364,31 @@ const ReminderModal = ({visible, onClose, onSave, initialData = null}) => {
   );
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          {!showScheduleOptions ? renderInitialView() : renderScheduleOptions()}
+    <>
+      <Modal
+        visible={visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={onClose}>
+        <View style={styles.modalOverlay}>
+          <StatusBar backgroundColor={colors.ModelBackground} barStyle="dark-content" />
+          <View style={styles.modalContainer}>
+            {!showScheduleOptions ? renderInitialView() : renderScheduleOptions()}
+          </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+      
+      {/* Duration Modal for Time Selection */}
+      <ReminderTimeModal
+        visible={showDurationModal}
+        onClose={() => setShowDurationModal(false)}
+        onSave={handleTimeChange}
+        initialHours={Math.floor(convertTimeToMinutes(reminderTime) / 60)}
+        initialMinutes={convertTimeToMinutes(reminderTime) % 60}
+        isTimeMode={true}
+        modalTitle="Reminder Time"
+      />
+    </>
   );
 };
 
@@ -368,6 +501,8 @@ const styles = StyleSheet.create({
   timeContainer: {
     alignItems: 'center',
     marginBottom: HP(3),
+    paddingVertical: HP(1),
+    borderRadius: WP(2),
   },
   timeText: {
     fontSize: FS(2.7),
@@ -451,7 +586,6 @@ const styles = StyleSheet.create({
     borderColor: colors.Primary,
     borderWidth: 3,
   },
-
   scheduleOptionText: {
     fontSize: FS(1.6),
     fontFamily: 'OpenSans-SemiBold',

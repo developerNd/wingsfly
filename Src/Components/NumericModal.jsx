@@ -1,5 +1,12 @@
 import React, {useState, useEffect} from 'react';
-import {View, Text, StyleSheet, TouchableOpacity, Image} from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  StatusBar,
+} from 'react-native';
 import Modal from 'react-native-modal';
 import {colors, Icons} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
@@ -206,6 +213,10 @@ const NumericInputModal = ({
       onBackButtonPress={handleCancel}
       style={styles.modal}
       useNativeDriver>
+      <StatusBar
+        backgroundColor={colors.ModelBackground}
+        barStyle="dark-content"
+      />
       <View style={styles.modalContent}>
         {/* Header */}
         <View style={styles.header}>
@@ -295,6 +306,7 @@ const NumericInputModal = ({
 const styles = StyleSheet.create({
   modal: {
     justifyContent: 'center',
+    backgroundColor: colors.ModelBackground,
     alignItems: 'center',
     margin: 0,
   },

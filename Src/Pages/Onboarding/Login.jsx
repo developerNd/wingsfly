@@ -123,6 +123,11 @@ const Login = () => {
             end={{ x: 0.1, y: 1.3 }}
             style={styles.container}
         >
+            <StatusBar 
+                backgroundColor="#b4cfee" 
+                barStyle="dark-content"
+                translucent={false}
+            />
             <SafeAreaView style={styles.container}>
                 <Logo width={WP(28)} height={WP(28)} style={styles.logo} />
                 <View style={styles.innerContainer}>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, Animated, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, Animated, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
 import { colors, routes, Icons } from '../../Helper/Contants';
 import CustomButton from '../../Components/CustomButton';
 import { useNavigation } from '@react-navigation/native';
@@ -68,6 +68,7 @@ const GenderSelection = ({ onContinue }) => {
             style={styles.container}
             behavior={Platform.OS === 'ios' ? 'padding' : null}
         >
+            <StatusBar backgroundColor="#F5F5F5" barStyle="dark-content" />
             <View style={styles.innerContainer}>
                 <Text style={styles.title}>Select your gender</Text>
                 <View style={styles.options}>

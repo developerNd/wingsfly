@@ -9,6 +9,7 @@ import {
   Vibration,
   Animated,
   Platform,
+  StatusBar,
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
@@ -220,60 +221,167 @@ const BlockTimeModal = ({visible, onClose, onSave}) => {
     };
   }, [ENGINE]);
 
-  // SOUND POOL
+  // FIXED SOUND POOL - Better error handling and null checks
   const audioEngine = useRef({
     scrollPool: [],
     selectSound: null,
     poolIndex: 0,
     ready: false,
     lastVibTime: 0,
+    isInitializing: false,
   });
 
-  // IMMEDIATE SOUND INITIALIZATION
+  // ENHANCED SOUND INITIALIZATION WITH BETTER ERROR HANDLING
   useEffect(() => {
-    const initAudio = () => {
+    const initAudio = async () => {
+      // Prevent multiple initializations
+      if (audioEngine.current.isInitializing || audioEngine.current.ready) {
+        return;
+      }
+
+      audioEngine.current.isInitializing = true;
+
       try {
-        const scrollSounds = Array(3)
-          .fill(null)
-          .map(() => {
-            try {
-              const sound = new Sound('tic.wav', Sound.MAIN_BUNDLE, () => {});
-              sound.setVolume(1);
-              return sound;
-            } catch (e) {
-              return null;
+        // Enable sound in silent mode
+        Sound.setCategory('Playback', true);
+
+        // Wait a bit for sound system to be ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Create scroll sounds with proper error handling
+        const scrollSounds = [];
+        for (let i = 0; i < 3; i++) {
+          try {
+            const sound = new Sound('tic.wav', Sound.MAIN_BUNDLE, error => {
+              if (error) {
+                console.warn(`Failed to load scroll sound ${i}:`, error);
+                return;
+              }
+
+              // Only set volume if sound loaded successfully
+              try {
+                sound.setVolume(0.8); // Reduced volume to avoid conflicts
+              } catch (volError) {
+                console.warn(
+                  `Failed to set volume for scroll sound ${i}:`,
+                  volError,
+                );
+              }
+            });
+
+            if (sound) {
+              scrollSounds.push(sound);
             }
-          })
-          .filter(Boolean);
+          } catch (soundError) {
+            console.warn(`Error creating scroll sound ${i}:`, soundError);
+          }
+        }
 
-        const selectSound = new Sound('tic.wav', Sound.MAIN_BUNDLE, () => {});
-        selectSound.setVolume(1);
+        // Create select sound with error handling
+        let selectSound = null;
+        try {
+          selectSound = new Sound('tic.wav', Sound.MAIN_BUNDLE, error => {
+            if (error) {
+              console.warn('Failed to load select sound:', error);
+              return;
+            }
 
+            try {
+              selectSound.setVolume(1.0);
+            } catch (volError) {
+              console.warn('Failed to set volume for select sound:', volError);
+            }
+          });
+        } catch (selectError) {
+          console.warn('Error creating select sound:', selectError);
+        }
+
+        // Update audio engine
         audioEngine.current = {
           scrollPool: scrollSounds,
-          selectSound,
+          selectSound: selectSound,
           poolIndex: 0,
-          ready: true,
+          ready: scrollSounds.length > 0, // Only ready if we have at least one sound
           lastVibTime: 0,
+          isInitializing: false,
         };
+
+        console.log(
+          `Audio engine initialized with ${
+            scrollSounds.length
+          } scroll sounds and ${selectSound ? '1' : '0'} select sound`,
+        );
       } catch (error) {
-        console.warn('Audio init failed:', error);
-        audioEngine.current.ready = false;
+        console.warn('Audio initialization failed:', error);
+        audioEngine.current = {
+          scrollPool: [],
+          selectSound: null,
+          poolIndex: 0,
+          ready: false,
+          lastVibTime: 0,
+          isInitializing: false,
+        };
       }
     };
 
     if (visible) {
-      initAudio();
+      // Small delay to avoid conflicts with other sound systems
+      const timer = setTimeout(() => {
+        initAudio();
+      }, 200);
+
+      return () => clearTimeout(timer);
     }
 
     return () => {
-      Object.values(scrollEngine.current).forEach(engine => {
-        if (engine.animFrame) cancelAnimationFrame(engine.animFrame);
-        if (engine.snapTimeout) clearTimeout(engine.snapTimeout);
-      });
+      // Cleanup on component unmount or when modal closes
+      try {
+        Object.values(scrollEngine.current).forEach(engine => {
+          if (engine.animFrame) {
+            cancelAnimationFrame(engine.animFrame);
+            engine.animFrame = null;
+          }
+          if (engine.snapTimeout) {
+            clearTimeout(engine.snapTimeout);
+            engine.snapTimeout = null;
+          }
+        });
 
-      audioEngine.current.scrollPool.forEach(sound => sound?.release?.());
-      audioEngine.current.selectSound?.release?.();
+        // Safely cleanup audio resources
+        if (audioEngine.current.scrollPool) {
+          audioEngine.current.scrollPool.forEach(sound => {
+            try {
+              if (sound && typeof sound.release === 'function') {
+                sound.release();
+              }
+            } catch (releaseError) {
+              console.warn('Error releasing scroll sound:', releaseError);
+            }
+          });
+        }
+
+        if (audioEngine.current.selectSound) {
+          try {
+            if (typeof audioEngine.current.selectSound.release === 'function') {
+              audioEngine.current.selectSound.release();
+            }
+          } catch (releaseError) {
+            console.warn('Error releasing select sound:', releaseError);
+          }
+        }
+
+        // Reset audio engine
+        audioEngine.current = {
+          scrollPool: [],
+          selectSound: null,
+          poolIndex: 0,
+          ready: false,
+          lastVibTime: 0,
+          isInitializing: false,
+        };
+      } catch (cleanupError) {
+        console.warn('Error during audio cleanup:', cleanupError);
+      }
     };
   }, [visible]);
 
@@ -307,21 +415,40 @@ const BlockTimeModal = ({visible, onClose, onSave}) => {
     [ENGINE],
   );
 
-  // ENHANCED AUDIO FUNCTIONS WITH STRONGER VIBRATION
+  // ENHANCED AUDIO FUNCTIONS WITH BETTER ERROR HANDLING
   const playScrollSound = useCallback(
     (force = false) => {
       const audio = audioEngine.current;
       const now = Date.now();
 
-      if (!audio.ready) return;
+      // Check if audio is ready and not initializing
+      if (!audio.ready || audio.isInitializing) return;
 
       if (!force && now - audio.lastVibTime < ENGINE.SOUND_THROTTLE) return;
 
-      const sound = audio.scrollPool[audio.poolIndex];
-      if (sound) {
-        sound.stop(() => sound.play());
-        audio.poolIndex = (audio.poolIndex + 1) % audio.scrollPool.length;
-        audio.lastVibTime = now;
+      try {
+        const sound = audio.scrollPool[audio.poolIndex];
+        if (
+          sound &&
+          typeof sound.stop === 'function' &&
+          typeof sound.play === 'function'
+        ) {
+          sound.stop(() => {
+            try {
+              sound.play(success => {
+                if (!success) {
+                  console.warn('Failed to play scroll sound');
+                }
+              });
+            } catch (playError) {
+              console.warn('Error playing scroll sound:', playError);
+            }
+          });
+          audio.poolIndex = (audio.poolIndex + 1) % audio.scrollPool.length;
+          audio.lastVibTime = now;
+        }
+      } catch (error) {
+        console.warn('Error in playScrollSound:', error);
       }
     },
     [ENGINE.SOUND_THROTTLE],
@@ -355,10 +482,24 @@ const BlockTimeModal = ({visible, onClose, onSave}) => {
   );
 
   const playSelectSound = useCallback(() => {
-    const sound = audioEngine.current.selectSound;
-    if (sound && audioEngine.current.ready) {
-      sound.play();
+    const audio = audioEngine.current;
+
+    try {
+      if (
+        audio.ready &&
+        audio.selectSound &&
+        typeof audio.selectSound.play === 'function'
+      ) {
+        audio.selectSound.play(success => {
+          if (!success) {
+            console.warn('Failed to play select sound');
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Error playing select sound:', error);
     }
+
     triggerVibration('strong', true);
   }, [triggerVibration]);
 
@@ -569,7 +710,7 @@ const BlockTimeModal = ({visible, onClose, onSave}) => {
           if (engine.lastCenterValue !== result.value) {
             engine.lastCenterValue = result.value;
 
-            // ENHANCED FEEDBACK
+            // ENHANCED FEEDBACK with safer sound calls
             playScrollSound(true);
             triggerVibration('medium', true);
           }
@@ -1065,6 +1206,10 @@ const BlockTimeModal = ({visible, onClose, onSave}) => {
       onRequestClose={onClose}
       hardwareAccelerated>
       <View style={styles.modalOverlay}>
+        <StatusBar
+          backgroundColor={colors.ModelBackground}
+          barStyle="dark-content"
+        />
         <View style={styles.modalContainer}>
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.cancelButton}>

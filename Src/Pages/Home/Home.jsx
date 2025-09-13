@@ -19,7 +19,6 @@ import TaskCard from '../../Components/TaskCard';
 import TaskSkeleton from '../../Components/TaskSkeleton';
 import ModalTaskCard from '../../Components/ModalTaskCard';
 import NumericInputModal from '../../Components/NumericModal';
-import AppreciationModal from '../../Components/AppreciationModal';
 import DatePickerModal from '../../Components/DatePickerModal';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -34,11 +33,8 @@ const Home = () => {
   const [checkboxStates, setCheckboxStates] = useState({});
   const [isModalVisible, setModalVisible] = useState(false);
   const [isNumericModalVisible, setNumericModalVisible] = useState(false);
-  const [isAppreciationVisible, setAppreciationVisible] = useState(false);
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
-  const [completedTask, setCompletedTask] = useState(null);
-  const [taskStreak, setTaskStreak] = useState(1);
   const [tasks, setTasks] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -261,14 +257,7 @@ const Home = () => {
           route.params?.completedDate || completionDateString;
         markTaskCompleted(route.params.completedTaskId, completionDate);
 
-        if (route.params?.showAppreciation && route.params?.taskData) {
-          setTimeout(() => {
-            const completedTask = route.params.taskData;
-            setCompletedTask(completedTask);
-            setTaskStreak(1); // We'll calculate this differently now
-            setAppreciationVisible(true);
-          }, 500);
-        }
+        // REMOVED: AppreciationModal logic - now handled by AchievementScreen navigation
 
         navigation.setParams({
           completedTaskId: undefined,
@@ -404,13 +393,13 @@ const Home = () => {
     },
     {
       id: '4',
-      Heading: 'Goal of the Day',
+      Heading: 'Create Challenge',
       title:
-        'A specific target set for oneself to achieve within a single day.',
+        'Set up a multi-day challenge with specific goals and duration.',
       image: Icons.Goal,
       navigation: () => {
         setModalVisible(false);
-        navigation.navigate('CategorySelection', {type: 'Goal'});
+        navigation.navigate('ChallengeScreen', {type: 'Goal'});
       },
     },
   ];
@@ -500,10 +489,170 @@ const Home = () => {
     }
   };
 
-  const showAppreciationModal = task => {
-    setCompletedTask(task);
-    setTaskStreak(1); // We can calculate streak from completions later
-    setAppreciationVisible(true);
+  // NEW: Navigate to AchievementScreen with task completion data
+  const navigateToAchievementScreen = task => {
+    // Calculate duration from block time if available
+    let startTime = null;
+    let endTime = null;
+    let totalCompletedTime = 0;
+
+    console.log('Processing task for achievement screen:', {
+      title: task.title,
+      blockTimeEnabled: task.blockTimeEnabled,
+      blockTimeData: task.blockTimeData,
+      type: typeof task.blockTimeData
+    });
+
+    if (task.blockTimeEnabled && task.blockTimeData) {
+      try {
+        const blockTimeData = typeof task.blockTimeData === 'string' 
+          ? JSON.parse(task.blockTimeData) 
+          : task.blockTimeData;
+        
+        console.log('Parsed block time data:', blockTimeData);
+        
+        if (blockTimeData.startTime && blockTimeData.endTime) {
+          startTime = blockTimeData.startTime;
+          endTime = blockTimeData.endTime;
+          
+          console.log('Start time:', startTime, 'End time:', endTime);
+          
+          // FIXED: Better time parsing logic that handles 12-hour format with AM/PM
+          const parseTimeString = (timeStr) => {
+            if (!timeStr || typeof timeStr !== 'string') {
+              console.warn('Invalid time string:', timeStr);
+              return 0;
+            }
+            
+            // Handle 12-hour format with AM/PM
+            const timeStr12Hour = timeStr.trim().toUpperCase();
+            const isAM = timeStr12Hour.includes('AM');
+            const isPM = timeStr12Hour.includes('PM');
+            
+            if (!isAM && !isPM) {
+              // 24-hour format - existing logic
+              const timeParts = timeStr.split(':');
+              if (timeParts.length === 2) {
+                timeStr = `${timeStr}:00`; // Add seconds if missing
+              }
+              
+              const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+              
+              if (isNaN(hours) || isNaN(minutes) || isNaN(seconds || 0)) {
+                console.warn('Invalid time components:', { hours, minutes, seconds });
+                return 0;
+              }
+              
+              return hours * 3600 + minutes * 60 + (seconds || 0);
+            } else {
+              // 12-hour format with AM/PM
+              const timeWithoutAMPM = timeStr12Hour.replace(/AM|PM/g, '').trim();
+              const timeParts = timeWithoutAMPM.split(':');
+              
+              if (timeParts.length < 2) {
+                console.warn('Invalid 12-hour time format:', timeStr);
+                return 0;
+              }
+              
+              let [hours, minutes, seconds] = timeParts.map(Number);
+              seconds = seconds || 0;
+              
+              if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+                console.warn('Invalid 12-hour time components:', { hours, minutes, seconds });
+                return 0;
+              }
+              
+              // Convert to 24-hour format
+              if (isPM && hours !== 12) {
+                hours += 12;
+              } else if (isAM && hours === 12) {
+                hours = 0;
+              }
+              
+              console.log(`Converted "${timeStr}" to 24-hour: ${hours}:${minutes}:${seconds}`);
+              
+              return hours * 3600 + minutes * 60 + seconds;
+            }
+          };
+          
+          try {
+            const startSeconds = parseTimeString(startTime);
+            const endSeconds = parseTimeString(endTime);
+            
+            console.log('Start seconds:', startSeconds, 'End seconds:', endSeconds);
+            
+            // Validate calculated seconds
+            if (startSeconds === 0 && endSeconds === 0) {
+              console.warn('Both start and end seconds are 0, invalid time data');
+              totalCompletedTime = 0;
+            } else {
+              // Handle case where end time is next day (crosses midnight)
+              if (endSeconds < startSeconds) {
+                // Add 24 hours to end time (next day)
+                totalCompletedTime = (endSeconds + 24 * 3600) - startSeconds;
+              } else {
+                totalCompletedTime = endSeconds - startSeconds;
+              }
+              
+              console.log('Calculated duration in seconds:', totalCompletedTime);
+              
+              // Ensure we have a positive duration
+              if (totalCompletedTime < 0 || isNaN(totalCompletedTime)) {
+                console.warn('Invalid duration calculated, setting to 0');
+                totalCompletedTime = 0;
+              }
+            }
+            
+          } catch (timeParseError) {
+            console.error('Error parsing time strings:', timeParseError);
+            totalCompletedTime = 0;
+          }
+        } else {
+          console.warn('Missing startTime or endTime in block time data');
+          totalCompletedTime = 0;
+        }
+      } catch (error) {
+        console.error('Error parsing block time data:', error);
+        totalCompletedTime = 0;
+      }
+    } else {
+      console.log('No block time data available for this task');
+      // For tasks without block time, we can set a default duration or leave as 0
+      totalCompletedTime = 0;
+    }
+
+    // Final validation to ensure totalCompletedTime is a valid number
+    if (isNaN(totalCompletedTime) || totalCompletedTime < 0) {
+      console.warn('Final validation failed, setting totalCompletedTime to 0');
+      totalCompletedTime = 0;
+    }
+
+    // For non-timer tasks, create achievement data
+    const achievementData = {
+      taskData: task,
+      totalPomodoros: 1, // Single task completion
+      completedPomodoros: 1,
+      totalBreaks: 0,
+      completedBreaks: 0,
+      totalShortBreaks: 0,
+      totalLongBreaks: 0,
+      completedShortBreaks: 0,
+      completedLongBreaks: 0,
+      selectedDate: selectedDate,
+      totalCompletedTime: totalCompletedTime,
+      completionDate: getCompletionDateString(selectedDate),
+      startTime: startTime,
+      endTime: endTime,
+      userName: user?.name || user?.email || 'User',
+    };
+
+    console.log('Final achievement data being passed:', {
+      ...achievementData,
+      totalCompletedTimeMinutes: Math.floor(totalCompletedTime / 60),
+      totalCompletedTimeFormatted: `${Math.floor(totalCompletedTime / 60)}m ${totalCompletedTime % 60}s`
+    });
+    
+    navigation.navigate('AchievementScreen', achievementData);
   };
 
   // FIXED: Toggle function with proper date handling and comprehensive debugging
@@ -526,6 +675,7 @@ const Home = () => {
       return;
     }
 
+    // UPDATED: Timer tasks handle their own completion screen - no achievement screen here
     if (task && task.type === 'timer') {
       console.log('Navigating to timer with selectedDate:', selectedDate);
       navigation.navigate('PomodoroTimerScreen', {
@@ -595,9 +745,9 @@ const Home = () => {
           [task.id]: completion,
         }));
 
-        // Show appreciation modal if completed
+        // UPDATED: Navigate to AchievementScreen instead of AppreciationModal
         if (newIsCompleted) {
-          setTimeout(() => showAppreciationModal(task), 300);
+          setTimeout(() => navigateToAchievementScreen(task), 300);
         }
 
         console.log(
@@ -718,11 +868,10 @@ const Home = () => {
         }));
       }, 200);
 
-      // Show appreciation modal if not already shown
-      const route = navigation.getState()?.routes?.find(r => r.name === 'Home');
-      if (!route?.params?.showAppreciation) {
+      // UPDATED: Navigate to AchievementScreen for non-timer tasks only
+      if (task.type !== 'timer') {
         setTimeout(() => {
-          showAppreciationModal(task);
+          navigateToAchievementScreen(task);
         }, 300);
       }
     } catch (error) {
@@ -773,7 +922,8 @@ const Home = () => {
             [selectedTask.id]: 4, // Completed state
           }));
 
-          setTimeout(() => showAppreciationModal(selectedTask), 300);
+          // UPDATED: Navigate to AchievementScreen instead of AppreciationModal
+          setTimeout(() => navigateToAchievementScreen(selectedTask), 300);
         } else {
           setCheckboxStates(prev => ({
             ...prev,
@@ -824,7 +974,7 @@ const Home = () => {
       checked={!!checkboxStates[item.id]}
       onToggle={() => toggleCheckbox(item.id)}
       isFirstItem={index === 0}
-      isGoalOfDay={item.Heading === 'Goal of the Day'}
+      isGoalOfDay={item.Heading === 'Create Challenge'}
     />
   );
 
@@ -914,6 +1064,7 @@ const Home = () => {
         onSwipeComplete={() => setModalVisible(false)}
         useNativeDriver>
         <View style={styles.modalContent}>
+          <StatusBar backgroundColor={colors.ModelBackground} barStyle="dark-content" />
           <FlatList
             data={modaltasks}
             keyExtractor={item => item.id}
@@ -933,18 +1084,6 @@ const Home = () => {
         taskTitle={selectedTask?.title}
         taskData={selectedTask}
         selectedDate={selectedDate}
-      />
-
-      <AppreciationModal
-        isVisible={isAppreciationVisible}
-        onClose={() => {
-          setAppreciationVisible(false);
-          setCompletedTask(null);
-        }}
-        taskTitle={completedTask?.title || ''}
-        streakCount={taskStreak}
-        isNewBestStreak={false}
-        nextAwardDays={7}
       />
 
       <DatePickerModal
@@ -1080,6 +1219,7 @@ const styles = StyleSheet.create({
   },
   bottomModal: {
     justifyContent: 'flex-end',
+    backgroundColor: colors.ModelBackground,
     margin: 0,
   },
   modalContent: {

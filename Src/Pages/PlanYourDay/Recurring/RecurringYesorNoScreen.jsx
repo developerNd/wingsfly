@@ -23,6 +23,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../Helper/Contants';
 import {taskService} from '../../../services/api/taskService';
 import {useAuth} from '../../../contexts/AuthContext';
+import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
 
 const RecurringYesorNoScreen = () => {
   const navigation = useNavigation();
@@ -116,7 +117,7 @@ const RecurringYesorNoScreen = () => {
   // Check if task label should be active
   const isTaskLabelActive = taskFocused || taskTitle.length > 0;
 
-  // Handle Next button press - UPDATE WITH VALIDATION
+  // UPDATED Handle Next button press with ReminderScheduler
   const handleNextPress = async () => {
     if (toastVisible) {
       hideToast();
@@ -186,10 +187,6 @@ const RecurringYesorNoScreen = () => {
         durationEnabled: !!durationData,
         durationData: durationData,
 
-        // Reminder settings
-        reminderEnabled: addReminder,
-        reminderData: reminderData,
-
         // Additional features (removed addPomodoro)
         addToGoogleCalendar: addToGoogleCalendar,
         isPendingTask: isPendingTask,
@@ -206,6 +203,25 @@ const RecurringYesorNoScreen = () => {
         progress: null,
       };
 
+      // ADD THIS NEW SECTION - Prepare reminder data for task
+      if (addReminder && reminderData) {
+        taskData.reminderEnabled = true;
+        taskData.reminderData = reminderData;
+
+        // Add schedule info needed for reminder calculations
+        taskData.startDate = startDate;
+        taskData.endDate = null; // No end date for recurring Yes/No
+        taskData.isEndDateEnabled = false;
+        taskData.blockTimeData = blockTimeData;
+        taskData.durationData = durationData;
+        taskData.frequencyType = 'Every Day'; // Default for recurring Yes/No
+        taskData.selectedWeekdays = [];
+        taskData.everyDays = 1;
+      } else {
+        taskData.reminderEnabled = false;
+        taskData.reminderData = null;
+      }
+
       console.log('Saving recurring Yes/No task data:', taskData);
 
       // Save to database
@@ -213,22 +229,62 @@ const RecurringYesorNoScreen = () => {
 
       console.log('Recurring Yes/No task saved successfully:', savedTask);
 
-      Alert.alert('Success', 'Recurring task created successfully!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [
-                {
-                  name: 'BottomTab',
-                  params: {newTaskCreated: true},
-                },
-              ],
-            });
+      // ADD THIS NEW SECTION - Schedule reminders after task is saved
+      let reminderMessage = '';
+      if (taskData.reminderEnabled && taskData.reminderData) {
+        try {
+          // Get user profile for personalized TTS
+          const userProfile = {
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
+            display_name: user?.user_metadata?.display_name,
+            user_metadata: user?.user_metadata,
+            email: user?.email,
+          };
+
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {
+                ...taskData,
+                userProfile: userProfile,
+              },
+              savedTask,
+            );
+
+          if (scheduledReminders.length > 0) {
+            reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
+            console.log('Scheduled reminders:', scheduledReminders);
+          }
+        } catch (reminderError) {
+          console.error('Error scheduling reminders:', reminderError);
+          // Don't fail the entire task creation if reminder scheduling fails
+          reminderMessage = ' (Note: Reminders could not be scheduled)';
+        }
+      }
+
+      // Update success alert to include reminder info
+      Alert.alert(
+        'Success',
+        `Recurring task created successfully!${reminderMessage}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [
+                  {
+                    name: 'BottomTab',
+                    params: {newTaskCreated: true},
+                  },
+                ],
+              });
+            },
           },
-        },
-      ]);
+        ],
+      );
     } catch (error) {
       console.error('Error saving recurring Yes/No task:', error);
       Alert.alert(
@@ -337,13 +393,12 @@ const RecurringYesorNoScreen = () => {
     setNote(noteText);
   };
 
-  // Handlers for reminder functionality
+  // UPDATED reminder handlers to match SchedulePreference pattern
   const handleReminderToggle = () => {
     if (addReminder) {
       setAddReminder(false);
       setReminderData(null);
     } else {
-      setAddReminder(true);
       setShowReminderModal(true);
     }
   };
@@ -355,9 +410,6 @@ const RecurringYesorNoScreen = () => {
 
   const handleReminderClose = () => {
     setShowReminderModal(false);
-    if (!reminderData) {
-      setAddReminder(false);
-    }
   };
 
   const renderToggle = (isEnabled, onToggle) => {
@@ -629,7 +681,7 @@ const RecurringYesorNoScreen = () => {
             <View style={styles.optionTextContainer}>
               <Text style={styles.addTitle}>Add a Reminder</Text>
               {reminderData && addReminder && (
-                <Text style={styles.optionSubtitle}>
+                <Text style={styles.optionSubtitle1}>
                   {reminderData.type === 'notification'
                     ? '🔔 Notification'
                     : reminderData.type === 'alarm'
@@ -943,6 +995,7 @@ const RecurringYesorNoScreen = () => {
         onClose={handleReminderClose}
         onSave={handleReminderSave}
         initialData={reminderData}
+        blockTimeData={blockTimeData}
       />
 
       {/* Note Modal */}
@@ -1151,6 +1204,13 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(-0.4),
+  },
+  optionSubtitle1: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(-0.4),
+    marginLeft: WP(3.5),
   },
   pendingSubtitle: {
     fontSize: FS(1.28),

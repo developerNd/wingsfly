@@ -24,7 +24,6 @@ import ItemInput from '../../Components/ItemInput';
 import SuccessConditionModal from '../../Components/SuccessModal';
 import {taskService} from '../../services/api/taskService';
 import {taskCompletionsService} from '../../services/api/taskCompletionsService';
-import AppreciationModal from '../../Components/AppreciationModal';
 import {useAuth} from '../../contexts/AuthContext';
 import {getCompletionDateString} from '../../utils/dateUtils';
 
@@ -61,7 +60,6 @@ const TaskEvaluationScreen = () => {
   const [showAllItems, setShowAllItems] = useState(false);
   const [checklistItems, setChecklistItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAppreciationVisible, setAppreciationVisible] = useState(false);
 
   // FIXED: Use consistent date formatting - exactly like numeric task
   const completionDate = React.useMemo(() => {
@@ -74,6 +72,172 @@ const TaskEvaluationScreen = () => {
     );
     return result;
   }, [selectedDate]);
+
+  // NEW: Navigate to AchievementScreen with task completion data
+  const navigateToAchievementScreen = task => {
+    // Calculate duration from block time if available
+    let startTime = null;
+    let endTime = null;
+    let totalCompletedTime = 0;
+
+    console.log('Processing checklist task for achievement screen:', {
+      title: task.title,
+      blockTimeEnabled: task.blockTimeEnabled,
+      blockTimeData: task.blockTimeData,
+      type: typeof task.blockTimeData
+    });
+
+    if (task.blockTimeEnabled && task.blockTimeData) {
+      try {
+        const blockTimeData = typeof task.blockTimeData === 'string' 
+          ? JSON.parse(task.blockTimeData) 
+          : task.blockTimeData;
+        
+        console.log('Parsed block time data:', blockTimeData);
+        
+        if (blockTimeData.startTime && blockTimeData.endTime) {
+          startTime = blockTimeData.startTime;
+          endTime = blockTimeData.endTime;
+          
+          console.log('Start time:', startTime, 'End time:', endTime);
+          
+          // FIXED: Better time parsing logic that handles 12-hour format with AM/PM
+          const parseTimeString = (timeStr) => {
+            if (!timeStr || typeof timeStr !== 'string') {
+              console.warn('Invalid time string:', timeStr);
+              return 0;
+            }
+            
+            // Handle 12-hour format with AM/PM
+            const timeStr12Hour = timeStr.trim().toUpperCase();
+            const isAM = timeStr12Hour.includes('AM');
+            const isPM = timeStr12Hour.includes('PM');
+            
+            if (!isAM && !isPM) {
+              // 24-hour format - existing logic
+              const timeParts = timeStr.split(':');
+              if (timeParts.length === 2) {
+                timeStr = `${timeStr}:00`; // Add seconds if missing
+              }
+              
+              const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+              
+              if (isNaN(hours) || isNaN(minutes) || isNaN(seconds || 0)) {
+                console.warn('Invalid time components:', { hours, minutes, seconds });
+                return 0;
+              }
+              
+              return hours * 3600 + minutes * 60 + (seconds || 0);
+            } else {
+              // 12-hour format with AM/PM
+              const timeWithoutAMPM = timeStr12Hour.replace(/AM|PM/g, '').trim();
+              const timeParts = timeWithoutAMPM.split(':');
+              
+              if (timeParts.length < 2) {
+                console.warn('Invalid 12-hour time format:', timeStr);
+                return 0;
+              }
+              
+              let [hours, minutes, seconds] = timeParts.map(Number);
+              seconds = seconds || 0;
+              
+              if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+                console.warn('Invalid 12-hour time components:', { hours, minutes, seconds });
+                return 0;
+              }
+              
+              // Convert to 24-hour format
+              if (isPM && hours !== 12) {
+                hours += 12;
+              } else if (isAM && hours === 12) {
+                hours = 0;
+              }
+              
+              console.log(`Converted "${timeStr}" to 24-hour: ${hours}:${minutes}:${seconds}`);
+              
+              return hours * 3600 + minutes * 60 + seconds;
+            }
+          };
+          
+          try {
+            const startSeconds = parseTimeString(startTime);
+            const endSeconds = parseTimeString(endTime);
+            
+            console.log('Start seconds:', startSeconds, 'End seconds:', endSeconds);
+            
+            // Validate calculated seconds
+            if (startSeconds === 0 && endSeconds === 0) {
+              console.warn('Both start and end seconds are 0, invalid time data');
+              totalCompletedTime = 0;
+            } else {
+              // Handle case where end time is next day (crosses midnight)
+              if (endSeconds < startSeconds) {
+                // Add 24 hours to end time (next day)
+                totalCompletedTime = (endSeconds + 24 * 3600) - startSeconds;
+              } else {
+                totalCompletedTime = endSeconds - startSeconds;
+              }
+              
+              console.log('Calculated duration in seconds:', totalCompletedTime);
+              
+              // Ensure we have a positive duration
+              if (totalCompletedTime < 0 || isNaN(totalCompletedTime)) {
+                console.warn('Invalid duration calculated, setting to 0');
+                totalCompletedTime = 0;
+              }
+            }
+            
+          } catch (timeParseError) {
+            console.error('Error parsing time strings:', timeParseError);
+            totalCompletedTime = 0;
+          }
+        } else {
+          console.warn('Missing startTime or endTime in block time data');
+          totalCompletedTime = 0;
+        }
+      } catch (error) {
+        console.error('Error parsing block time data:', error);
+        totalCompletedTime = 0;
+      }
+    } else {
+      console.log('No block time data available for this checklist task');
+      // For tasks without block time, we can set a default duration or leave as 0
+      totalCompletedTime = 0;
+    }
+
+    // Final validation to ensure totalCompletedTime is a valid number
+    if (isNaN(totalCompletedTime) || totalCompletedTime < 0) {
+      console.warn('Final validation failed, setting totalCompletedTime to 0');
+      totalCompletedTime = 0;
+    }
+
+    // For checklist tasks, create achievement data
+    const achievementData = {
+      taskData: task,
+      totalPomodoros: 1, // Single task completion
+      completedPomodoros: 1,
+      totalBreaks: 0,
+      completedBreaks: 0,
+      totalShortBreaks: 0,
+      totalLongBreaks: 0,
+      completedShortBreaks: 0,
+      completedLongBreaks: 0,
+      selectedDate: selectedDate,
+      totalCompletedTime: totalCompletedTime,
+      completionDate: getCompletionDateString(selectedDate),
+      startTime: startTime,
+      endTime: endTime,
+      userName: user?.name || user?.email || 'User',
+    };
+
+    console.log('Final checklist achievement data being passed:', {
+      ...achievementData,
+      totalCompletedTimeMinutes: Math.floor(totalCompletedTime / 60),
+      totalCompletedTimeFormatted: `${Math.floor(totalCompletedTime / 60)}m ${totalCompletedTime % 60}s`
+    });
+    
+    navigation.navigate('AchievementScreen', achievementData);
+  };
 
   // Load checklist completion data from task_completions table
   const loadChecklistCompletion = useCallback(async () => {
@@ -262,7 +426,7 @@ const TaskEvaluationScreen = () => {
     }
   };
 
-  // Complete function
+  // UPDATED: Complete function - navigate to AchievementScreen instead of AppreciationModal
   const handleComplete = async () => {
     if (isLoading) return;
 
@@ -281,7 +445,11 @@ const TaskEvaluationScreen = () => {
         );
 
         console.log(`TaskEvaluation - Task completed for ${completionDate}`);
-        setAppreciationVisible(true);
+        
+        // UPDATED: Navigate to AchievementScreen instead of showing AppreciationModal
+        setTimeout(() => {
+          navigateToAchievementScreen(taskData);
+        }, 300);
       } catch (error) {
         console.error('TaskEvaluation - Error saving completion:', error);
         Alert.alert('Error', 'Failed to save completion. Please try again.');
@@ -346,18 +514,6 @@ const TaskEvaluationScreen = () => {
   const handleFilterToggle = () => {
     setIsFilterMode(!isFilterMode);
     setShowAllItems(false);
-  };
-
-  const handleAppreciationClose = () => {
-    setAppreciationVisible(false);
-    animateOut(() => {
-      navigation.navigate('BottomTab', {
-        completedTaskId: taskId,
-        showAppreciation: false,
-        taskData: taskData,
-        completedDate: completionDate,
-      });
-    });
   };
 
   const handleFilterPress = () => {
@@ -635,15 +791,6 @@ const TaskEvaluationScreen = () => {
           visible={showSuccessModal}
           onClose={handleSuccessModalClose}
           onConfirm={handleSuccessConditionConfirm}
-        />
-
-        <AppreciationModal
-          isVisible={isAppreciationVisible}
-          onClose={handleAppreciationClose}
-          taskTitle={taskData?.title || 'Checklist Task'}
-          streakCount={taskData?.streakCount || 1}
-          isNewBestStreak={false}
-          nextAwardDays={7}
         />
       </View>
     </TouchableWithoutFeedback>

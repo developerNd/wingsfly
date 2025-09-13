@@ -8,6 +8,7 @@ import {
   Modal,
   ScrollView,
   Image,
+  StatusBar
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {HP, WP, FS} from '../utils/dimentions';
@@ -402,6 +403,7 @@ const YearDateSelector = ({
         animationType="fade"
         onRequestClose={handleClose}>
         <View style={styles.modalOverlay}>
+          <StatusBar backgroundColor={colors.ModelBackground} barStyle="dark-content" />
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Select a date</Text>
 
@@ -590,7 +592,7 @@ const styles = StyleSheet.create({
   // Enhanced Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(207, 207, 207, 0.5)',
+    backgroundColor: colors.ModelBackground,
     justifyContent: 'center',
     alignItems: 'center',
   },

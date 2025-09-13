@@ -69,11 +69,6 @@ const ItemInput = ({visible, onClose, onSave, initialNote = ''}) => {
       onRequestClose={onClose}
       presentationStyle="overFullScreen"
       statusBarTranslucent={true}>
-      <StatusBar
-        backgroundColor={colors.ModelBackground}
-        barStyle="light-content"
-        translucent={true}
-      />
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>

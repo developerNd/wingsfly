@@ -23,7 +23,7 @@ const EvaluateProgress = () => {
       return 4;
     } else if (type === 'Recurring') {
       return 2;
-    } else if (type === 'Task' || type === 'Goal') {
+    } else if (type === 'Task') {
       return 2;
     }
     return 4;
@@ -117,23 +117,6 @@ const EvaluateProgress = () => {
           break;
         default:
           console.log('Unknown option type for Task:', optionType);
-      }
-    } else if (type === 'Goal') {
-      switch (optionType) {
-        case 'yesNo':
-          navigation.navigate('GoalTaskScreen', navigationData);
-          break;
-        case 'timer':
-          navigation.navigate('GoalTaskScreen', navigationData);
-          break;
-        case 'checklist':
-          navigation.navigate('GoalTaskScreen', navigationData);
-          break;
-        case 'numeric':
-          navigation.navigate('GoalTaskScreen', navigationData);
-          break;
-        default:
-          console.log('Unknown option type for Goal:', optionType);
       }
     } else {
       console.log('Unknown type:', type);

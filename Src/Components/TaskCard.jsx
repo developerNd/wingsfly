@@ -86,11 +86,7 @@ const TaskCard = ({
           </View>
         );
       case 'yesNo':
-        return (
-          <View style={styles.staticCircle}>
-            <Icon name="check" size={WP(3.2)} color={colors.Black} />
-          </View>
-        );
+        return <View style={styles.staticCircle}></View>;
       case 'checklist':
         return (
           <View style={styles.staticCircle}>
@@ -116,7 +112,7 @@ const TaskCard = ({
     );
   };
 
-  // UPDATED: Enhanced function to determine if task is in progress based on completion data
+  // FIXED: Enhanced function to determine if task is in progress based on completion data
   const isTaskInProgress = () => {
     const completion = taskCompletions?.[item.id];
 
@@ -125,17 +121,75 @@ const TaskCard = ({
     // If task is already completed, don't show in-progress
     if (completion.is_completed === true) return false;
 
+    console.log(
+      'TaskCard - Checking progress for task:',
+      item.id,
+      'completion:',
+      completion,
+    );
+
     switch (item.type) {
       case 'timer':
-        // UPDATED: Timer is in progress if:
-        // 1. Timer value exists and is greater than 0 (some time has been tracked)
+        // FIXED: Timer is in progress if:
+        // 1. Timer value exists and has progress data
         // 2. Task is not marked as completed
-        // Check both timer_value (seconds) and timer_minutes for backward compatibility
-        const timerValueSeconds = completion.timer_value || 0;
-        const timerValueMinutes = completion.timer_minutes || 0;
-        const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
 
-        return totalTimerValue > 0 && !completion.is_completed;
+        // Handle both old format (simple number) and new format (object)
+        if (
+          typeof completion.timer_value === 'object' &&
+          completion.timer_value !== null
+        ) {
+          // New format - check for any actual progress
+          const timerData = completion.timer_value;
+          const totalSeconds =
+            timerData.totalSeconds || timerData.actualCompletedTime || 0;
+          const currentTime = timerData.currentTime || 0;
+          const completedPomodoros = timerData.completedPomodoros || 0;
+          const completedBreaks = timerData.completedBreaks || 0;
+          const currentSessionIndex = timerData.currentSessionIndex || 0;
+
+          // Show in-progress if:
+          // - Has completed time OR current session time > 0
+          // - OR has completed any pomodoros/breaks
+          // - OR has progressed through sessions
+          // - AND not fully completed
+          const hasProgress =
+            totalSeconds > 0 ||
+            currentTime > 0 ||
+            completedPomodoros > 0 ||
+            completedBreaks > 0 ||
+            currentSessionIndex > 0;
+          const isNotFullyCompleted = !timerData.isFullyCompleted;
+
+          console.log('TaskCard - Timer progress check:', {
+            hasProgress,
+            isNotFullyCompleted,
+            totalSeconds,
+            currentTime,
+            completedPomodoros,
+            completedBreaks,
+            currentSessionIndex,
+            isFullyCompleted: timerData.isFullyCompleted,
+            finalResult:
+              hasProgress && isNotFullyCompleted && !completion.is_completed,
+          });
+
+          return hasProgress && isNotFullyCompleted && !completion.is_completed;
+        } else {
+          // Old format - simple number check for backward compatibility
+          const timerValueSeconds = completion.timer_value || 0;
+          const timerValueMinutes = completion.timer_minutes || 0;
+          const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
+
+          console.log('TaskCard - Timer old format check:', {
+            timerValueSeconds,
+            timerValueMinutes,
+            totalTimerValue,
+            result: totalTimerValue > 0 && !completion.is_completed,
+          });
+
+          return totalTimerValue > 0 && !completion.is_completed;
+        }
 
       case 'numeric':
         // In progress if numeric_value > 0 but not completed
@@ -237,6 +291,7 @@ const TaskCard = ({
 
     // Check for in-progress state based on actual data
     if (isTaskInProgress()) {
+      console.log('TaskCard - Showing in-progress icon for task:', item.id);
       return getInProgressIcon();
     }
 
@@ -468,7 +523,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // UPDATED: In-progress state uses same background color as initial icons
+  // FIXED: In-progress state uses same background color as initial icons
   inProgressCircle: {
     width: WP(5.3),
     height: WP(5.3),

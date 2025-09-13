@@ -32,6 +32,8 @@ class MainApplication : Application(), ReactApplication {
               add(AppUsagePackage())
               add(RunningAppsPackage())
               add(PomodoroPackage())
+              // Add the AlarmPackage for native alarms
+              add(AlarmPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

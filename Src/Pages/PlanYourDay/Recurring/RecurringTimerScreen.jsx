@@ -29,6 +29,7 @@ import {HP, WP, FS} from '../../../utils/dimentions';
 import {colors, Icons} from '../../../Helper/Contants';
 import {taskService} from '../../../services/api/taskService';
 import {useAuth} from '../../../contexts/AuthContext';
+import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
 
 const RecurringTimerScreen = () => {
   const navigation = useNavigation();
@@ -384,10 +385,15 @@ const RecurringTimerScreen = () => {
     }
   };
 
-  // Handle Next button press
+  // UPDATED Handle Next button press with ReminderScheduler
   const handleNextPress = async () => {
     if (!validateForm()) {
       return;
+    }
+
+    // Hide any existing toast
+    if (toastVisible) {
+      hideToast();
     }
 
     // Check if user is authenticated
@@ -457,13 +463,6 @@ const RecurringTimerScreen = () => {
         durationEnabled: true,
         durationData: durationData, // Use manual duration from picker
 
-        // Reminder settings
-        reminderEnabled: addReminder,
-        reminderData: reminderData,
-
-        // Pomodoro settings
-        addPomodoro: addPomodoro,
-
         // Additional features
         addToGoogleCalendar: addToGoogleCalendar,
         isPendingTask: isPendingTask,
@@ -503,6 +502,25 @@ const RecurringTimerScreen = () => {
           pomodoroSettings.focusSessionsPerRound || 4;
       }
 
+      // ADD THIS NEW SECTION - Prepare reminder data for task
+      if (addReminder && reminderData) {
+        taskData.reminderEnabled = true;
+        taskData.reminderData = reminderData;
+
+        // Add schedule info needed for reminder calculations
+        taskData.startDate = startDate;
+        taskData.endDate = null; // No end date for recurring timer
+        taskData.isEndDateEnabled = false;
+        taskData.blockTimeData = blockTimeData;
+        taskData.durationData = durationData;
+        taskData.frequencyType = 'Every Day'; // Default for recurring timer
+        taskData.selectedWeekdays = [];
+        taskData.everyDays = 1;
+      } else {
+        taskData.reminderEnabled = false;
+        taskData.reminderData = null;
+      }
+
       console.log('Saving recurring task data:', taskData);
 
       // Save to database
@@ -510,22 +528,62 @@ const RecurringTimerScreen = () => {
 
       console.log('Recurring task saved successfully:', savedTask);
 
-      Alert.alert('Success', 'Recurring task created successfully!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [
-                {
-                  name: 'BottomTab',
-                  params: {newTaskCreated: true},
-                },
-              ],
-            });
+      // ADD THIS NEW SECTION - Schedule reminders after task is saved
+      let reminderMessage = '';
+      if (taskData.reminderEnabled && taskData.reminderData) {
+        try {
+          // Get user profile for personalized TTS
+          const userProfile = {
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
+            display_name: user?.user_metadata?.display_name,
+            user_metadata: user?.user_metadata,
+            email: user?.email,
+          };
+
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {
+                ...taskData,
+                userProfile: userProfile,
+              },
+              savedTask,
+            );
+
+          if (scheduledReminders.length > 0) {
+            reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
+            console.log('Scheduled reminders:', scheduledReminders);
+          }
+        } catch (reminderError) {
+          console.error('Error scheduling reminders:', reminderError);
+          // Don't fail the entire task creation if reminder scheduling fails
+          reminderMessage = ' (Note: Reminders could not be scheduled)';
+        }
+      }
+
+      // Update success alert to include reminder info
+      Alert.alert(
+        'Success',
+        `Recurring task created successfully!${reminderMessage}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [
+                  {
+                    name: 'BottomTab',
+                    params: {newTaskCreated: true},
+                  },
+                ],
+              });
+            },
           },
-        },
-      ]);
+        ],
+      );
     } catch (error) {
       console.error('Error saving recurring task:', error);
       Alert.alert(
@@ -626,12 +684,12 @@ const RecurringTimerScreen = () => {
     setNote(noteText);
   };
 
+  // UPDATED reminder handlers to match SchedulePreference pattern
   const handleReminderToggle = () => {
     if (addReminder) {
       setAddReminder(false);
       setReminderData(null);
     } else {
-      setAddReminder(true);
       setShowReminderModal(true);
     }
   };
@@ -643,9 +701,6 @@ const RecurringTimerScreen = () => {
 
   const handleReminderClose = () => {
     setShowReminderModal(false);
-    if (!reminderData) {
-      setAddReminder(false);
-    }
   };
 
   const handleLinkToGoalPress = () => {
@@ -1080,12 +1135,12 @@ const RecurringTimerScreen = () => {
 
         {/* Add a Reminder */}
         <View style={styles.optionContainer}>
-          <TouchableOpacity style={styles.optionRow}>
+          <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
             <View style={styles.optionLeft}>
               <View style={styles.optionTextContainer}>
                 <Text style={styles.addTitle}>Add a Reminder</Text>
                 {reminderData && addReminder && (
-                  <Text style={styles.optionSubtitle}>
+                  <Text style={styles.optionSubtitle1}>
                     {reminderData.type === 'notification'
                       ? '🔔 Notification'
                       : reminderData.type === 'alarm'
@@ -1097,7 +1152,9 @@ const RecurringTimerScreen = () => {
               </View>
             </View>
 
-            {renderToggle(addReminder, handleReminderToggle)}
+            <View style={styles.optionRight}>
+              {renderToggle(addReminder, handleReminderToggle)}
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -1108,16 +1165,18 @@ const RecurringTimerScreen = () => {
               styles.optionContainer,
               addToGoogleCalendar ? styles.noBottomBorder : null,
             ]}>
-            <TouchableOpacity style={styles.optionRow}>
+            <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
               <View style={styles.optionLeft}>
                 <View style={styles.optionTextContainer}>
                   <Text style={styles.optionTitle}>Add to Google Calendar</Text>
                 </View>
               </View>
 
-              {renderToggle(addToGoogleCalendar, () =>
-                setAddToGoogleCalendar(!addToGoogleCalendar),
-              )}
+              <View style={styles.optionRight}>
+                {renderToggle(addToGoogleCalendar, () =>
+                  setAddToGoogleCalendar(!addToGoogleCalendar),
+                )}
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -1185,6 +1244,7 @@ const RecurringTimerScreen = () => {
         onClose={handleReminderClose}
         onSave={handleReminderSave}
         initialData={reminderData}
+        blockTimeData={blockTimeData}
       />
 
       <NoteModal
@@ -1422,6 +1482,13 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(-0.4),
+  },
+  optionSubtitle1: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(-0.4),
+    marginLeft: WP(3),
   },
   pomodoroDuration: {
     fontSize: FS(1.3),

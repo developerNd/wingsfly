@@ -102,44 +102,8 @@ private val allowedSystemApps = setOf(
     "com.google.android.apps.assistant",
     "com.google.android.apps.duo",
     "com.google.android.apps.meetings",
-    "com.google.android.apps.classroom",
-    "com.google.android.apps.work.clouddpc",
-    "com.google.android.apps.work.oobconfig",
-    "com.google.android.apps.work.profile",
-    "com.google.android.apps.work.profilepolicy",
-    "com.google.android.apps.work.profilecontacts",
-    "com.google.android.apps.work.profilecalendar",
-    "com.google.android.apps.work.profilegmail",
-    "com.google.android.apps.work.profilegallery",
-    "com.google.android.apps.work.profileclock",
-    "com.google.android.apps.work.profileweather",
-    "com.google.android.apps.work.profilenews",
-    "com.google.android.apps.work.profilebooks",
-    "com.google.android.apps.work.profilemagazines",
-    "com.google.android.apps.work.profilemusic",
-    "com.google.android.apps.work.profilevideos",
-    "com.google.android.apps.work.profilemovies",
-    "com.google.android.apps.work.profilegames",
-    "com.google.android.apps.work.profilefitness",
-    "com.google.android.apps.work.profilehealth",
-    "com.google.android.apps.work.profilewallet",
-    "com.google.android.apps.work.profilepay",
-    "com.google.android.apps.work.profileshopping",
-    "com.google.android.apps.work.profiletravel",
-    "com.google.android.apps.work.profiletranslate",
-    "com.google.android.apps.work.profileassistant",
-    "com.google.android.apps.work.profileduo",
-    "com.google.android.apps.work.profilemeetings",
-    "com.google.android.apps.work.profileclassroom"
+    "com.google.android.apps.classroom"
 )
-
-enum class TimeFilter {
-    LAST_HOUR,
-    TODAY,
-    YESTERDAY,
-    LAST_7_DAYS,
-    LAST_30_DAYS
-}
 
 @ReactModule(name = "InstalledApps")
 class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
@@ -249,19 +213,32 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     @ReactMethod
     fun startLockService(promise: Promise) {
         try {
-            Log.d(TAG, "Starting lock service...")
-            val intent = Intent(reactApplicationContext, AppLockService::class.java)
+            Log.d(TAG, "Starting lock services...")
+            
+            // Start main AppLockService
+            val mainServiceIntent = Intent(reactApplicationContext, AppLockService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Log.d(TAG, "Using startForegroundService")
-                reactApplicationContext.startForegroundService(intent)
+                Log.d(TAG, "Using startForegroundService for AppLockService")
+                reactApplicationContext.startForegroundService(mainServiceIntent)
             } else {
-                Log.d(TAG, "Using startService")
-                reactApplicationContext.startService(intent)
+                Log.d(TAG, "Using startService for AppLockService")
+                reactApplicationContext.startService(mainServiceIntent)
             }
-            Log.d(TAG, "Lock service started successfully")
+            
+            // Start UsageLimitBlockingService
+            val usageServiceIntent = Intent(reactApplicationContext, UsageLimitBlockingService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Log.d(TAG, "Using startForegroundService for UsageLimitBlockingService")
+                reactApplicationContext.startForegroundService(usageServiceIntent)
+            } else {
+                Log.d(TAG, "Using startService for UsageLimitBlockingService")
+                reactApplicationContext.startService(usageServiceIntent)
+            }
+            
+            Log.d(TAG, "Both lock services started successfully")
             promise.resolve(true)
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting service: ${e.message}", e)
+            Log.e(TAG, "Error starting services: ${e.message}", e)
             promise.reject("ERROR", e.message)
         }
     }
@@ -287,6 +264,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
     }
 
     private fun hasUsageStatsPermission(): Boolean {
+    return try {
         val appOps = reactApplicationContext.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             appOps.unsafeCheckOpNoThrow(
@@ -301,8 +279,15 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                 reactApplicationContext.packageName
             )
         }
-        return mode == AppOpsManager.MODE_ALLOWED
+        
+        val hasPermission = mode == AppOpsManager.MODE_ALLOWED
+        Log.d(TAG, "Usage stats permission check: $hasPermission (mode: $mode)")
+        return hasPermission
+    } catch (e: Exception) {
+        Log.e(TAG, "Error checking usage stats permission: ${e.message}", e)
+        false
     }
+}
 
     @ReactMethod
     fun openOverlaySettings(promise: Promise) {
@@ -330,6 +315,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
         }
     }
 
+    // SCHEDULE METHODS
     @ReactMethod
     fun setAppSchedule(packageName: String, schedulesArray: ReadableArray, promise: Promise) {
         try {
@@ -483,6 +469,548 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
         }
     }
 
+    @ReactMethod
+    fun setAllSchedulesEnabled(packageName: String, enabled: Boolean, promise: Promise) {
+        try {
+            Log.d(TAG, "Setting all schedules for $packageName to enabled=$enabled")
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            
+            // Get the existing schedules
+            val schedulesJson = prefs.getString("schedule_$packageName", null)
+            
+            if (schedulesJson == null) {
+                // No schedules found
+                Log.d(TAG, "No schedules found for: $packageName")
+                promise.resolve(false)
+                return
+            }
+            
+            // Parse the schedules
+            val schedulesJsonArray = JSONArray(schedulesJson)
+            
+            // Create a new array with updated enabled status
+            val updatedJsonArray = JSONArray()
+            
+            for (i in 0 until schedulesJsonArray.length()) {
+                val scheduleJson = schedulesJsonArray.getJSONObject(i)
+                
+                // Update the enabled flag
+                scheduleJson.put("enabled", enabled)
+                
+                // Add to the new array
+                updatedJsonArray.put(scheduleJson)
+            }
+            
+            // Save the updated schedules
+            val schedulesPrefs = prefs.edit()
+            schedulesPrefs.putString("schedule_$packageName", updatedJsonArray.toString())
+            schedulesPrefs.apply()
+            
+            Log.d(TAG, "Schedules updated for $packageName: enabled=$enabled")
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting schedule enabled state: ${e.message}", e)
+            promise.reject("ERROR", e.message)
+        }
+    }
+
+    // USAGE LIMIT METHODS - Enhanced with better tracking
+    @ReactMethod
+fun setAppUsageLimit(packageName: String, limitMinutes: Int, promise: Promise) {
+    try {
+        Log.d(TAG, "Setting usage limit for $packageName: $limitMinutes minutes")
+        
+        if (limitMinutes <= 0) {
+            promise.reject("INVALID_LIMIT", "Usage limit must be greater than 0")
+            return
+        }
+        
+        if (limitMinutes > 1440) { // 24 hours
+            promise.reject("INVALID_LIMIT", "Usage limit cannot exceed 24 hours")
+            return
+        }
+        
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        
+        // Get current usage to check if we should reset the limit reached flag
+        val todayDate = getTodayDateString()
+        val savedDate = prefs.getString("usage_date_$packageName", "")
+        val currentUsage = if (savedDate == todayDate) {
+            prefs.getLong("usage_today_$packageName", 0L)
+        } else {
+            0L
+        }
+        
+        // Save the usage limit
+        val editor = prefs.edit()
+        editor.putLong("usage_limit_$packageName", limitMinutes.toLong())
+        
+        // IMPORTANT: Reset the limit reached flag if current usage is below new limit
+        if (currentUsage < limitMinutes) {
+            Log.d(TAG, "Current usage ($currentUsage) is below new limit ($limitMinutes), resetting limit reached flag")
+            editor.putBoolean("usage_limit_reached_$packageName", false)
+        }
+        
+        editor.apply()
+        
+        Log.d(TAG, "Usage limit set successfully for $packageName")
+        promise.resolve(true)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error setting usage limit: ${e.message}", e)
+        promise.reject("ERROR", "Failed to set usage limit: ${e.message}")
+    }
+}
+
+    @ReactMethod
+    fun getAppUsageLimit(packageName: String, promise: Promise) {
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val limitMinutes = prefs.getLong("usage_limit_$packageName", 0L)
+            Log.d(TAG, "Got usage limit for $packageName: $limitMinutes minutes")
+            promise.resolve(limitMinutes.toInt())
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting usage limit: ${e.message}", e)
+            promise.reject("ERROR", "Failed to get usage limit: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+fun removeAppUsageLimit(packageName: String, promise: Promise) {
+    try {
+        Log.d(TAG, "Removing usage limit for $packageName")
+        
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove("usage_limit_$packageName")
+            .putBoolean("usage_limit_reached_$packageName", false) // Always reset when removing limit
+            .apply()
+        
+        Log.d(TAG, "Usage limit removed successfully for $packageName")
+        promise.resolve(true)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error removing usage limit: ${e.message}", e)
+        promise.reject("ERROR", "Failed to remove usage limit: ${e.message}")
+    }
+}
+
+    // Enhanced accurate usage tracking method
+    @ReactMethod
+fun getAppUsageToday(packageName: String, promise: Promise) {
+    try {
+        Log.d(TAG, "Getting usage today for: $packageName")
+        
+        // Check if we have usage stats permission first
+        if (!hasUsageStatsPermission()) {
+            Log.e(TAG, "Usage stats permission not granted")
+            promise.resolve(0)
+            return
+        }
+        
+        val usageStatsManager = reactApplicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        
+        // Get today's start time
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
+        val endTime = System.currentTimeMillis()
+        
+        Log.d(TAG, "Querying usage stats from ${Date(startTime)} to ${Date(endTime)}")
+        
+        // Query usage stats for today
+        val usageStats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startTime,
+            endTime
+        )
+        
+        if (usageStats.isNullOrEmpty()) {
+            Log.w(TAG, "No usage stats returned for today")
+            promise.resolve(0)
+            return
+        }
+        
+        // Find stats for the specific package
+        var totalForegroundTime = 0L
+        usageStats.forEach { stat ->
+            if (stat.packageName == packageName) {
+                totalForegroundTime += stat.totalTimeInForeground
+                Log.d(TAG, "Found usage for $packageName: ${stat.totalTimeInForeground}ms")
+            }
+        }
+        
+        // Convert to minutes
+        val usageMinutes = (totalForegroundTime / (1000 * 60)).toInt()
+        Log.d(TAG, "Total usage for $packageName today: ${usageMinutes} minutes")
+        
+        promise.resolve(usageMinutes)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error getting usage today: ${e.message}", e)
+        promise.resolve(0)
+    }
+}
+
+@ReactMethod
+fun getRealTimeUsageToday(packageName: String, promise: Promise) {
+    try {
+        Log.d(TAG, "Getting real-time usage for: $packageName")
+        
+        if (!hasUsageStatsPermission()) {
+            Log.e(TAG, "Usage stats permission not granted")
+            promise.resolve(0)
+            return
+        }
+        
+        // Get usage from system UsageStats
+        val systemUsage = getSystemUsageForToday(packageName)
+        
+        // Get any additional tracked usage from SharedPreferences
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        val todayDate = getTodayDateString()
+        val savedDate = prefs.getString("usage_date_$packageName", "")
+        
+        val storedUsage = if (savedDate == todayDate) {
+            prefs.getLong("usage_today_$packageName", 0L)
+        } else {
+            0L
+        }
+        
+        // Use the higher of the two values (system stats are more accurate)
+        val finalUsage = maxOf(systemUsage.toLong(), storedUsage)
+        
+        Log.d(TAG, "Real-time usage for $packageName: system=$systemUsage, stored=$storedUsage, final=$finalUsage")
+        
+        promise.resolve(finalUsage.toInt())
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error getting real-time usage: ${e.message}", e)
+        promise.resolve(0)
+    }
+}
+
+private fun getSystemUsageForToday(packageName: String): Int {
+    return try {
+        val usageStatsManager = reactApplicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
+        val endTime = System.currentTimeMillis()
+        
+        val usageStats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startTime,
+            endTime
+        )
+        
+        var totalTime = 0L
+        usageStats?.forEach { stat ->
+            if (stat.packageName == packageName) {
+                totalTime += stat.totalTimeInForeground
+            }
+        }
+        
+        (totalTime / (1000 * 60)).toInt() // Convert to minutes
+    } catch (e: Exception) {
+        Log.e(TAG, "Error getting system usage: ${e.message}", e)
+        0
+    }
+}
+
+
+    @ReactMethod
+    fun resetAppUsageToday(packageName: String, promise: Promise) {
+        try {
+            Log.d(TAG, "Resetting usage today for $packageName")
+            
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val todayDate = getTodayDateString()
+            prefs.edit()
+                .putLong("usage_today_$packageName", 0L)
+                .putString("usage_date_$packageName", todayDate)
+                .putBoolean("usage_limit_reached_$packageName", false) // Reset limit reached flag
+                .apply()
+            
+            Log.d(TAG, "Usage reset successfully for $packageName")
+            promise.resolve(true)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resetting usage: ${e.message}", e)
+            promise.reject("ERROR", "Failed to reset usage: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+fun isAppLimitReached(packageName: String, promise: Promise) {
+    try {
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        val limitMinutes = prefs.getLong("usage_limit_$packageName", 0L)
+        
+        if (limitMinutes <= 0) {
+            // No limit set
+            promise.resolve(false)
+            return
+        }
+        
+        val todayDate = getTodayDateString()
+        val savedDate = prefs.getString("usage_date_$packageName", "")
+        
+        if (savedDate != todayDate) {
+            // New day, reset everything
+            prefs.edit()
+                .putLong("usage_today_$packageName", 0L)
+                .putString("usage_date_$packageName", todayDate)
+                .putBoolean("usage_limit_reached_$packageName", false)
+                .apply()
+            promise.resolve(false)
+            return
+        }
+        
+        val usageToday = prefs.getLong("usage_today_$packageName", 0L)
+        val isLimitReached = usageToday >= limitMinutes
+        
+        // IMPORTANT: Always update the limit reached flag based on current status
+        val currentFlag = prefs.getBoolean("usage_limit_reached_$packageName", false)
+        if (currentFlag != isLimitReached) {
+            Log.d(TAG, "Updating limit reached flag for $packageName: $currentFlag -> $isLimitReached")
+            prefs.edit()
+                .putBoolean("usage_limit_reached_$packageName", isLimitReached)
+                .apply()
+        }
+        
+        Log.d(TAG, "Limit check for $packageName: usage=$usageToday, limit=$limitMinutes, reached=$isLimitReached")
+        promise.resolve(isLimitReached)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error checking if limit reached: ${e.message}", e)
+        promise.resolve(false)
+    }
+}
+
+// NEW: Method to force re-evaluation of blocking status
+@ReactMethod
+fun reevaluateAppBlockingStatus(packageName: String, promise: Promise) {
+    try {
+        Log.d(TAG, "Re-evaluating blocking status for $packageName")
+        
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        
+        // Force re-check usage limit status
+        val limitMinutes = prefs.getLong("usage_limit_$packageName", 0L)
+        if (limitMinutes > 0) {
+            val todayDate = getTodayDateString()
+            val savedDate = prefs.getString("usage_date_$packageName", "")
+            val usageToday = if (savedDate == todayDate) {
+                prefs.getLong("usage_today_$packageName", 0L)
+            } else {
+                0L
+            }
+            
+            val shouldBeReached = usageToday >= limitMinutes
+            prefs.edit()
+                .putBoolean("usage_limit_reached_$packageName", shouldBeReached)
+                .apply()
+            
+            Log.d(TAG, "Updated limit reached status for $packageName: $shouldBeReached")
+        }
+        
+        // Now check if app should be locked
+        val shouldLock = shouldAppBeLockedInternal(packageName)
+        promise.resolve(shouldLock)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error re-evaluating blocking status: ${e.message}", e)
+        promise.reject("ERROR", "Failed to re-evaluate blocking status: ${e.message}")
+    }
+}
+
+// HELPER: Internal method for shouldAppBeLocked logic (reusable)
+private fun shouldAppBeLockedInternal(packageName: String): Boolean {
+    try {
+        Log.d(TAG, "Checking if app should be locked: $packageName")
+        
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        
+        // PRIORITY 1: Check usage limit first (most critical)
+        val limitMinutes = prefs.getLong("usage_limit_$packageName", 0L)
+        if (limitMinutes > 0) {
+            val todayDate = getTodayDateString()
+            val savedDate = prefs.getString("usage_date_$packageName", "")
+            
+            if (savedDate == todayDate) {
+                val usageToday = prefs.getLong("usage_today_$packageName", 0L)
+                val shouldBeReached = usageToday >= limitMinutes
+                
+                // Update the flag to match current reality
+                prefs.edit().putBoolean("usage_limit_reached_$packageName", shouldBeReached).apply()
+                
+                if (shouldBeReached) {
+                    Log.d(TAG, "$packageName should be locked due to usage limit: ${usageToday}min >= ${limitMinutes}min")
+                    return true
+                }
+            } else {
+                // New day, reset usage data
+                prefs.edit()
+                    .putLong("usage_today_$packageName", 0L)
+                    .putString("usage_date_$packageName", todayDate)
+                    .putBoolean("usage_limit_reached_$packageName", false)
+                    .apply()
+            }
+        }
+        
+        // PRIORITY 2: Check if Pomodoro mode is active and should block this app
+        val isPomodoroMode = prefs.getBoolean("pomodoro_mode", false)
+        val isPaused = prefs.getBoolean("pomodoro_paused", false)
+        val isPomodoroActive = isPomodoroMode && !isPaused
+        
+        if (isPomodoroActive) {
+            val excludedApps = prefs.getStringSet("pomodoro_excluded_apps", setOf()) ?: setOf()
+            
+            val neverBlockApps = setOf(
+                "com.android.systemui",
+                "com.android.launcher",
+                "com.android.launcher2", 
+                "com.android.launcher3",
+                "com.google.android.dialer",
+                "com.android.dialer",
+                "com.android.phone",
+                "com.android.emergency",
+                "com.android.settings",
+                "com.wingsfly",
+                reactApplicationContext.packageName
+            )
+            
+            if (!neverBlockApps.contains(packageName) && !excludedApps.contains(packageName)) {
+                try {
+                    val packageManager = reactApplicationContext.packageManager
+                    val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                    if ((appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0) {
+                        Log.d(TAG, "$packageName should be locked due to Pomodoro mode")
+                        return true
+                    }
+                } catch (e: Exception) {
+                    // If we can't check, err on the side of caution and don't block
+                }
+            }
+        }
+        
+        // PRIORITY 3: Check manual locks and schedules
+        val lockedApps = prefs.getStringSet("locked_apps", setOf()) ?: setOf()
+        
+        if (lockedApps.contains(packageName)) {
+            val schedulesJson = prefs.getString("schedule_$packageName", null)
+            if (schedulesJson != null) {
+                val shouldLock = shouldLockBySchedule(packageName, schedulesJson)
+                Log.d(TAG, "$packageName manual lock with schedule check: $shouldLock")
+                return shouldLock
+            } else {
+                Log.d(TAG, "$packageName should be locked (manual lock)")
+                return true
+            }
+        }
+        
+        // PRIORITY 4: Check if app should be locked by schedule only
+        val schedulesJson = prefs.getString("schedule_$packageName", null)
+        if (schedulesJson != null) {
+            val shouldLock = shouldLockBySchedule(packageName, schedulesJson)
+            Log.d(TAG, "$packageName schedule-only check: $shouldLock")
+            return shouldLock
+        }
+        
+        // App should not be locked
+        Log.d(TAG, "$packageName should not be locked")
+        return false
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error checking if app should be locked: ${e.message}", e)
+        return false
+    }
+}
+
+    @ReactMethod
+fun getAllAppsUsageToday(promise: Promise) {
+    try {
+        Log.d(TAG, "Getting usage data for all apps using system stats")
+        
+        if (!hasUsageStatsPermission()) {
+            Log.e(TAG, "Usage stats permission not granted for getAllAppsUsageToday")
+            promise.resolve(WritableNativeMap())
+            return
+        }
+        
+        val usageStatsManager = reactApplicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        
+        // Get today's range
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
+        val endTime = System.currentTimeMillis()
+        
+        Log.d(TAG, "Querying all usage stats from ${Date(startTime)} to ${Date(endTime)}")
+        
+        val usageStats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startTime,
+            endTime
+        )
+        
+        val result = WritableNativeMap()
+        val usageMap = mutableMapOf<String, Long>()
+        
+        // Aggregate usage stats
+        usageStats?.forEach { stat ->
+            if (stat.totalTimeInForeground > 0) {
+                usageMap[stat.packageName] = usageMap.getOrDefault(stat.packageName, 0L) + stat.totalTimeInForeground
+            }
+        }
+        
+        // Convert to minutes and add to result
+        usageMap.forEach { (packageName, timeMs) ->
+            val timeMinutes = (timeMs / (1000 * 60)).toInt()
+            if (timeMinutes > 0) {
+                result.putInt(packageName, timeMinutes)
+                Log.d(TAG, "Usage for $packageName: $timeMinutes minutes")
+            }
+        }
+        
+        Log.d(TAG, "Retrieved usage data for ${result.entryIterator.asSequence().count()} apps")
+        promise.resolve(result)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error getting all apps usage: ${e.message}", e)
+        promise.resolve(WritableNativeMap())
+    }
+}
+    // Helper method to get today's date string
+    private fun getTodayDateString(): String {
+        val calendar = Calendar.getInstance()
+        return "${calendar.get(Calendar.YEAR)}-${calendar.get(Calendar.MONTH) + 1}-${calendar.get(Calendar.DAY_OF_MONTH)}"
+    }
+
+    // UPDATED shouldAppBeLocked method to include usage limits
+@ReactMethod
+fun shouldAppBeLocked(packageName: String, promise: Promise) {
+    try {
+        val shouldLock = shouldAppBeLockedInternal(packageName)
+        promise.resolve(shouldLock)
+    } catch (e: Exception) {
+        Log.e(TAG, "Error checking if app should be locked: ${e.message}", e)
+        promise.reject("ERROR", "Failed to check lock status: ${e.message}")
+    }
+}
+
     // Utility function to check if current time is in a time range
     fun isInTimeRange(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int, days: List<Int>): Boolean {
         val calendar = Calendar.getInstance()
@@ -510,30 +1038,6 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
         } else {
             // Normal range, e.g., 08:00-17:00
             currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes
-        }
-    }
-
-    @ReactMethod
-    fun shouldAppBeLocked(packageName: String, promise: Promise) {
-        try {
-            Log.d(TAG, "Checking if app should be locked: $packageName")
-            
-            // Get the app schedules if any
-            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-            val schedulesJson = prefs.getString("schedule_$packageName", null)
-            
-            if (schedulesJson != null) {
-                // App has schedules, check if it should be locked based on them
-                val isCurrentlyLocked = shouldLockBySchedule(packageName, schedulesJson)
-                promise.resolve(isCurrentlyLocked)
-                return
-            }
-            
-            // No schedules, so not locked
-            promise.resolve(false)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking if app should be locked: ${e.message}", e)
-            promise.reject("ERROR", e.message)
         }
     }
     
@@ -678,51 +1182,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
             return false
         }
     }
-
-    @ReactMethod
-    fun setAllSchedulesEnabled(packageName: String, enabled: Boolean, promise: Promise) {
-        try {
-            Log.d(TAG, "Setting all schedules for $packageName to enabled=$enabled")
-            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-            
-            // Get the existing schedules
-            val schedulesJson = prefs.getString("schedule_$packageName", null)
-            
-            if (schedulesJson == null) {
-                // No schedules found
-                Log.d(TAG, "No schedules found for: $packageName")
-                promise.resolve(false)
-                return
-            }
-            
-            // Parse the schedules
-            val schedulesJsonArray = JSONArray(schedulesJson)
-            
-            // Create a new array with updated enabled status
-            val updatedJsonArray = JSONArray()
-            
-            for (i in 0 until schedulesJsonArray.length()) {
-                val scheduleJson = schedulesJsonArray.getJSONObject(i)
-                
-                // Update the enabled flag
-                scheduleJson.put("enabled", enabled)
-                
-                // Add to the new array
-                updatedJsonArray.put(scheduleJson)
-            }
-            
-            // Save the updated schedules
-            val schedulesPrefs = prefs.edit()
-            schedulesPrefs.putString("schedule_$packageName", updatedJsonArray.toString())
-            schedulesPrefs.apply()
-            
-            Log.d(TAG, "Schedules updated for $packageName: enabled=$enabled")
-            promise.resolve(true)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting schedule enabled state: ${e.message}", e)
-            promise.reject("ERROR", e.message)
-        }
-    }
+    
 
     @ReactMethod
     fun getAppUsageData(filterType: String, promise: Promise) {
@@ -800,11 +1260,6 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
 
             Log.d(TAG, "Found ${usageStats?.size ?: 0} usage stats entries")
 
-            // Log WhatsApp specific stats
-            usageStats?.filter { it.packageName == "com.whatsapp" }?.forEach { stat ->
-                Log.d(TAG, "WhatsApp stats - Total time: ${stat.totalTimeInForeground}ms, Last used: ${stat.lastTimeUsed}")
-            }
-
             val appUsageMap = WritableNativeMap()
             val aggregatedStats = mutableMapOf<String, Long>()
 
@@ -815,9 +1270,6 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                     aggregatedStats.merge(stat.packageName, it) { a, b -> a + b }
                 }
             }
-
-            // Log WhatsApp aggregated stats
-            Log.d(TAG, "WhatsApp aggregated time: ${aggregatedStats["com.whatsapp"] ?: 0}ms")
 
             // Process all installed apps
             var appCount = 0
@@ -835,11 +1287,6 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
                     val totalMs = aggregatedStats[pkg] ?: 0L
                     // Convert milliseconds to minutes with 2 decimal places
                     val timeMinutes = (totalMs / 60000.0).let { "%.2f".format(it).toDouble() }
-
-                    // Log detailed usage for WhatsApp and YouTube
-                    if (pkg == "com.whatsapp" || pkg == "com.google.android.youtube") {
-                        Log.d(TAG, "$pkg usage - Total ms: $totalMs, Minutes: $timeMinutes")
-                    }
 
                     WritableNativeMap().apply {
                         putString("name", context.packageManager.getApplicationLabel(appInfo).toString())
@@ -867,7 +1314,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
         }
     }
 
-    // Pomodoro Exclusion Methods
+    // POMODORO EXCLUSION METHODS
     @ReactMethod
     fun setAppPomodoroExclusion(packageName: String, excluded: Boolean, promise: Promise) {
         try {

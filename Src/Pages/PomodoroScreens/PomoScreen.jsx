@@ -81,6 +81,10 @@ const PomoScreen = () => {
   const [excludedAppsCount, setExcludedAppsCount] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
+  // ADDED: Animation state and progress tracking
+  const [animationProgress, setAnimationProgress] = useState(0);
+  const [sessionStartTime, setSessionStartTime] = useState(0);
+
   // Refs for stable timer management
   const timerRef = useRef(null);
   const backgroundTimeRef = useRef(null);
@@ -93,6 +97,11 @@ const PomoScreen = () => {
   const sessionCompletionRef = useRef(false);
   // FIXED: Added continuous save interval
   const continuousSaveRef = useRef(null);
+
+  // ADDED: Animation refs for controlling Lottie animations
+  const timerAnimationRef = useRef(null);
+  const flowerAnimationRef = useRef(null);
+  const animationProgressRef = useRef(0);
 
   const completionDate = React.useMemo(() => {
     return getCompletionDateString(selectedDate);
@@ -154,6 +163,38 @@ const PomoScreen = () => {
     }
     return 120 * 60; // Default 2 hours
   }, [taskData]);
+
+  const updateAnimationProgress = useCallback(() => {
+    if (targetTime <= 0) {
+      setAnimationProgress(0);
+      animationProgressRef.current = 0;
+      return;
+    }
+
+    const timerProgress = Math.min(Math.max(currentTime / targetTime, 0), 1);
+
+    // Map timer progress (0-100%) to animation progress (0-83%)
+    const animationProgress = timerProgress * 0.83;
+
+    setAnimationProgress(animationProgress);
+    animationProgressRef.current = animationProgress;
+
+    console.log('Animation progress updated:', {
+      currentTime,
+      targetTime,
+      progress: Math.round(timerProgress * 100) + '%',
+      animationFrame: Math.round(animationProgress * 100) + '%',
+    });
+  }, [currentTime, targetTime]);
+
+  const resetAnimationsForNewSession = useCallback(() => {
+    setAnimationProgress(0);
+    animationProgressRef.current = 0;
+    setSessionStartTime(Date.now());
+
+    // Don't manually reset refs - React will handle it via props
+    console.log('Animations reset for new session');
+  }, []);
 
   // Calculate session structure
   const calculateSessionStructure = useCallback(() => {
@@ -375,7 +416,7 @@ const PomoScreen = () => {
           };
         }
 
-        // Enhanced timer value data with proper break tracking
+        // Enhanced timer value data with proper break tracking and animation progress
         const timerValueData = {
           totalSeconds: totalCompletedSeconds,
           completedPomodoros: currentCompletedPomodoros,
@@ -402,6 +443,9 @@ const PomoScreen = () => {
           isFullyCompleted: isCompleted,
           currentSessionType: currentSession?.type || 'focus',
           currentSessionSubType: currentSession?.subType || null,
+          // ADDED: Save animation progress
+          animationProgress: animationProgressRef.current,
+          sessionStartTime: sessionStartTime,
         };
 
         console.log('Saving timer completion:', {
@@ -415,6 +459,7 @@ const PomoScreen = () => {
           sessionCompletionsCount: Object.keys(sessionCompletions).length,
           actualCompletedTime: totalCompletedSeconds,
           forceImmediate,
+          animationProgress: animationProgressRef.current,
         });
 
         await taskCompletionsService.upsertTimerCompletion(
@@ -450,6 +495,7 @@ const PomoScreen = () => {
       sessionStructure,
       isCompleted,
       isRunning,
+      sessionStartTime,
     ],
   );
 
@@ -529,6 +575,14 @@ const PomoScreen = () => {
         if (timerData.currentBreakType !== undefined) {
           setCurrentBreakType(timerData.currentBreakType);
         }
+        // ADDED: Restore animation progress
+        if (timerData.animationProgress !== undefined) {
+          setAnimationProgress(timerData.animationProgress);
+          animationProgressRef.current = timerData.animationProgress;
+        }
+        if (timerData.sessionStartTime !== undefined) {
+          setSessionStartTime(timerData.sessionStartTime);
+        }
 
         console.log('State RESTORED from database:', {
           currentSessionIndex: timerData.currentSessionIndex,
@@ -539,6 +593,7 @@ const PomoScreen = () => {
           completedShortBreaks: timerData.completedShortBreaks,
           completedLongBreaks: timerData.completedLongBreaks,
           isOnBreak: timerData.isOnBreak,
+          animationProgress: timerData.animationProgress,
         });
 
         initializationRef.current = true;
@@ -559,6 +614,10 @@ const PomoScreen = () => {
           setCurrentBreakType(firstSession.subType || 'short');
           setCurrentSessionIndex(0);
           setCurrentTime(0);
+          // ADDED: Initialize animation state for new session
+          setAnimationProgress(0);
+          setSessionStartTime(Date.now());
+          animationProgressRef.current = 0;
 
           initializationRef.current = true;
         }
@@ -567,6 +626,11 @@ const PomoScreen = () => {
 
     initializeSessionStructure();
   }, [taskData, calculateSessionStructure, loadTimerCompletion]);
+
+  // ADDED: Update animations when currentTime or targetTime changes
+  useEffect(() => {
+    updateAnimationProgress();
+  }, [currentTime, targetTime, updateAnimationProgress]);
 
   // CORE TIMER with better completion handling
   useEffect(() => {
@@ -668,6 +732,10 @@ const PomoScreen = () => {
     }
 
     console.log('Handling session completion');
+    console.log('Session completing - setting animation to 100%');
+    setAnimationProgress(1.0);
+    animationProgressRef.current = 1.0;
+
     setIsRunning(false);
     setIsTransitioning(true);
 
@@ -779,6 +847,9 @@ const PomoScreen = () => {
         isSessionCompleted: true,
         actualCompletedTime: totalTimeWithCurrentSession,
         isFullyCompleted: true,
+        // ADDED: Final animation state
+        animationProgress: 1, // Mark animations as complete
+        sessionStartTime: sessionStartTime,
       };
 
       // FIXED: Use custom save for final completion to ensure isCompleted flag
@@ -834,6 +905,9 @@ const PomoScreen = () => {
     setIsOnBreak(nextSession.type === 'break');
     setCurrentBreakType(nextSession.subType || 'short');
 
+    // ADDED: Reset animations for new session
+    resetAnimationsForNewSession();
+
     // Reset completion flag for next session
     sessionCompletionRef.current = false;
 
@@ -869,6 +943,8 @@ const PomoScreen = () => {
     navigation,
     taskId,
     user,
+    sessionStartTime,
+    resetAnimationsForNewSession,
   ]);
 
   // Pomodoro blocking management
@@ -1152,7 +1228,7 @@ const PomoScreen = () => {
 
     if (!newRunningState) {
       const totalTime = getTotalCompletedTime();
-      saveTimerCompletion(totalTime, false, null, true); 
+      saveTimerCompletion(totalTime, false, null, true);
     }
   }, [
     isRunning,
@@ -1180,11 +1256,9 @@ const PomoScreen = () => {
 
     console.log('Skipping session');
 
-    
     sessionCompletionRef.current = true;
     setCurrentTime(targetTime);
 
-    
     setTimeout(() => {
       handleSessionCompletion();
     }, 100);
@@ -1206,7 +1280,7 @@ const PomoScreen = () => {
 
     if (currentTime > 0) {
       const totalTime = getTotalCompletedTime();
-      await saveTimerCompletion(totalTime, false, null, true); 
+      await saveTimerCompletion(totalTime, false, null, true);
     }
 
     if (PomodoroModule) {
@@ -1322,6 +1396,16 @@ const PomoScreen = () => {
     }
   };
 
+  const handleTimerAnimationFinish = useCallback(() => {
+    console.log('Timer animation reached natural end - ignoring');
+    // Do nothing - let progress prop control the animation
+  }, []);
+
+  const handleFlowerAnimationFinish = useCallback(() => {
+    console.log('Flower animation reached natural end - ignoring');
+    // Do nothing - let progress prop control the animation
+  }, []);
+
   // Loading screen
   if (!isLoaded) {
     return (
@@ -1351,12 +1435,15 @@ const PomoScreen = () => {
 
           <View style={styles.timerContainer}>
             <LottieView
+              ref={timerAnimationRef}
               source={require('../../assets/animations/pomodoro-clock1.json')}
               style={styles.timerLottie}
-              autoPlay
-              loop
-              speed={isRunning ? 1 : 0.5}
+              autoPlay={false}
+              loop={false}
+              progress={animationProgress}
               resizeMode="contain"
+              onAnimationFinish={() => {}} // Empty function to prevent restarts
+              hardwareAccelerationAndroid={true}
             />
             <View style={styles.timerOverlay}>
               <Text style={[styles.timerText, {color: colors.White}]}>
@@ -1416,12 +1503,15 @@ const PomoScreen = () => {
         {/* Flower Area */}
         <View style={styles.flowerArea}>
           <LottieView
+            ref={flowerAnimationRef}
             source={require('../../assets/animations/flower-video-30sec-v1.json')}
             style={styles.flowerAnimation}
-            autoPlay
-            loop
-            speed={isRunning ? 1.2 : 0.6}
+            autoPlay={false}
+            loop={false}
+            progress={animationProgress}
             resizeMode="cover"
+            onAnimationFinish={() => {}} // Empty function to prevent restarts
+            hardwareAccelerationAndroid={true}
           />
         </View>
       </View>
@@ -1590,11 +1680,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
     marginVertical: HP(2),
-    marginBottom: HP(15.5),
+    marginBottom: HP(13),
   },
   flowerAnimation: {
     width: WP(90),
-    height: WP(80),
+    height: WP(85),
     zIndex: 2,
   },
   tabBarContainer: {

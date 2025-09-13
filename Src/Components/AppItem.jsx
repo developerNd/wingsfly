@@ -1,85 +1,179 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-} from 'react-native';
+import {View, Text, StyleSheet, Image, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
-const AppItem = ({ app, onSchedulePress, loading }) => {
+const AppItem = ({app, onSchedulePress, onUsageLimitPress, loading}) => {
   // Determine if app is actually locked right now based on schedule
-  const isActuallyLocked = app.isActuallyLocked !== undefined ? app.isActuallyLocked : app.isLocked;
-  
+  const isActuallyLocked =
+    app.isActuallyLocked !== undefined ? app.isActuallyLocked : app.isLocked;
+
   // Determine if app has schedules
   const hasSchedules = app.schedules && app.schedules.length > 0;
-  
+
   // Apps are always considered enabled when they have schedules
   const schedulesEnabled = hasSchedules;
-  
+
   // Determine if app is currently affected by a schedule that's active right now
   const hasActiveSchedule = hasSchedules && isActuallyLocked !== undefined;
 
   // Check if app is excluded from Pomodoro
   const isExcludedFromPomodoro = app.excludeFromPomodoro === true;
 
+  // Usage limit helpers
+  const formatUsageTime = minutes => {
+    if (minutes < 60) {
+      return `${minutes}m`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (remainingMinutes === 0) {
+      return `${hours}h`;
+    }
+    return `${hours}h ${remainingMinutes}m`;
+  };
+
+  const hasUsageLimit = app.usageLimit > 0;
+  const isLimitReached = app.isLimitReached === true;
+  const usageToday = app.usageToday || 0;
+  const usageLimit = app.usageLimit || 0;
+
+  // Determine the primary lock status for display
+  const getLockStatus = () => {
+    if (isLimitReached) {
+      return {
+        type: 'usage_limit',
+        text: 'Usage limit reached',
+        color: '#F44336',
+      };
+    } else if (isActuallyLocked) {
+      return {type: 'schedule', text: 'Locked by schedule', color: '#2E7D32'};
+    } else if (hasSchedules) {
+      return {type: 'schedule', text: 'Unlocked by schedule', color: '#4CAF50'};
+    }
+    return null;
+  };
+
+  const lockStatus = getLockStatus();
+
   return (
-    <TouchableOpacity 
+    <View
       style={[
         styles.appItem,
         app.isDistractive && styles.distractiveAppItem,
-        hasActiveSchedule && styles.scheduledAppItem
-      ]}
-      onPress={() => !loading && onSchedulePress()}
-    >
-      <Image
-        source={{uri: `data:image/png;base64,${app.icon}`}}
-        style={styles.appIcon}
-      />
+        hasActiveSchedule && styles.scheduledAppItem,
+        isLimitReached && styles.limitReachedAppItem,
+      ]}>
+      <Image source={{uri: app.icon}} style={styles.appIcon} />
+
       <View style={styles.appInfoContainer}>
-        <View style={styles.appNameContainer}>
+        <View style={styles.appDetailsContainer}>
           <Text style={styles.appName} numberOfLines={1}>
             {app.name}
           </Text>
-          
-          {/* Tags container for better layout */}
+
+          {/* Usage information */}
+          {hasUsageLimit && (
+            <View style={styles.usageContainer}>
+              <Text
+                style={[
+                  styles.usageText,
+                  isLimitReached && styles.limitReachedText,
+                ]}>
+                {formatUsageTime(usageToday)} / {formatUsageTime(usageLimit)}
+              </Text>
+              {isLimitReached && (
+                <Icon
+                  name="hourglass-empty"
+                  size={14}
+                  color="#F44336"
+                  style={styles.limitIcon}
+                />
+              )}
+            </View>
+          )}
+
+          {/* Tags container */}
           <View style={styles.tagsContainer}>
             {app.isDistractive && (
               <View style={styles.distractiveTag}>
                 <Text style={styles.distractiveTagText}>Distractive</Text>
               </View>
             )}
-            
-            {hasSchedules && (
-              <View style={[styles.scheduleTag]}>
-                <Text style={styles.scheduleTagText}>
-                  {isActuallyLocked ? 'Locked by schedule' : 'Unlocked by schedule'}
-                </Text>
+
+            {lockStatus && (
+              <View
+                style={[
+                  styles.statusTag,
+                  lockStatus.type === 'usage_limit' && styles.usageLimitTag,
+                  lockStatus.type === 'schedule' &&
+                    isActuallyLocked &&
+                    styles.scheduleLockedTag,
+                  lockStatus.type === 'schedule' &&
+                    !isActuallyLocked &&
+                    styles.scheduleUnlockedTag,
+                ]}>
+                <Text style={styles.statusTagText}>{lockStatus.text}</Text>
+              </View>
+            )}
+
+            {isExcludedFromPomodoro && (
+              <View style={styles.pomodoroExcludeTag}>
+                <Icon name="timer-off" size={12} color="white" />
+                <Text style={styles.pomodoroExcludeTagText}>Excluded</Text>
               </View>
             )}
           </View>
         </View>
-        
+
         <View style={styles.actionButtons}>
-          {/* Pomodoro exclusion icon in action area */}
-          {isExcludedFromPomodoro && (
-            <View style={styles.pomodoroExcludeIcon}>
-              <Icon name="timer-off" size={20} color="#FF9800" />
-            </View>
-          )}
-          
-          {hasSchedules ? (
-            <Icon name="schedule" size={24} color="#2E7D32" />
-          ) : (
-            <View style={[styles.noSchedulesIndicator]}>
-              <Icon name="schedule" size={20} color="#757575" style={{ opacity: 0.5 }} />
-              <Text style={styles.noSchedulesText}>No Schedules</Text>
-            </View>
-          )}
+          {/* Usage Limit Button */}
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              styles.usageLimitButton,
+              hasUsageLimit && styles.activeUsageLimitButton,
+            ]}
+            onPress={() => !loading && onUsageLimitPress && onUsageLimitPress()}
+            disabled={loading}>
+            <Icon
+              name="timer"
+              size={20}
+              color={hasUsageLimit ? '#FF9800' : '#757575'}
+            />
+            {hasUsageLimit && (
+              <View style={styles.limitIndicator}>
+                <Text style={styles.limitIndicatorText}>
+                  {formatUsageTime(usageLimit)}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Schedule Button */}
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              styles.scheduleButton,
+              hasSchedules && styles.activeScheduleButton,
+            ]}
+            onPress={() => !loading && onSchedulePress()}
+            disabled={loading}>
+            <Icon
+              name="schedule"
+              size={20}
+              color={hasSchedules ? '#2E7D32' : '#757575'}
+            />
+            {hasSchedules && (
+              <View style={styles.scheduleIndicator}>
+                <Text style={styles.scheduleIndicatorText}>
+                  {app.schedules.length}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 
@@ -93,7 +187,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
@@ -109,7 +203,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  appNameContainer: {
+  appDetailsContainer: {
     flex: 1,
     flexDirection: 'column',
   },
@@ -118,6 +212,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#333',
     marginBottom: 4,
+  },
+  usageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  usageText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  limitReachedText: {
+    color: '#F44336',
+    fontWeight: '600',
+  },
+  limitIcon: {
+    marginLeft: 4,
   },
   tagsContainer: {
     flexDirection: 'row',
@@ -128,74 +239,123 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#FF5722',
   },
+  scheduledAppItem: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#2E7D32',
+  },
+  limitReachedAppItem: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F44336',
+  },
   distractiveTag: {
     backgroundColor: '#FF5722',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
     alignSelf: 'flex-start',
   },
   distractiveTagText: {
     color: 'white',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 'bold',
   },
-  scheduledAppItem: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#2E7D32',
-  },
-  scheduleTag: {
-    backgroundColor: '#2E7D32',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  statusTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
     alignSelf: 'flex-start',
   },
-  scheduleTagText: {
+  usageLimitTag: {
+    backgroundColor: '#F44336',
+  },
+  scheduleLockedTag: {
+    backgroundColor: '#2E7D32',
+  },
+  scheduleUnlockedTag: {
+    backgroundColor: '#4CAF50',
+  },
+  statusTagText: {
     color: 'white',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 'bold',
   },
   pomodoroExcludeTag: {
     backgroundColor: '#FF9800',
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
     borderRadius: 4,
     alignSelf: 'flex-start',
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    minWidth: 24,
+    gap: 2,
   },
   pomodoroExcludeTagText: {
     color: 'white',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 'bold',
-  },
-  disabledScheduleTag: {
-    backgroundColor: '#757575',
-  },
-  noSchedulesIndicator: {
-    backgroundColor: '#f5f5f5',
-    padding: 6,
-    borderRadius: 6,
-    marginLeft: 12,
-  },
-  noSchedulesText: {
-    color: '#757575',
-    fontSize: 12,
-    fontWeight: '500',
   },
   actionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  pomodoroExcludeIcon: {
-    padding: 6,
-    backgroundColor: '#FFF3E0',
-    borderRadius: 6,
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  usageLimitButton: {
+    // Base styles already defined
+  },
+  activeUsageLimitButton: {
+    backgroundColor: '#FFF3E0',
+    borderColor: '#FF9800',
+  },
+  limitIndicator: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#FF9800',
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+    minWidth: 14,
+    maxWidth: 30,
+  },
+  limitIndicatorText: {
+    color: 'white',
+    fontSize: 7,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  scheduleButton: {
+    // Base styles already defined
+  },
+  activeScheduleButton: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#2E7D32',
+  },
+  scheduleIndicator: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#2E7D32',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    minWidth: 16,
+  },
+  scheduleIndicatorText: {
+    color: 'white',
+    fontSize: 8,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
 

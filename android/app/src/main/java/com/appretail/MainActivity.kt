@@ -66,7 +66,7 @@ class MainActivity : ReactActivity() {
         Log.d(TAG, "MainActivity onCreate")
         
         // Check and request permissions
-        checkAndRequestPermissions()
+     //   checkAndRequestPermissions()
         
         // Ensure service is running
         ensureServiceIsRunning()

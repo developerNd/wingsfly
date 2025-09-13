@@ -24,6 +24,10 @@ import RecurringNumericScreen from '../Pages/PlanYourDay/Recurring/RecurringNume
 // Goal Task screens
 import GoalScreen from '../Pages/PlanYourDay/Goal/GoalScreen';
 
+// Challenge Task screens
+import ChallengeScreen from '../Pages/PlanYourDay/ChallengeScreens/ChallengeScreen';
+import ChallengeDetailScreen from '../Pages/ChallengesScreen/ChallengeDetailScreen';
+
 // Onboarding screens that should be accessible after login
 import Task from '../Pages/Onboarding/Task';
 import CategoryScreen from '../Pages/LongTermScreens/CategoryScreen';
@@ -43,18 +47,28 @@ import PomodoroSettings from '../Pages/PomodoroScreens/PomodoroSettings';
 import AchievementScreen from '../Pages/PomodoroScreens/AchievementScreen';
 
 import AppBlockerScreen from '../Pages/SettingsScreens/AppBlockerScreen';
+import AppUsageScreen from '../Pages/SettingsScreens/AppUsageScreen';
 
 const Stack = createNativeStackNavigator();
 
-function AppStack() {
+function AppStack({ route }) {
+  // Extract initial params from AuthStack navigation
+  const initialParams = route?.params;
+  
+  console.log('AppStack received params:', initialParams);
+
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
       }}
       initialRouteName={routes.TASKSLECTION_SCREEN}>
-      {/* Initial screen after login */}
-      <Stack.Screen name={routes.TASKSLECTION_SCREEN} component={Task} />
+      
+      <Stack.Screen 
+        name={routes.TASKSLECTION_SCREEN} 
+        component={Task}
+        initialParams={initialParams}
+      />
 
       {/* Long-term goal setup screens */}
       <Stack.Screen name="CategoryLongTerm" component={CategoryScreen} />
@@ -98,6 +112,10 @@ function AppStack() {
       {/* Goal TASK FLOW SCREEN */}
       <Stack.Screen name="GoalTaskScreen" component={GoalScreen} />
 
+      {/* Challenge TASK FLOW SCREEN */}
+      <Stack.Screen name="ChallengeScreen" component={ChallengeScreen} />
+      <Stack.Screen name="ChallengeDetailScreen" component={ChallengeDetailScreen} />
+
       {/* CheckList FLOW SCREENS */}
       <Stack.Screen
         name="TaskEvaluation"
@@ -120,11 +138,10 @@ function AppStack() {
       <Stack.Screen name="PomodoroSettings" component={PomodoroSettings} />
 
       <Stack.Screen name="AppBlockerScreen" component={AppBlockerScreen} />
+      <Stack.Screen name="AppUsageScreen" component={AppUsageScreen} />
 
       <Stack.Screen name="PomoScreen" component={PomoScreen} />
       <Stack.Screen name="AchievementScreen" component={AchievementScreen} />
-       
-
     </Stack.Navigator>
   );
 }

@@ -10,7 +10,11 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
 import DatePickerModal from '../../../Components/DatePickerModal';
 import BlockTimeModal from '../../../Components/BlockTime';
@@ -21,24 +25,27 @@ import CustomToast from '../../../Components/CustomToast';
 import {HP, WP, FS} from '../../../utils/dimentions';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../../../Helper/Contants';
-import { taskService } from '../../../services/api/taskService';
-import { useAuth } from '../../../contexts/AuthContext';
+import {taskService} from '../../../services/api/taskService';
+import {useAuth} from '../../../contexts/AuthContext';
+import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
 
 const GoalScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { user } = useAuth();
+  const {user} = useAuth();
 
   // Get category from route params (from CategorySelection screen)
-  const selectedCategory = route.params?.selectedCategory || { title: 'Work and Career' };
-  
+  const selectedCategory = route.params?.selectedCategory || {
+    title: 'Work and Career',
+  };
+
   // Get evaluation type from route params
   const evaluationType = route.params?.evaluationType || null;
 
   // Helper function to get category icon
-  const getCategoryIcon = (categoryName) => {
+  const getCategoryIcon = categoryName => {
     if (!categoryName) return Icons.Work;
-    
+
     const categoryImageMap = {
       'Work & Career': Icons.Work,
       'Work and Career': Icons.Work,
@@ -53,10 +60,10 @@ const GoalScreen = () => {
       'Personal & Growth': Icons.Growth,
       'Personal and Growth': Icons.Growth,
       'Other Goals': Icons.Other,
-      'Other': Icons.Other,
+      Other: Icons.Other,
       'Create a category': Icons.Create,
     };
-    
+
     return categoryImageMap[categoryName] || Icons.Work;
   };
 
@@ -115,22 +122,28 @@ const GoalScreen = () => {
     React.useCallback(() => {
       if (route.params) {
         const params = route.params;
-        
+
         // Restore all form data when returning from navigation
         if (params.taskTitle !== undefined) setTaskTitle(params.taskTitle);
         if (params.priority !== undefined) setPriority(params.priority);
         if (params.note !== undefined) setNote(params.note);
-        if (params.isPendingTask !== undefined) setIsPendingTask(params.isPendingTask);
-        if (params.addReminder !== undefined) setAddReminder(params.addReminder);
-        if (params.addToGoogleCalendar !== undefined) setAddToGoogleCalendar(params.addToGoogleCalendar);
+        if (params.isPendingTask !== undefined)
+          setIsPendingTask(params.isPendingTask);
+        if (params.addReminder !== undefined)
+          setAddReminder(params.addReminder);
+        if (params.addToGoogleCalendar !== undefined)
+          setAddToGoogleCalendar(params.addToGoogleCalendar);
         if (params.reminderData) setReminderData(params.reminderData);
-        
+
         // Restore date data
         if (params.startDate) {
-          const date = typeof params.startDate === 'string' ? new Date(params.startDate) : params.startDate;
+          const date =
+            typeof params.startDate === 'string'
+              ? new Date(params.startDate)
+              : params.startDate;
           setStartDate(date);
         }
-        
+
         // Restore schedule data (block time and duration)
         if (params.scheduleData) {
           if (params.scheduleData.blockTimeData) {
@@ -140,11 +153,11 @@ const GoalScreen = () => {
             setDurationData(params.scheduleData.durationData);
           }
         }
-        
+
         // Restore direct block time and duration data if available
         if (params.blockTimeData) setBlockTimeData(params.blockTimeData);
         if (params.durationData) setDurationData(params.durationData);
-        
+
         // Restore pomodoro settings and state
         if (params.pomodoroSettings) {
           setPomodoroSettings(params.pomodoroSettings);
@@ -243,7 +256,9 @@ const GoalScreen = () => {
       const durationForPomodoro = calculatedDuration || durationData;
 
       if (!durationForPomodoro) {
-        showToast('Please select a block time first to calculate duration for Pomodoro');
+        showToast(
+          'Please select a block time first to calculate duration for Pomodoro',
+        );
         return;
       }
 
@@ -281,7 +296,7 @@ const GoalScreen = () => {
     }
   };
 
-  // Handle Next button press - Save task to database
+  // UPDATED Handle Next button press with ReminderScheduler
   const handleNextPress = async () => {
     if (toastVisible) {
       hideToast();
@@ -324,7 +339,10 @@ const GoalScreen = () => {
       // Calculate duration from block time for pomodoro (not from manual duration)
       let finalDurationForPomodoro = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        finalDurationForPomodoro = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
+        finalDurationForPomodoro = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
       }
 
       // Prepare task data for database
@@ -335,7 +353,7 @@ const GoalScreen = () => {
         taskType: 'Task',
         evaluationType: evaluationType || 'yesNo', // Use passed evaluation type
         userId: user.id,
-        
+
         // Visual and display properties
         time: blockTimeData?.startTime || null,
         timeColor: '#E4EBF3',
@@ -343,22 +361,22 @@ const GoalScreen = () => {
         image: null,
         hasFlag: true,
         priority: priority || 'High',
-        
+
         // Task-specific data (minimal for basic tasks)
         numericValue: 0,
         numericGoal: null,
         numericUnit: null,
         numericCondition: 'At Least',
-        
+
         // Timer-specific data (minimal)
-        timerDuration: { hours: 0, minutes: 0, seconds: 0 },
+        timerDuration: {hours: 0, minutes: 0, seconds: 0},
         timerCondition: 'At Least',
-        
+
         // Checklist-specific data (minimal)
         checklistItems: null,
         successCondition: 'All Items',
         customItemsCount: 1,
-        
+
         // Repetition and frequency settings (one-time task)
         frequencyType: 'Once',
         selectedWeekdays: [],
@@ -372,37 +390,35 @@ const GoalScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-        
+
         // Scheduling settings
-        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
-        
+
         // Block time settings
         blockTimeEnabled: !!blockTimeData,
         blockTimeData: blockTimeData,
-        
+
         // Duration settings
         durationEnabled: !!durationData,
         durationData: durationData,
-        
-        // Reminder settings
-        reminderEnabled: addReminder || false,
-        reminderData: reminderData,
-        
+
         // Additional features
         addPomodoro: addPomodoro || false,
         addToGoogleCalendar: addToGoogleCalendar || false,
         isPendingTask: isPendingTask || false,
-        
+
         // Goal linking (not applicable)
         linkedGoalId: null,
         linkedGoalTitle: null,
         linkedGoalType: null,
-        
+
         // Notes
         note: note || '',
-        
+
         // Progress tracking
         progress: null,
       };
@@ -410,46 +426,103 @@ const GoalScreen = () => {
       // Add pomodoro settings if pomodoro is enabled - Use duration calculated from block time
       if (addPomodoro && pomodoroSettings) {
         // Use duration calculated from block time for pomodoro, not manual duration
-        taskData.pomodoroDuration = finalDurationForPomodoro ? finalDurationForPomodoro.totalMinutes : null;
-        
+        taskData.pomodoroDuration = finalDurationForPomodoro
+          ? finalDurationForPomodoro.totalMinutes
+          : null;
+
         // Store pomodoro settings
         taskData.focusDuration = pomodoroSettings.focusTime;
         taskData.shortBreakDuration = pomodoroSettings.shortBreak;
         taskData.longBreakDuration = pomodoroSettings.longBreak;
         taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
-        taskData.autoStartShortBreaks = pomodoroSettings.autoStartShortBreaks || false;
-        taskData.autoStartFocusSessions = pomodoroSettings.autoStartFocusSessions || false;
-        
+        taskData.autoStartShortBreaks =
+          pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions =
+          pomodoroSettings.autoStartFocusSessions || false;
+
         // Initialize pomodoro progress fields
         taskData.pomodoroSessionsCompleted = 0;
-        taskData.pomodoroTotalSessions = pomodoroSettings.focusSessionsPerRound || 4;
+        taskData.pomodoroTotalSessions =
+          pomodoroSettings.focusSessionsPerRound || 4;
+      }
+
+      // ADD THIS NEW SECTION - Prepare reminder data for task
+      if (addReminder && reminderData) {
+        taskData.reminderEnabled = true;
+        taskData.reminderData = reminderData;
+
+        // Add schedule info needed for reminder calculations
+        taskData.startDate = startDate;
+        taskData.endDate = null; // No end date for one-time goal task
+        taskData.isEndDateEnabled = false;
+        taskData.blockTimeData = blockTimeData;
+        taskData.durationData = durationData;
+        taskData.frequencyType = 'Once'; // One-time task
+        taskData.selectedWeekdays = [];
+        taskData.everyDays = null; // Not applicable for one-time tasks
+      } else {
+        taskData.reminderEnabled = false;
+        taskData.reminderData = null;
       }
 
       console.log('Saving task data:', taskData);
-      
+
       // Save to database
       const newTask = await taskService.createTask(taskData);
-      
-      Alert.alert(
-        'Success', 
-        'Task created successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate back to home with success flag
-              navigation.reset({
-                index: 0,
-                routes: [{ 
-                  name: 'BottomTab', 
-                  params: { newTaskCreated: true } 
-                }]
-              });
-            }
+
+      // ADD THIS NEW SECTION - Schedule reminders after task is saved
+      let reminderMessage = '';
+      if (taskData.reminderEnabled && taskData.reminderData) {
+        try {
+          // Get user profile for personalized TTS
+          const userProfile = {
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
+            display_name: user?.user_metadata?.display_name,
+            user_metadata: user?.user_metadata,
+            email: user?.email,
+          };
+
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {
+                ...taskData,
+                userProfile: userProfile,
+              },
+              newTask,
+            );
+
+          if (scheduledReminders.length > 0) {
+            reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
+            console.log('Scheduled reminders:', scheduledReminders);
           }
-        ]
-      );
-      
+        } catch (reminderError) {
+          console.error('Error scheduling reminders:', reminderError);
+          // Don't fail the entire task creation if reminder scheduling fails
+          reminderMessage = ' (Note: Reminders could not be scheduled)';
+        }
+      }
+
+      // Update success alert to include reminder info
+      Alert.alert('Success', `Task created successfully!${reminderMessage}`, [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Navigate back to home with success flag
+            navigation.reset({
+              index: 0,
+              routes: [
+                {
+                  name: 'BottomTab',
+                  params: {newTaskCreated: true},
+                },
+              ],
+            });
+          },
+        },
+      ]);
     } catch (error) {
       console.error('Error creating task:', error);
       Alert.alert('Error', 'Failed to create task. Please try again.');
@@ -536,20 +609,20 @@ const GoalScreen = () => {
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
-    
+
     // Automatically calculate duration from block time
     if (timeData && timeData.startTime && timeData.endTime) {
       const calculatedDuration = calculateDuration(
         timeData.startTime,
         timeData.endTime,
       );
-      
+
       // Update duration data if it's not manually set or if we want to override
       if (!durationData) {
         setDurationData(calculatedDuration);
       }
     }
-    
+
     // Hide toast when block time is saved
     if (toastVisible) {
       hideToast();
@@ -575,13 +648,12 @@ const GoalScreen = () => {
     setNote(noteText);
   };
 
-  // Handlers for reminder functionality
+  // UPDATED reminder handlers to match SchedulePreference pattern
   const handleReminderToggle = () => {
     if (addReminder) {
       setAddReminder(false);
       setReminderData(null);
     } else {
-      setAddReminder(true);
       setShowReminderModal(true);
     }
   };
@@ -593,9 +665,6 @@ const GoalScreen = () => {
 
   const handleReminderClose = () => {
     setShowReminderModal(false);
-    if (!reminderData) {
-      setAddReminder(false);
-    }
   };
 
   const renderToggle = (isEnabled, onToggle) => {
@@ -701,7 +770,8 @@ const GoalScreen = () => {
               <Text style={styles.optionTitle}>Duration</Text>
               {durationData && (
                 <Text style={styles.optionSubtitle}>
-                  {durationData.formattedDuration || `${durationData.hours}h ${durationData.minutes}m`}
+                  {durationData.formattedDuration ||
+                    `${durationData.hours}h ${durationData.minutes}m`}
                 </Text>
               )}
             </View>
@@ -926,7 +996,7 @@ const GoalScreen = () => {
             <View style={styles.optionTextContainer}>
               <Text style={styles.addTitle}>Add a Reminder</Text>
               {reminderData && addReminder && (
-                <Text style={styles.optionSubtitle}>
+                <Text style={styles.optionSubtitle1}>
                   {reminderData.type === 'notification'
                     ? '🔔 Notification'
                     : reminderData.type === 'alarm'
@@ -1087,9 +1157,13 @@ const GoalScreen = () => {
             </View>
 
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory?.title || 'Work and Career'}</Text>
+              <Text style={styles.categoryText}>
+                {selectedCategory?.title || 'Work and Career'}
+              </Text>
               <Image
-                source={getCategoryIcon(selectedCategory?.title || 'Work and Career')}
+                source={getCategoryIcon(
+                  selectedCategory?.title || 'Work and Career',
+                )}
                 style={styles.categoryIcon}
                 resizeMode="contain"
               />
@@ -1209,6 +1283,7 @@ const GoalScreen = () => {
         onClose={handleReminderClose}
         onSave={handleReminderSave}
         initialData={reminderData}
+        blockTimeData={blockTimeData}
       />
 
       {/* Note Modal */}
@@ -1417,6 +1492,13 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(-0.4),
+  },
+  optionSubtitle1: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(-0.4),
+    marginLeft: WP(3.5),
   },
   pomodoroDuration: {
     fontSize: FS(1.4),

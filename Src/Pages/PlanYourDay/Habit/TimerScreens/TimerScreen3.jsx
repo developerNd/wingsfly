@@ -26,6 +26,7 @@ import {colors, Icons} from '../../../../Helper/Contants';
 import {taskService} from '../../../../services/api/taskService';
 import {useAuth} from '../../../../contexts/AuthContext';
 import {prepareTaskData} from '../../../../utils/taskDataHelper';
+import ReminderScheduler from '../../../../services/notifications/ReminderScheduler';
 
 const SchedulePreference = () => {
   const navigation = useNavigation();
@@ -249,7 +250,7 @@ const SchedulePreference = () => {
     }
   };
 
-  // Handle Done button press with validation
+  // Replace ONLY your existing handleDonePress function with this:
   const handleDonePress = async () => {
     // Hide any existing toast
     if (toastVisible) {
@@ -262,7 +263,7 @@ const SchedulePreference = () => {
       return;
     }
 
-    // Validation checks
+    // Your existing validation checks (keep these as they are)
     if (!durationData) {
       showToast('Select a Duration');
       return;
@@ -273,18 +274,18 @@ const SchedulePreference = () => {
       return;
     }
 
-    // Additional validation for timer evaluation type
     if (isTimerEvaluation && !addPomodoro) {
       showToast('Select a Pomodoro Timer');
       return;
     }
 
-    // Validate pomodoro settings if pomodoro is enabled
     if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
       showToast('Please configure Pomodoro settings');
       return;
     }
+    
 
+    // Your existing schedule data preparation (keep this as is)
     const scheduleData = {
       startDate,
       endDate,
@@ -298,21 +299,18 @@ const SchedulePreference = () => {
       pomodoroSettings,
     };
 
-    // Serialize dates before combining with previous data
     const serializedScheduleData = serializeDatesForNavigation(scheduleData);
-
     const finalData = {
       ...previousData,
       scheduleData: serializedScheduleData,
     };
 
     try {
-      // Prepare task data for database using helper function
+      // Your existing task data preparation (keep this as is)
       const taskData = prepareTaskData(finalData, scheduleData, user.id);
 
-      // Add pomodoro settings if pomodoro is enabled
+      // Your existing pomodoro settings (keep this as is)
       if (addPomodoro && pomodoroSettings) {
-        // Calculate duration from block time if not available
         let finalDuration = durationData;
         if (
           !finalDuration &&
@@ -326,12 +324,10 @@ const SchedulePreference = () => {
           );
         }
 
-        // Use the calculated or existing duration for pomodoro duration
         taskData.pomodoroDuration = finalDuration
           ? finalDuration.totalMinutes
           : null;
 
-        // Store pomodoro settings
         taskData.focusDuration = pomodoroSettings.focusTime;
         taskData.shortBreakDuration = pomodoroSettings.shortBreak;
         taskData.longBreakDuration = pomodoroSettings.longBreak;
@@ -341,20 +337,73 @@ const SchedulePreference = () => {
         taskData.autoStartFocusSessions =
           pomodoroSettings.autoStartFocusSessions || false;
 
-        // Initialize pomodoro progress fields
         taskData.pomodoroSessionsCompleted = 0;
         taskData.pomodoroTotalSessions =
           pomodoroSettings.focusSessionsPerRound || 4;
       }
 
+      // ADD THIS NEW SECTION - Prepare reminder data for task
+      if (addReminder && reminderData) {
+        taskData.reminderEnabled = true;
+        taskData.reminderData = reminderData;
+
+        // Add schedule info needed for reminder calculations
+        taskData.startDate = startDate;
+        taskData.endDate = endDateSelected ? endDate : null;
+        taskData.isEndDateEnabled = endDateSelected;
+        taskData.blockTimeData = blockTimeData;
+        taskData.durationData = durationData;
+        taskData.frequencyType = finalData.frequencyType;
+        taskData.selectedWeekdays = finalData.selectedWeekdays;
+        taskData.everyDays = finalData.everyDays;
+      } else {
+        taskData.reminderEnabled = false;
+        taskData.reminderData = null;
+      }
+
       console.log('Saving task data:', taskData);
 
-      // Save to database
+      // Save to database (keep your existing save logic)
       const savedTask = await taskService.createTask(taskData);
-
       console.log('Task saved successfully:', savedTask);
 
-      Alert.alert('Success', 'Task created successfully!', [
+      // ADD THIS NEW SECTION - Schedule reminders after task is saved
+      let reminderMessage = '';
+      if (taskData.reminderEnabled && taskData.reminderData) {
+        try {
+          // Get user profile for personalized TTS
+          const userProfile = {
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
+            display_name: user?.user_metadata?.display_name,
+            user_metadata: user?.user_metadata,
+            email: user?.email,
+          };
+
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {
+                ...taskData,
+                userProfile: userProfile,
+              },
+              savedTask,
+            );
+
+          if (scheduledReminders.length > 0) {
+            reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
+            console.log('Scheduled reminders:', scheduledReminders);
+          }
+        } catch (reminderError) {
+          console.error('Error scheduling reminders:', reminderError);
+          // Don't fail the entire task creation if reminder scheduling fails
+          reminderMessage = ' (Note: Reminders could not be scheduled)';
+        }
+      }
+
+      // Update your success alert to include reminder info
+      Alert.alert('Success', `Task created successfully!${reminderMessage}`, [
         {
           text: 'OK',
           onPress: () => {
@@ -523,7 +572,6 @@ const SchedulePreference = () => {
       setAddReminder(false);
       setReminderData(null);
     } else {
-      setAddReminder(true);
       setShowReminderModal(true);
     }
   };
@@ -535,9 +583,6 @@ const SchedulePreference = () => {
 
   const handleReminderClose = () => {
     setShowReminderModal(false);
-    if (!reminderData) {
-      setAddReminder(false);
-    }
   };
 
   const renderToggle = (isEnabled, onToggle) => {
@@ -792,7 +837,7 @@ const SchedulePreference = () => {
             <View style={styles.optionTextContainer}>
               <Text style={styles.addTitle}>Add a Reminder</Text>
               {reminderData && addReminder && (
-                <Text style={styles.optionSubtitle}>
+                <Text style={styles.optionSubtitle1}>
                   {reminderData.type === 'notification'
                     ? '🔔 Notification'
                     : reminderData.type === 'alarm'
@@ -995,6 +1040,7 @@ const SchedulePreference = () => {
         onClose={handleReminderClose}
         onSave={handleReminderSave}
         initialData={reminderData}
+        blockTimeData={blockTimeData}
       />
 
       {/* Custom Toast */}
@@ -1106,6 +1152,13 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(-0.4),
+  },
+  optionSubtitle1: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(-0.4),
+    marginLeft: WP(2.3),
   },
   optionValue: {
     fontSize: FS(1.6),

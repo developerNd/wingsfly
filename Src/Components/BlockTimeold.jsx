@@ -9,6 +9,7 @@ import {
   Vibration,
   Animated,
   Platform,
+  StatusBar,
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
@@ -945,6 +946,10 @@ const BlockTimeModalOld = ({visible, onClose, onSave}) => {
       onRequestClose={onClose}
       hardwareAccelerated>
       <View style={styles.modalOverlay}>
+        <StatusBar
+          backgroundColor={colors.ModelBackground}
+          barStyle="dark-content"
+        />
         <View style={styles.modalContainer}>
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.cancelButton}>

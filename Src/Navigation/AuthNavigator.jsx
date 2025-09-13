@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text, StatusBar } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import AuthStack from './AuthStack';
 import AppStack from './AppStack';
@@ -20,9 +20,14 @@ const AuthNavigator = () => {
   if (showSplash || loading) {
     return (
       <View style={styles.container}>
+        <StatusBar 
+          backgroundColor="#FFFFFF" 
+          barStyle="dark-content" 
+          translucent={false}
+        />
         <View style={styles.logoContainer}>
           <Logo width={50} height={50} style={styles.logo} />
-          <Text style={styles.text}>wingsfly</Text>
+          <Text style={styles.text}>Wingsfly</Text>
         </View>
       </View>
     );
@@ -48,7 +53,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
   },
   logoContainer: {
     flexDirection: 'row',

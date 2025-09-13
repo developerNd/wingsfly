@@ -4,4 +4,32 @@
     <string name="accessibility_service_description">
         Helps detect which apps are running to enable app blocking functionality. No personal data is collected or transmitted.
     </string>
+
+    
+    <string name="alarm_title">Task Alarm</string>
+    <string name="alarm_message">Your scheduled task is ready</string>
+    <string name="alarm_notification_channel">Task Alarms</string>
+    <string name="alarm_notification_description">Critical alarm notifications for tasks</string>
+    
+    <!-- Alarm actions -->
+    <string name="snooze">Snooze</string>
+    <string name="snooze_5min">Snooze 5min</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="stop">Stop</string>
+    <string name="open">Open</string>
+    
+    <!-- Alarm messages -->
+    <string name="alarm_snoozed">Alarm snoozed for %d minutes</string>
+    <string name="alarm_dismissed">Alarm dismissed</string>
+    <string name="alarm_stopped">Alarm stopped</string>
+    
+    <!-- Error messages -->
+    <string name="alarm_error">Unable to set alarm</string>
+    <string name="alarm_permission_required">Alarm permission required</string>
+    <string name="alarm_permission_denied">Cannot set alarms without permission</string>
+    
+    <!-- Time format -->
+    <string name="time_format_24">HH:mm</string>
+    <string name="time_format_12">h:mm a</string>
+
 </resources>

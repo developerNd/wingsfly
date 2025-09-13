@@ -45,10 +45,23 @@ const OnBoard = () => {
     if (needsSetupCompletion) {
       try {
         await completeProfileSetup(selectedGender);
+        // After completing profile setup, the AuthNavigator will automatically
+        // redirect to AppStack because needsProfileSetup will become false
+        return;
       } catch (error) {
         console.error('Error completing profile setup:', error);
+        return;
       }
     }
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: routes.TASKSLECTION_SCREEN,
+          params: { selectedGender: selectedGender }
+        }
+      ],
+    });
   };
 
   return (

@@ -686,41 +686,91 @@ class AppLockService : Service() {
         }
     }
 
-    // Updated isAppLocked method to include Pomodoro check with exclusions
-    private fun isAppLocked(packageName: String): Boolean {
-        // First check if Pomodoro mode is active and should block all apps (with exclusions)
-        if (shouldBlockAllAppsForPomodoro(packageName)) {
-            Log.d(TAG, "$packageName is blocked due to Pomodoro mode")
-            return true
-        }
+    private fun getTodayDateString(): String {
+    val calendar = Calendar.getInstance()
+    return "${calendar.get(Calendar.YEAR)}-${calendar.get(Calendar.MONTH) + 1}-${calendar.get(Calendar.DAY_OF_MONTH)}"
+}
+
+    // Updated isAppLocked method in AppLockService to properly handle usage limits
+private fun isAppLocked(packageName: String): Boolean {
+    // PRIORITY 1: Check usage limit first (most important)
+    if (isAppUsageLimitReached(packageName)) {
+        Log.d(TAG, "$packageName is blocked due to usage limit reached")
+        return true
+    }
+    
+    // PRIORITY 2: Check if Pomodoro mode is active and should block all apps (with exclusions)
+    if (shouldBlockAllAppsForPomodoro(packageName)) {
+        Log.d(TAG, "$packageName is blocked due to Pomodoro mode")
+        return true
+    }
+    
+    // PRIORITY 3: Continue with existing logic for individually locked apps
+    val lockedApps = sharedPreferences.getStringSet("locked_apps", setOf()) ?: setOf()
+    Log.d(TAG, "Checking if $packageName is locked. Locked apps: ${lockedApps.joinToString()}")
+    
+    // First check if app is manually locked
+    if (lockedApps.contains(packageName)) {
+        Log.d(TAG, "$packageName is manually locked")
         
-        // Continue with existing logic for individually locked apps
-        val lockedApps = sharedPreferences.getStringSet("locked_apps", setOf()) ?: setOf()
-        Log.d("AppLock", "Checking if $packageName is locked. Locked apps: ${lockedApps.joinToString()}")
-        
-        // First check if app is manually locked
-        if (lockedApps.contains(packageName)) {
-            Log.d("AppLock", "$packageName is manually locked")
-            
-            // Check if there's a schedule that might unlock it
-            if (hasSchedule(packageName)) {
-                val shouldLock = shouldLockBySchedule(packageName)
-                Log.d("AppLock", "$packageName schedule check result: shouldLock=$shouldLock")
-                return shouldLock
-            }
-            
-            return true
-        }
-        
-        // App is not manually locked, check if it should be locked by schedule
+        // Check if there's a schedule that might unlock it
         if (hasSchedule(packageName)) {
             val shouldLock = shouldLockBySchedule(packageName)
-            Log.d("AppLock", "$packageName is not manually locked, schedule check: shouldLock=$shouldLock")
+            Log.d(TAG, "$packageName schedule check result: shouldLock=$shouldLock")
             return shouldLock
         }
         
+        return true
+    }
+    
+    // App is not manually locked, check if it should be locked by schedule
+    if (hasSchedule(packageName)) {
+        val shouldLock = shouldLockBySchedule(packageName)
+        Log.d(TAG, "$packageName is not manually locked, schedule check: shouldLock=$shouldLock")
+        return shouldLock
+    }
+    
+    return false
+}
+
+// IMPROVED usage limit checking method
+private fun isAppUsageLimitReached(packageName: String): Boolean {
+    val prefs = sharedPreferences
+    val limitMinutes = prefs.getLong("usage_limit_$packageName", 0L)
+    
+    if (limitMinutes <= 0) return false
+    
+    val todayDate = getTodayDateString()
+    val savedDate = prefs.getString("usage_date_$packageName", "")
+    
+    if (savedDate != todayDate) {
+        // New day, reset limit
+        prefs.edit()
+            .putLong("usage_today_$packageName", 0L)
+            .putString("usage_date_$packageName", todayDate)
+            .putBoolean("usage_limit_reached_$packageName", false)
+            .apply()
         return false
     }
+    
+    // First check if limit is explicitly marked as reached
+    val isLimitReached = prefs.getBoolean("usage_limit_reached_$packageName", false)
+    if (isLimitReached) {
+        Log.d(TAG, "$packageName usage limit reached flag is set")
+        return true
+    }
+    
+    // Also check actual usage vs limit as backup
+    val usageToday = prefs.getLong("usage_today_$packageName", 0L)
+    if (usageToday >= limitMinutes) {
+        Log.d(TAG, "$packageName usage limit exceeded: ${usageToday}min >= ${limitMinutes}min")
+        // Mark as reached if not already marked
+        prefs.edit().putBoolean("usage_limit_reached_$packageName", true).apply()
+        return true
+    }
+    
+    return false
+}
     
     private fun hasSchedule(packageName: String): Boolean {
         val schedulesJson = sharedPreferences.getString("schedule_$packageName", null)

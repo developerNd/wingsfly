@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   TextInput,
   StyleSheet,
-  StatusBar,
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
@@ -69,11 +68,6 @@ const NoteModal = ({visible, onClose, onSave, initialNote = ''}) => {
       onRequestClose={onClose}
       presentationStyle="overFullScreen"
       statusBarTranslucent={true}>
-      <StatusBar
-        backgroundColor={colors.ModelBackground}
-        barStyle="light-content"
-        translucent={true}
-      />
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Modal,
   Dimensions,
+  StatusBar,
 } from 'react-native';
 import {HP, WP, FS} from '../utils/dimentions';
 import {colors} from '../Helper/Contants';
@@ -168,6 +169,10 @@ const DatePickerModal = ({
       animationType="fade"
       onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
+        <StatusBar
+          backgroundColor={colors.ModelBackground}
+          barStyle="dark-content"
+        />
         <View style={styles.modalContainer}>
           {/* Header with selected date */}
           <View style={styles.header}>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Image,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import LottieView from 'lottie-react-native';
 import {WP, HP, FS} from '../../utils/dimentions';
 import {colors} from '../../Helper/Contants';
 import {useRoute} from '@react-navigation/native';
@@ -16,18 +17,7 @@ import {useRoute} from '@react-navigation/native';
 import YouDidItBackground from '../../assets/Images/Achievement-screen/you-did-it-bttn.svg';
 import TaskStatsBackground from '../../assets/Images/Achievement-screen/stats-background.svg';
 
-// Individual SVG components for the progress circle
-import OuterCircleSvg from '../../assets/Images/Achievement-screen/big-circle.svg';
-import InnerCircleSvg from '../../assets/Images/Achievement-screen/inner-circle.svg';
-import TopCurveSvg from '../../assets/Images/Achievement-screen/curve-line-left.svg';
-import BottomCurveSvg from '../../assets/Images/Achievement-screen/curve-line-right.svg';
-import CenterGrayLineSvg from '../../assets/Images/Achievement-screen/grey-line.svg';
-import LeftGreenLineSvg from '../../assets/Images/Achievement-screen/green-curve.svg';
-import GreenCircleSvg from '../../assets/Images/Achievement-screen/green-dot.svg';
-import WalkingManIconSvg from '../../assets/Images/Achievement-screen/man-walk.svg';
-import SittingManIconSvg from '../../assets/Images/Achievement-screen/man-sitting-icon.svg';
-import ClockLineSvg from '../../assets/Images/Achievement-screen/thin-curve-line.svg';
-import ClockLineSvg2 from '../../assets/Images/Achievement-screen/clock-line.svg';
+// Only keeping the blue line SVG for the task count separator
 import BlueLineSvg from '../../assets/Images/Achievement-screen/blue-line.svg';
 
 const AchievementScreen = ({
@@ -36,6 +26,7 @@ const AchievementScreen = ({
   onClose,
 }) => {
   const route = useRoute();
+  const lottieRef = useRef(null);
 
   // FIXED: Enhanced data extraction from route params with proper fallbacks
   const {
@@ -110,6 +101,98 @@ const AchievementScreen = ({
   const timeSpent = formatTime(totalCompletedTime);
   const taskStats = getTaskStats();
 
+  // FIXED: Control animation progress based on completion percentage with proper null checks
+  useEffect(() => {
+    let timeoutId = null;
+    let pauseTimeoutId = null;
+
+    if (lottieRef.current) {
+      // Wait for animation to load completely
+      timeoutId = setTimeout(() => {
+        try {
+          // Check if ref is still valid
+          if (!lottieRef.current) {
+            console.log('Lottie ref is null, skipping animation control');
+            return;
+          }
+
+          const animationProgress = progress / 100;
+          console.log(
+            'Animation Progress:',
+            animationProgress,
+            'Progress:',
+            progress + '%',
+          );
+
+          // Method 1: Direct progress control
+          if (typeof lottieRef.current.progress !== 'undefined') {
+            lottieRef.current.progress = animationProgress;
+          }
+
+          // Method 2: Go to specific frame and stop
+          if (
+            lottieRef.current.goToAndStop &&
+            typeof lottieRef.current.goToAndStop === 'function'
+          ) {
+            // Calculate frame number (assuming 60fps or total frames)
+            const totalFrames = lottieRef.current.getDuration
+              ? Math.floor(lottieRef.current.getDuration() * 60)
+              : 100; // fallback to 100 frames
+            const targetFrame = Math.floor(animationProgress * totalFrames);
+            lottieRef.current.goToAndStop(targetFrame, true);
+          }
+
+          // Method 3: Play and pause at specific point - FIXED with proper null checks
+          if (
+            lottieRef.current.play &&
+            typeof lottieRef.current.play === 'function' &&
+            lottieRef.current.pause &&
+            typeof lottieRef.current.pause === 'function'
+          ) {
+            lottieRef.current.play();
+
+            // FIXED: Store timeout ID and add null check in setTimeout callback
+            pauseTimeoutId = setTimeout(() => {
+              // Critical null check before calling pause
+              if (
+                lottieRef.current &&
+                lottieRef.current.pause &&
+                typeof lottieRef.current.pause === 'function'
+              ) {
+                lottieRef.current.pause();
+              } else {
+                console.log(
+                  'Lottie ref became null before pause could be called',
+                );
+              }
+            }, animationProgress * 7000); // Reduced from 7000 to 1000ms for faster response
+          }
+        } catch (error) {
+          console.error('Error controlling Lottie animation:', error);
+
+          // Fallback: Just play the animation normally if control fails
+          if (lottieRef.current && progress === 100 && lottieRef.current.play) {
+            try {
+              lottieRef.current.play();
+            } catch (fallbackError) {
+              console.error('Fallback animation play failed:', fallbackError);
+            }
+          }
+        }
+      }, 200);
+
+      // FIXED: Cleanup function to clear timeouts and prevent memory leaks
+      return () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        if (pauseTimeoutId) {
+          clearTimeout(pauseTimeoutId);
+        }
+      };
+    }
+  }, [progress]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor="#000829" barStyle="light-content" />
@@ -146,94 +229,23 @@ const AchievementScreen = ({
           </View>
         </View>
 
-        {/* Center Progress with Individual SVG Components */}
+        {/* Center Progress with Lottie Animation Only */}
         <View style={styles.progressContainer}>
-          {/* Outer Circle SVG */}
-          <OuterCircleSvg
-            width={WP(85)}
-            height={WP(85)}
-            style={styles.outerCircle}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Inner Circle SVG */}
-          <InnerCircleSvg
-            width={WP(40)}
-            height={WP(40)}
-            style={styles.innerCircle}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Top Curve SVG */}
-          <TopCurveSvg
-            width={WP(53)}
-            height={WP(54)}
-            style={styles.topCurve}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Bottom Curve SVG */}
-          <BottomCurveSvg
-            width={WP(48)}
-            height={WP(49)}
-            style={styles.bottomCurve}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Center Gray Line SVG */}
-          <CenterGrayLineSvg
-            width={WP(3.7)}
-            height={HP(0.6)}
-            style={styles.centerGrayLine}
-            preserveAspectRatio="none"
-          />
-
-          {/* Left Green Line SVG */}
-          <LeftGreenLineSvg
-            width={WP(19)}
-            height={WP(24)}
-            style={styles.leftGreenLine}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Green Circle SVG */}
-          <GreenCircleSvg
-            width={WP(9)}
-            height={WP(10)}
-            style={styles.greenCircle}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Walking Man Icon */}
-          <WalkingManIconSvg
-            width={WP(6.5)}
-            height={WP(6.5)}
-            style={styles.walkingManIcon}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Sitting Man Icon */}
-          <SittingManIconSvg
-            width={WP(7)}
-            height={WP(7)}
-            style={styles.sittingManIcon}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* Original Clock Line SVG */}
-          <ClockLineSvg
-            width={WP(53)}
-            height={HP(52)}
-            style={styles.clockLine}
-            preserveAspectRatio="xMidYMid meet"
-          />
-
-          {/* NEW: Clock Line SVG - Sharp indicator at progress position */}
-          <ClockLineSvg2
-            width={WP(18)}
-            height={WP(19.2)}
-            style={styles.clockLineIndicator}
-            preserveAspectRatio="xMidYMid meet"
+          {/* FIXED: Lottie Animation Clock - Progress-based animation with proper error handling */}
+          <LottieView
+            ref={lottieRef}
+            source={require('../../assets/animations/apprectince-clock3.json')}
+            style={styles.lottieClockAnimation}
+            autoPlay={false} // Changed to false for manual control
+            loop={false} // Changed to false for manual control
+            speed={1}
+            resizeMode="contain"
+            onAnimationFinish={() => {
+              console.log('Lottie animation finished');
+            }}
+            onError={error => {
+              console.error('Lottie animation error:', error);
+            }}
           />
 
           {/* Center Content (Text) */}
@@ -244,7 +256,7 @@ const AchievementScreen = ({
             <View style={styles.taskInfo}>
               <View style={styles.taskCountContainer}>
                 <Text style={styles.taskCount1}>{taskStats.completeTasks}</Text>
-                {/* NEW: Blue Line SVG - Between the task count numbers */}
+                {/* Blue Line SVG - Between the task count numbers */}
                 <BlueLineSvg
                   width={WP(0.7)}
                   height={WP(6)}
@@ -372,9 +384,9 @@ const styles = StyleSheet.create({
     color: '#1CA8E8',
     fontFamily: 'XB YasBdIt',
     lineHeight: FS(2.5) * 1.2,
-    textShadowColor: '#1CA8E8', // Same as text color for glow effect
+    textShadowColor: '#1CA8E8',
     textShadowOffset: {width: 0, height: 0},
-    textShadowRadius: 15, // Slightly larger radius for more glow
+    textShadowRadius: 15,
     elevation: 8,
   },
   journeyText: {
@@ -398,104 +410,23 @@ const styles = StyleSheet.create({
     textShadowRadius: 15,
     elevation: 8,
   },
-
-  // Individual SVG Component Styles
   progressContainer: {
-    marginVertical: HP(2),
+    marginVertical: HP(1),
     position: 'relative',
-    width: WP(85),
-    height: WP(85),
+    width: WP(98),
+    height: WP(93),
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  // Outer Circle - Base layer
-  outerCircle: {
+  // Lottie Clock Animation - Progress-controlled animation
+  lottieClockAnimation: {
     position: 'absolute',
+    width: WP(98),
+    height: WP(93),
     top: 0,
     left: 0,
     zIndex: 1,
-  },
-
-  // Inner Circle - Inside the outer circle
-  innerCircle: {
-    position: 'absolute',
-    top: WP(24.5),
-    left: WP(24.5),
-    zIndex: 2,
-  },
-
-  // Top Curve - Upper arc
-  topCurve: {
-    position: 'absolute',
-    top: WP(37),
-    left: WP(-7),
-    zIndex: 3,
-  },
-
-  // Bottom Curve - Lower arc
-  bottomCurve: {
-    position: 'absolute',
-    top: WP(41.2),
-    left: WP(45),
-    zIndex: 3,
-  },
-
-  // Center Gray Line - Between curves
-  centerGrayLine: {
-    position: 'absolute',
-    top: HP(42.3),
-    left: WP(43.5),
-    transform: [{translateY: -HP(0.25)}],
-    zIndex: 4,
-  },
-
-  // Left Green Line - Progress indicator
-  leftGreenLine: {
-    position: 'absolute',
-    top: WP(40),
-    left: WP(-8.4),
-    zIndex: 5,
-  },
-
-  // Green Circle - On the green line end
-  greenCircle: {
-    position: 'absolute',
-    top: WP(55),
-    left: WP(-1),
-    zIndex: 6,
-  },
-
-  // Walking Man Icon - Left side of curve
-  walkingManIcon: {
-    position: 'absolute',
-    top: WP(35.7),
-    left: WP(-3.2),
-    zIndex: 6,
-  },
-
-  // Sitting Man Icon - Right side of curve
-  sittingManIcon: {
-    position: 'absolute',
-    top: WP(36),
-    right: WP(-6),
-    zIndex: 6,
-  },
-
-  // Original Clock Line - Sharp indicator
-  clockLine: {
-    position: 'absolute',
-    top: WP(-6),
-    left: WP(-2.8),
-    zIndex: 7,
-  },
-
-  // NEW: Clock Line Indicator - Sharp indicator at progress position (top area)
-  clockLineIndicator: {
-    position: 'absolute',
-    top: WP(14.6), // Position at the top where progress would be
-    left: WP(14.6), // Center horizontally
-    zIndex: 8,
   },
 
   // Center Content - Text overlay
@@ -503,8 +434,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    top: '56%',
-    left: '48.5%',
+    top: '55%',
+    left: '47%',
     transform: [{translateX: -WP(11)}, {translateY: -WP(14)}],
     zIndex: 10,
   },
@@ -517,7 +448,7 @@ const styles = StyleSheet.create({
     fontSize: FS(1.8),
     fontFamily: 'Orbitron-Bold',
     color: '#999999',
-    marginBottom: HP(6),
+    marginBottom: HP(4),
   },
   taskInfo: {
     alignItems: 'center',
@@ -540,7 +471,7 @@ const styles = StyleSheet.create({
     marginLeft: WP(-0.8),
   },
 
-  // NEW: Blue Line Indicator - Between the task count numbers (10|10)
+  // Blue Line Indicator - Between the task count numbers (10|10)
   blueLineIndicator: {
     marginHorizontal: WP(-0.6),
     marginTop: HP(-1),
@@ -557,7 +488,7 @@ const styles = StyleSheet.create({
 
   // Task Stats Styles - KEEPING ORIGINAL LAYOUT
   taskStatsContainer: {
-    marginTop: HP(5),
+    marginTop: HP(2.5),
     position: 'relative',
     width: WP(95),
     height: HP(14.5),

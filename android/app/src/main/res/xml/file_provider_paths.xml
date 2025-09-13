@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Create this file at: android/app/src/main/res/xml/file_provider_paths.xml -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- For custom alarm sound files in files directory -->
+    <files-path name="alarm_sounds" path="sounds/" />
+    
+    <!-- For cached alarm sounds -->
+    <cache-path name="alarm_cache" path="sounds/" />
+    
+    <!-- For external alarm sounds -->
+    <external-files-path name="external_sounds" path="sounds/" />
+    
+    <!-- For raw resources -->
+    <root-path name="root" path="." />
+    
+    <!-- For internal storage sounds -->
+    <files-path name="internal_sounds" path="." />
+</paths>

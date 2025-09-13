@@ -7,6 +7,7 @@ import {
   Modal,
   ScrollView,
   Image,
+  StatusBar
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -248,6 +249,7 @@ const TimePicker = ({
       animationType="fade"
       onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
+        <StatusBar backgroundColor={colors.ModelBackground} barStyle="dark-content" />
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>Goal</Text>
 
