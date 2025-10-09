@@ -8,11 +8,12 @@ import OnBoard from '../Pages/Onboarding/OnBoard';
 import Register from '../Pages/Onboarding/Resister';
 import AppStack from './AppStack';
 
+
 const Stack = createNativeStackNavigator();
 
 function AuthStack() {
-  const { user, needsProfileSetup } = useAuth();
-    
+  const { user, needsProfileSetup, getSelectedGender } = useAuth();
+
   const getInitialRoute = () => {
     if (user && needsProfileSetup) {
       return routes.GENDERSELECTION_SCREEN;
@@ -32,8 +33,13 @@ function AuthStack() {
       <Stack.Screen name={routes.SIGNUP_SCREEN} component={Register} />
       <Stack.Screen name={routes.GENDERSELECTION_SCREEN} component={GenderSelection} />
       <Stack.Screen name={routes.ONBOARD_SCREEN} component={OnBoard} />
-      <Stack.Screen name="AppStack" component={AppStack} />
-      
+      <Stack.Screen 
+        name="AppStack" 
+        component={AppStack}
+        initialParams={{
+          selectedGender: getSelectedGender()
+        }}
+      />
     </Stack.Navigator>
   );
 }

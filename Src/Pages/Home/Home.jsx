@@ -20,12 +20,16 @@ import TaskSkeleton from '../../Components/TaskSkeleton';
 import ModalTaskCard from '../../Components/ModalTaskCard';
 import NumericInputModal from '../../Components/NumericModal';
 import DatePickerModal from '../../Components/DatePickerModal';
+import WelcomePopup from '../../Components/WelcomePopup';
+import MonthReminderModal from '../../Components/MonthReminderModal';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {taskService} from '../../services/api/taskService';
 import {taskCompletionsService} from '../../services/api/taskCompletionsService';
+import {planYourDayService} from '../../services/api/planYourDayService';
 import {useAuth} from '../../contexts/AuthContext';
+import {useSession} from '../../contexts/SessionContext';
 import {shouldTaskAppearOnDate} from '../../utils/taskDateHelper';
 import {getCompletionDateString} from '../../utils/dateUtils';
 
@@ -34,47 +38,151 @@ const Home = () => {
   const [isModalVisible, setModalVisible] = useState(false);
   const [isNumericModalVisible, setNumericModalVisible] = useState(false);
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+  const [isWelcomePopupVisible, setWelcomePopupVisible] = useState(false);
+  const [isMonthReminderVisible, setMonthReminderVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
+  const [planYourDayEntries, setPlanYourDayEntries] = useState([]);
+  const [allPlanYourDay, setAllPlanYourDay] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toDateString());
   const [taskCompletions, setTaskCompletions] = useState({});
 
   const navigation = useNavigation();
   const {user} = useAuth();
+  const {
+    shouldShowWelcome,
+    shouldShowMonthReminder,
+    markWelcomeShown,
+    markMonthReminderShown,
+    getSessionInfo,
+  } = useSession();
 
-  // Debug selectedDate initialization
   console.log('Home component initialized with selectedDate:', selectedDate);
 
-  // FIXED: Convert selectedDate to consistent format for database operations
   const completionDateString = useMemo(() => {
     return getCompletionDateString(selectedDate);
   }, [selectedDate]);
 
-  // Calculate progress based on completed tasks for the selected date
-  const progress = useMemo(() => {
-    if (tasks.length === 0) return 0;
+  useEffect(() => {
+    if (user && shouldShowWelcome()) {
+      console.log('Showing welcome popup - first time in session');
+      console.log('Session info:', getSessionInfo());
 
-    // Count tasks completed on the selected date
+      const timer = setTimeout(() => {
+        setWelcomePopupVisible(true);
+        markWelcomeShown();
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    } else {
+      console.log('Not showing welcome popup:', {
+        hasUser: !!user,
+        shouldShow: shouldShowWelcome(),
+        sessionInfo: getSessionInfo(),
+      });
+      if (user && shouldShowMonthReminder()) {
+        console.log('Showing month reminder - once per day');
+        const timer = setTimeout(() => {
+          setMonthReminderVisible(true);
+          markMonthReminderShown();
+        }, 1500);
+
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [user]);
+
+  const handleWelcomeClose = () => {
+    setWelcomePopupVisible(false);
+
+    // After welcome closes, check if we should show month reminder
+    if (shouldShowMonthReminder()) {
+      console.log('Welcome closed - showing month reminder next');
+      setTimeout(() => {
+        setMonthReminderVisible(true);
+        markMonthReminderShown();
+      }, 800); // Small delay for smooth transition
+    }
+  };
+
+  // NEW: Handle month reminder close
+  const handleMonthReminderClose = () => {
+    console.log('Month reminder closed');
+    setMonthReminderVisible(false);
+  };
+
+  const parseTimeToMinutes = timeStr => {
+    if (!timeStr || typeof timeStr !== 'string' || timeStr.trim() === '') {
+      return 9999;
+    }
+
+    try {
+      const timeStr12Hour = timeStr.trim().toUpperCase();
+      const isAM = timeStr12Hour.includes('AM');
+      const isPM = timeStr12Hour.includes('PM');
+
+      if (!isAM && !isPM) {
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        if (isNaN(hours) || isNaN(minutes)) {
+          return 9999;
+        }
+        return hours * 60 + minutes;
+      } else {
+        const timeWithoutAMPM = timeStr12Hour.replace(/AM|PM/g, '').trim();
+        const [hours, minutes] = timeWithoutAMPM.split(':').map(Number);
+
+        if (isNaN(hours) || isNaN(minutes)) {
+          return 9999;
+        }
+
+        let adjustedHours = hours;
+        if (isPM && hours !== 12) {
+          adjustedHours += 12;
+        } else if (isAM && hours === 12) {
+          adjustedHours = 0;
+        }
+
+        return adjustedHours * 60 + minutes;
+      }
+    } catch (error) {
+      console.error(
+        'Error parsing time for sorting:',
+        error,
+        'Input:',
+        timeStr,
+      );
+      return 9999;
+    }
+  };
+
+  const progress = useMemo(() => {
+    const totalItems = tasks.length + planYourDayEntries.length;
+    if (totalItems === 0) return 0;
+
     const completedTasks = tasks.filter(task => {
       const taskId = task.id;
       const completion = taskCompletions[taskId];
       return completion?.is_completed === true;
     });
 
-    const progressPercentage = Math.round(
-      (completedTasks.length / tasks.length) * 100,
-    );
-    return Math.min(progressPercentage, 100);
-  }, [tasks, taskCompletions]);
+    // FIXED: Check completion for Plan Your Day items using the correct task ID mapping
+    const completedPlans = planYourDayEntries.filter(plan => {
+      const planId = plan.id; // This should be the prefixed ID like "plan_uuid"
+      const completion = taskCompletions[planId];
+      return completion?.is_completed === true;
+    });
 
-  // FIXED: Load task completions for the selected date with proper date handling
+    const totalCompleted = completedTasks.length + completedPlans.length;
+    const progressPercentage = Math.round((totalCompleted / totalItems) * 100);
+    return Math.min(progressPercentage, 100);
+  }, [tasks, planYourDayEntries, taskCompletions]);
+
   const loadTaskCompletions = async dateInput => {
     if (!user) return;
 
     try {
-      // Use consistent date formatting
       const completionDate = getCompletionDateString(dateInput);
       console.log(
         'Loading completions for date:',
@@ -91,25 +199,46 @@ const Home = () => {
 
       console.log('Loaded completions:', completions.length);
 
-      // Convert array to object with task_id as key
       const completionsMap = {};
+
       completions.forEach(completion => {
+        // Default mapping for tasks
         completionsMap[completion.task_id] = completion;
+
+        // Also create a prefixed mapping for plans
+        // This handles the case where a completion belongs to a plan
+        const prefixedId = `plan_${completion.task_id}`;
+        completionsMap[prefixedId] = completion;
+
         console.log(
-          `Completion loaded for task ${completion.task_id}: completed=${completion.is_completed}`,
+          `Completion loaded for ${completion.task_id}: completed=${completion.is_completed}`,
         );
       });
 
       setTaskCompletions(completionsMap);
 
-      // FIXED: Update checkbox states based on completions for current date only
       const newCheckboxStates = {};
+
+      // Set checkbox states for regular tasks
       tasks.forEach(task => {
         const completion = completionsMap[task.id];
         if (completion?.is_completed === true) {
-          newCheckboxStates[task.id] = 4; // Completed state
+          newCheckboxStates[task.id] = 4;
         } else {
-          newCheckboxStates[task.id] = 1; // Initial state
+          newCheckboxStates[task.id] = 1;
+        }
+      });
+
+      // Set checkbox states for Plan Your Day items using prefixed IDs
+      planYourDayEntries.forEach(plan => {
+        const planId = plan.id; // This should already be prefixed like "plan_uuid"
+        const completion = completionsMap[planId];
+        if (completion?.is_completed === true) {
+          newCheckboxStates[planId] = 4;
+          console.log(`Plan ${planId} marked as completed in checkbox states`);
+        } else {
+          newCheckboxStates[planId] = 1;
+          console.log(`Plan ${planId} marked as incomplete in checkbox states`);
         }
       });
 
@@ -119,7 +248,80 @@ const Home = () => {
     }
   };
 
-  // Load tasks from Supabase
+  const loadPlanYourDay = async () => {
+    if (!user) {
+      return;
+    }
+
+    try {
+      const planData = await planYourDayService.getPlanYourDayEntries(user.id);
+
+      const transformedPlans = planData.map(plan => ({
+        id: `plan_${plan.id}`,
+        originalId: plan.id,
+        title: plan.title,
+        description: plan.description,
+        category: plan.category,
+        taskType: 'Plan Your Day',
+        evaluationType: plan.evaluation_type,
+        planType: plan.plan_type,
+        time: plan.time,
+        timeColor: plan.time_color,
+        tags: plan.tags || [],
+        image: plan.image,
+        hasFlag:
+          plan.tags &&
+          plan.tags.some(tag => {
+            const tagLower = tag.toLowerCase();
+            return (
+              tagLower === 'important' ||
+              tagLower === 'must' ||
+              tagLower === 'urgent' ||
+              tagLower === 'priority'
+            );
+          }),
+        priority: plan.priority,
+        type: plan.evaluation_type,
+        targetHours: plan.target_hours,
+        targetTasks: plan.target_tasks,
+        actualHours: plan.actual_hours,
+        actualTasks: plan.actual_tasks,
+        timerDuration: plan.timer_duration,
+        checklistItems: plan.checklist_items,
+        startDate: plan.start_date || null,
+        endDate: plan.end_date,
+        isEndDateEnabled: plan.is_end_date_enabled,
+        blockTimeEnabled: false,
+        blockTimeData: plan.block_time_data,
+        durationEnabled: false,
+        durationData: plan.duration_data,
+        reminderEnabled: plan.reminder_enabled,
+        reminderData: plan.reminder_data,
+        focusDuration: plan.focus_duration,
+        shortBreakDuration: plan.short_break_duration,
+        longBreakDuration: plan.long_break_duration,
+        autoStartShortBreaks: plan.auto_start_short_breaks,
+        autoStartFocusSessions: plan.auto_start_focus_sessions,
+        focusSessionsPerRound: plan.focus_sessions_per_round,
+        addToGoogleCalendar: plan.add_to_google_calendar,
+        linkedGoalId: plan.linked_goal_id,
+        linkedGoalTitle: plan.linked_goal_title,
+        linkedGoalType: plan.linked_goal_type,
+        note: plan.note,
+        created_at: plan.created_at,
+        isPlan: true,
+      }));
+
+      setAllPlanYourDay(transformedPlans);
+    } catch (error) {
+      console.error('Error loading Plan Your Day entries:', error);
+      Alert.alert(
+        'Error',
+        'Failed to load Plan Your Day entries. Please try again.',
+      );
+    }
+  };
+
   const loadTasks = async () => {
     if (!user) {
       setLoading(false);
@@ -128,9 +330,12 @@ const Home = () => {
 
     try {
       setLoading(true);
-      const tasksData = await taskService.getTasks(user.id);
 
-      // Transform Supabase data to match the expected format
+      const [tasksData] = await Promise.all([
+        taskService.getTasks(user.id),
+        loadPlanYourDay(),
+      ]);
+
       const transformedTasks = tasksData.map(task => ({
         id: task.id,
         title: task.title,
@@ -194,6 +399,7 @@ const Home = () => {
         linkedGoalType: task.linked_goal_type,
         note: task.note,
         created_at: task.created_at,
+        isPlan: false,
       }));
 
       setAllTasks(transformedTasks);
@@ -205,19 +411,24 @@ const Home = () => {
     }
   };
 
-  // Delete task function
   const deleteTask = async taskId => {
     try {
       setLoading(true);
 
-      // Delete from Supabase
-      await taskService.deleteTask(taskId);
+      if (taskId.startsWith('plan_')) {
+        const originalId = taskId.replace('plan_', '');
 
-      // Remove from local state
-      setAllTasks(prev => prev.filter(task => task.id !== taskId));
-      setTasks(prev => prev.filter(task => task.id !== taskId));
+        await planYourDayService.deletePlanYourDay(originalId);
 
-      // Remove from checkbox states and completions
+        setAllPlanYourDay(prev => prev.filter(plan => plan.id !== taskId));
+        setPlanYourDayEntries(prev => prev.filter(plan => plan.id !== taskId));
+      } else {
+        await taskService.deleteTask(taskId);
+
+        setAllTasks(prev => prev.filter(task => task.id !== taskId));
+        setTasks(prev => prev.filter(task => task.id !== taskId));
+      }
+
       setCheckboxStates(prev => {
         const newStates = {...prev};
         delete newStates[taskId];
@@ -230,10 +441,10 @@ const Home = () => {
         return newCompletions;
       });
 
-      Alert.alert('Success', 'Task deleted successfully!');
+      Alert.alert('Success', 'Item deleted successfully!');
     } catch (error) {
-      console.error('Error deleting task:', error);
-      Alert.alert('Error', 'Failed to delete task. Please try again.');
+      console.error('Error deleting item:', error);
+      Alert.alert('Error', 'Failed to delete item. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -252,12 +463,9 @@ const Home = () => {
       const route = navigation.getState()?.routes?.find(r => r.name === 'Home');
 
       if (route?.params?.completedTaskId) {
-        // FIXED: Use the specific completion date if provided
         const completionDate =
           route.params?.completedDate || completionDateString;
         markTaskCompleted(route.params.completedTaskId, completionDate);
-
-        // REMOVED: AppreciationModal logic - now handled by AchievementScreen navigation
 
         navigation.setParams({
           completedTaskId: undefined,
@@ -271,48 +479,89 @@ const Home = () => {
         loadTasks();
         navigation.setParams({newTaskCreated: undefined});
       }
+
+      if (route?.params?.newPlanCreated) {
+        loadTasks();
+        navigation.setParams({newPlanCreated: undefined});
+      }
     });
 
     return unsubscribe;
   }, [navigation, completionDateString]);
 
-  // Filter tasks based on selected date using useMemo for performance
+  const shouldPlanAppearOnDate = (plan, dateString) => {
+    if (!plan.startDate) {
+      return true;
+    }
+
+    const planStartDate = new Date(plan.startDate).toDateString();
+    const checkDate = new Date(dateString).toDateString();
+
+    return planStartDate === checkDate;
+  };
+
+  const shouldRegularTaskAppearOnDate = (task, dateString) => {
+    if (!task.startDate) {
+      return true;
+    }
+
+    return shouldTaskAppearOnDate(task, dateString);
+  };
+
   const filteredTasks = useMemo(() => {
-    if (!allTasks.length) return [];
-
-    console.log('Filtering tasks for date:', selectedDate);
-    console.log('Total tasks to filter:', allTasks.length);
-
-    const filtered = allTasks.filter(task => {
-      const shouldShow = shouldTaskAppearOnDate(task, selectedDate);
-
-      if (task.title) {
-        console.log(
-          `Task "${task.title}" (${task.taskType}) - Should show: ${shouldShow}`,
-        );
-        if (task.frequencyType) {
-          console.log(`  Frequency: ${task.frequencyType}`);
-        }
-        if (task.selectedWeekdays?.length > 0) {
-          console.log(`  Weekdays: [${task.selectedWeekdays.join(', ')}]`);
-        }
-        if (task.startDate) {
-          console.log(`  Start Date: ${task.startDate}`);
-        }
-      }
-
-      return shouldShow;
+    const filteredRegularTasks = allTasks.filter(task => {
+      return shouldRegularTaskAppearOnDate(task, selectedDate);
     });
 
-    console.log('Filtered tasks count:', filtered.length);
-    return filtered;
-  }, [allTasks, selectedDate]);
+    const filteredPlans = allPlanYourDay.filter(plan => {
+      return shouldPlanAppearOnDate(plan, selectedDate);
+    });
+
+    const combinedItems = [...filteredRegularTasks, ...filteredPlans];
+
+    console.log('Filtering items for date:', selectedDate);
+    console.log('Regular tasks:', filteredRegularTasks.length);
+    console.log('Plan Your Day entries:', filteredPlans.length);
+    console.log('Total items:', combinedItems.length);
+
+    const sortedItems = combinedItems.sort((a, b) => {
+      const timeA = parseTimeToMinutes(a.time);
+      const timeB = parseTimeToMinutes(b.time);
+
+      const hasValidTimeA =
+        a.time && typeof a.time === 'string' && a.time.trim() !== '';
+      const hasValidTimeB =
+        b.time && typeof b.time === 'string' && b.time.trim() !== '';
+
+      if (hasValidTimeA && hasValidTimeB) {
+        return timeA - timeB;
+      }
+
+      if (hasValidTimeA && !hasValidTimeB) {
+        return -1;
+      }
+      if (!hasValidTimeA && hasValidTimeB) {
+        return 1;
+      }
+
+      const dateA = new Date(a.created_at);
+      const dateB = new Date(b.created_at);
+      return dateA - dateB;
+    });
+
+    console.log('Filtered and sorted items count:', sortedItems.length);
+
+    return sortedItems;
+  }, [allTasks, allPlanYourDay, selectedDate]);
 
   useEffect(() => {
-    setTasks(filteredTasks);
-    // FIXED: Load completions when tasks or date changes, pass selectedDate directly
+    const regularTasks = filteredTasks.filter(item => !item.isPlan);
+    const plans = filteredTasks.filter(item => item.isPlan);
+
+    setTasks(regularTasks);
+    setPlanYourDayEntries(plans);
+
     if (filteredTasks.length >= 0) {
-      // Changed to >= 0 to handle empty task lists
       loadTaskCompletions(selectedDate);
     }
   }, [filteredTasks, selectedDate]);
@@ -321,7 +570,6 @@ const Home = () => {
     loadTasks();
   }, [user]);
 
-  // FIXED: Improved date selection handling with comprehensive debugging
   const handleDateSelect = dateString => {
     console.log(
       'handleDateSelect called with:',
@@ -338,11 +586,9 @@ const Home = () => {
     setLoading(true);
     setSelectedDate(dateString);
 
-    // Clear previous completions to avoid showing old data
     setTaskCompletions({});
     setCheckboxStates({});
 
-    // Add a small delay to show loading state
     setTimeout(() => {
       setLoading(false);
       console.log('Date selection completed. New selectedDate:', dateString);
@@ -394,243 +640,146 @@ const Home = () => {
     {
       id: '4',
       Heading: 'Create Challenge',
-      title:
-        'Set up a multi-day challenge with specific goals and duration.',
+      title: 'Set up a multi-day challenge with specific goals and duration.',
       image: Icons.Goal,
       navigation: () => {
         setModalVisible(false);
         navigation.navigate('ChallengeScreen', {type: 'Goal'});
       },
     },
+    {
+      id: '5',
+      Heading: 'Plan Your Day',
+      title: 'Design your day for maximum productivity and focus.',
+      image: Icons.Goal,
+      navigation: () => {
+        setModalVisible(false);
+        navigation.navigate('PlanYourDayScreen', {type: 'Plan'});
+      },
+    },
   ];
 
-  const createNewTask = async taskData => {
-    if (!user) {
-      Alert.alert('Error', 'Please log in to create tasks.');
-      return;
-    }
-
-    try {
-      const newTask = await taskService.createTask({
-        ...taskData,
-        userId: user.id,
-      });
-
-      const transformedTask = {
-        id: newTask.id,
-        title: newTask.title,
-        description: newTask.description,
-        category: newTask.category,
-        taskType: newTask.task_type,
-        evaluationType: newTask.evaluation_type,
-        time: newTask.time,
-        timeColor: newTask.time_color,
-        tags: newTask.tags || [],
-        image: newTask.image,
-        hasFlag: newTask.has_flag,
-        priority: newTask.priority,
-        type: newTask.evaluation_type,
-        progress: newTask.progress,
-        numericValue: newTask.numeric_value,
-        numericGoal: newTask.numeric_goal,
-        numericUnit: newTask.numeric_unit,
-        numericCondition: newTask.numeric_condition,
-        timerDuration: newTask.timer_duration,
-        timerCondition: newTask.timer_condition,
-        checklistItems: newTask.checklist_items,
-        successCondition: newTask.success_condition,
-        customItemsCount: newTask.custom_items_count,
-        frequencyType: newTask.frequency_type,
-        selectedWeekdays: newTask.selected_weekdays,
-        selectedMonthDates: newTask.selected_month_dates,
-        selectedYearDates: newTask.selected_year_dates,
-        periodDays: newTask.period_days,
-        periodType: newTask.period_type,
-        isFlexible: newTask.is_flexible,
-        isMonthFlexible: newTask.is_month_flexible,
-        isYearFlexible: newTask.is_year_flexible,
-        useDayOfWeek: newTask.use_day_of_week,
-        isRepeatFlexible: newTask.is_repeat_flexible,
-        isRepeatAlternateDays: newTask.is_repeat_alternate_days,
-        startDate: newTask.start_date,
-        endDate: newTask.end_date,
-        isEndDateEnabled: newTask.is_end_date_enabled,
-        blockTimeEnabled: newTask.block_time_enabled,
-        blockTimeData: newTask.block_time_data,
-        durationEnabled: newTask.duration_enabled,
-        durationData: newTask.duration_data,
-        reminderEnabled: newTask.reminder_enabled,
-        reminderData: newTask.reminder_data,
-        addPomodoro: newTask.add_pomodoro,
-        addToGoogleCalendar: newTask.add_to_google_calendar,
-        isPendingTask: newTask.is_pending_task,
-        linkedGoalId: newTask.linked_goal_id,
-        linkedGoalTitle: newTask.linked_goal_title,
-        linkedGoalType: newTask.linked_goal_type,
-        note: newTask.note,
-        created_at: newTask.created_at,
-      };
-
-      setAllTasks(prev => [transformedTask, ...prev]);
-
-      if (shouldTaskAppearOnDate(transformedTask, selectedDate)) {
-        setTasks(prev => [transformedTask, ...prev]);
-      }
-
-      setCheckboxStates(prev => ({
-        ...prev,
-        [newTask.id]: 1,
-      }));
-
-      Alert.alert('Success', 'Task created successfully!');
-    } catch (error) {
-      console.error('Error creating task:', error);
-      Alert.alert('Error', 'Failed to create task. Please try again.');
-    }
-  };
-
-  // NEW: Navigate to AchievementScreen with task completion data
   const navigateToAchievementScreen = task => {
-    // Calculate duration from block time if available
     let startTime = null;
     let endTime = null;
     let totalCompletedTime = 0;
 
     console.log('Processing task for achievement screen:', {
       title: task.title,
-      blockTimeEnabled: task.blockTimeEnabled,
+      isPlan: task.isPlan,
       blockTimeData: task.blockTimeData,
-      type: typeof task.blockTimeData
+      durationData: task.durationData,
+      timerDuration: task.timerDuration,
     });
 
-    if (task.blockTimeEnabled && task.blockTimeData) {
+    // For Plan Your Day items, check duration data directly
+    if (task.isPlan && task.durationData) {
       try {
-        const blockTimeData = typeof task.blockTimeData === 'string' 
-          ? JSON.parse(task.blockTimeData) 
-          : task.blockTimeData;
-        
-        console.log('Parsed block time data:', blockTimeData);
-        
+        const durationData =
+          typeof task.durationData === 'string'
+            ? JSON.parse(task.durationData)
+            : task.durationData;
+
+        console.log('Using Plan Your Day duration data:', durationData);
+
+        if (durationData.totalMinutes) {
+          totalCompletedTime = durationData.totalMinutes * 60; // Convert to seconds
+        } else if (
+          durationData.hours !== undefined ||
+          durationData.minutes !== undefined
+        ) {
+          const hours = durationData.hours || 0;
+          const minutes = durationData.minutes || 0;
+          totalCompletedTime = hours * 3600 + minutes * 60;
+        }
+
+        console.log(
+          `Plan duration: ${Math.floor(
+            totalCompletedTime / 60,
+          )} minutes (${totalCompletedTime} seconds)`,
+        );
+      } catch (error) {
+        console.error('Error parsing Plan Your Day duration data:', error);
+      }
+    }
+    // For Plan Your Day items, also check block time data if available
+    else if (task.isPlan && task.blockTimeData) {
+      try {
+        const blockTimeData =
+          typeof task.blockTimeData === 'string'
+            ? JSON.parse(task.blockTimeData)
+            : task.blockTimeData;
+
+        console.log('Using Plan Your Day block time data:', blockTimeData);
+
         if (blockTimeData.startTime && blockTimeData.endTime) {
           startTime = blockTimeData.startTime;
           endTime = blockTimeData.endTime;
-          
-          console.log('Start time:', startTime, 'End time:', endTime);
-          
-          // FIXED: Better time parsing logic that handles 12-hour format with AM/PM
-          const parseTimeString = (timeStr) => {
-            if (!timeStr || typeof timeStr !== 'string') {
-              console.warn('Invalid time string:', timeStr);
-              return 0;
-            }
-            
-            // Handle 12-hour format with AM/PM
-            const timeStr12Hour = timeStr.trim().toUpperCase();
-            const isAM = timeStr12Hour.includes('AM');
-            const isPM = timeStr12Hour.includes('PM');
-            
-            if (!isAM && !isPM) {
-              // 24-hour format - existing logic
-              const timeParts = timeStr.split(':');
-              if (timeParts.length === 2) {
-                timeStr = `${timeStr}:00`; // Add seconds if missing
-              }
-              
-              const [hours, minutes, seconds] = timeStr.split(':').map(Number);
-              
-              if (isNaN(hours) || isNaN(minutes) || isNaN(seconds || 0)) {
-                console.warn('Invalid time components:', { hours, minutes, seconds });
-                return 0;
-              }
-              
-              return hours * 3600 + minutes * 60 + (seconds || 0);
-            } else {
-              // 12-hour format with AM/PM
-              const timeWithoutAMPM = timeStr12Hour.replace(/AM|PM/g, '').trim();
-              const timeParts = timeWithoutAMPM.split(':');
-              
-              if (timeParts.length < 2) {
-                console.warn('Invalid 12-hour time format:', timeStr);
-                return 0;
-              }
-              
-              let [hours, minutes, seconds] = timeParts.map(Number);
-              seconds = seconds || 0;
-              
-              if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
-                console.warn('Invalid 12-hour time components:', { hours, minutes, seconds });
-                return 0;
-              }
-              
-              // Convert to 24-hour format
-              if (isPM && hours !== 12) {
-                hours += 12;
-              } else if (isAM && hours === 12) {
-                hours = 0;
-              }
-              
-              console.log(`Converted "${timeStr}" to 24-hour: ${hours}:${minutes}:${seconds}`);
-              
-              return hours * 3600 + minutes * 60 + seconds;
-            }
-          };
-          
-          try {
-            const startSeconds = parseTimeString(startTime);
-            const endSeconds = parseTimeString(endTime);
-            
-            console.log('Start seconds:', startSeconds, 'End seconds:', endSeconds);
-            
-            // Validate calculated seconds
-            if (startSeconds === 0 && endSeconds === 0) {
-              console.warn('Both start and end seconds are 0, invalid time data');
-              totalCompletedTime = 0;
-            } else {
-              // Handle case where end time is next day (crosses midnight)
-              if (endSeconds < startSeconds) {
-                // Add 24 hours to end time (next day)
-                totalCompletedTime = (endSeconds + 24 * 3600) - startSeconds;
-              } else {
-                totalCompletedTime = endSeconds - startSeconds;
-              }
-              
-              console.log('Calculated duration in seconds:', totalCompletedTime);
-              
-              // Ensure we have a positive duration
-              if (totalCompletedTime < 0 || isNaN(totalCompletedTime)) {
-                console.warn('Invalid duration calculated, setting to 0');
-                totalCompletedTime = 0;
-              }
-            }
-            
-          } catch (timeParseError) {
-            console.error('Error parsing time strings:', timeParseError);
-            totalCompletedTime = 0;
-          }
-        } else {
-          console.warn('Missing startTime or endTime in block time data');
-          totalCompletedTime = 0;
+          totalCompletedTime = calculateTimeDuration(startTime, endTime);
         }
       } catch (error) {
-        console.error('Error parsing block time data:', error);
-        totalCompletedTime = 0;
+        console.error('Error parsing Plan Your Day block time data:', error);
       }
-    } else {
-      console.log('No block time data available for this task');
-      // For tasks without block time, we can set a default duration or leave as 0
-      totalCompletedTime = 0;
+    }
+    // For regular tasks, check block time if enabled
+    else if (!task.isPlan && task.blockTimeEnabled && task.blockTimeData) {
+      try {
+        const blockTimeData =
+          typeof task.blockTimeData === 'string'
+            ? JSON.parse(task.blockTimeData)
+            : task.blockTimeData;
+
+        console.log('Using task block time data:', blockTimeData);
+
+        if (blockTimeData.startTime && blockTimeData.endTime) {
+          startTime = blockTimeData.startTime;
+          endTime = blockTimeData.endTime;
+          totalCompletedTime = calculateTimeDuration(startTime, endTime);
+        }
+      } catch (error) {
+        console.error('Error parsing task block time data:', error);
+      }
+    }
+    // For regular tasks, check timer duration
+    else if (!task.isPlan && task.timerDuration) {
+      try {
+        let durationInMinutes = 0;
+
+        if (
+          typeof task.timerDuration === 'object' &&
+          task.timerDuration !== null
+        ) {
+          if (task.timerDuration.totalMinutes) {
+            durationInMinutes = task.timerDuration.totalMinutes;
+          } else if (
+            task.timerDuration.hours !== undefined ||
+            task.timerDuration.minutes !== undefined
+          ) {
+            const hours = task.timerDuration.hours || 0;
+            const minutes = task.timerDuration.minutes || 0;
+            durationInMinutes = hours * 60 + minutes;
+          }
+        } else if (typeof task.timerDuration === 'number') {
+          durationInMinutes = task.timerDuration;
+        }
+
+        totalCompletedTime = durationInMinutes * 60; // Convert to seconds
+        console.log(
+          `Task timer duration: ${durationInMinutes} minutes (${totalCompletedTime} seconds)`,
+        );
+      } catch (error) {
+        console.error('Error parsing task timer duration:', error);
+      }
     }
 
-    // Final validation to ensure totalCompletedTime is a valid number
     if (isNaN(totalCompletedTime) || totalCompletedTime < 0) {
       console.warn('Final validation failed, setting totalCompletedTime to 0');
       totalCompletedTime = 0;
     }
 
-    // For non-timer tasks, create achievement data
     const achievementData = {
       taskData: task,
-      totalPomodoros: 1, // Single task completion
+      totalPomodoros: 1,
       completedPomodoros: 1,
       totalBreaks: 0,
       completedBreaks: 0,
@@ -649,13 +798,193 @@ const Home = () => {
     console.log('Final achievement data being passed:', {
       ...achievementData,
       totalCompletedTimeMinutes: Math.floor(totalCompletedTime / 60),
-      totalCompletedTimeFormatted: `${Math.floor(totalCompletedTime / 60)}m ${totalCompletedTime % 60}s`
+      totalCompletedTimeFormatted: `${Math.floor(totalCompletedTime / 60)}m ${
+        totalCompletedTime % 60
+      }s`,
     });
-    
+
     navigation.navigate('AchievementScreen', achievementData);
   };
 
-  // FIXED: Toggle function with proper date handling and comprehensive debugging
+  // Helper function to calculate time duration from start and end times
+  const calculateTimeDuration = (startTime, endTime) => {
+    const parseTimeString = timeStr => {
+      if (!timeStr || typeof timeStr !== 'string') {
+        return 0;
+      }
+
+      const timeStr12Hour = timeStr.trim().toUpperCase();
+      const isAM = timeStr12Hour.includes('AM');
+      const isPM = timeStr12Hour.includes('PM');
+
+      if (!isAM && !isPM) {
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        if (isNaN(hours) || isNaN(minutes)) return 0;
+        return hours * 3600 + minutes * 60;
+      } else {
+        const timeWithoutAMPM = timeStr12Hour.replace(/AM|PM/g, '').trim();
+        const [hours, minutes] = timeWithoutAMPM.split(':').map(Number);
+
+        if (isNaN(hours) || isNaN(minutes)) return 0;
+
+        let adjustedHours = hours;
+        if (isPM && hours !== 12) {
+          adjustedHours += 12;
+        } else if (isAM && hours === 12) {
+          adjustedHours = 0;
+        }
+
+        return adjustedHours * 3600 + minutes * 60;
+      }
+    };
+
+    try {
+      const startSeconds = parseTimeString(startTime);
+      const endSeconds = parseTimeString(endTime);
+
+      if (startSeconds === 0 && endSeconds === 0) {
+        return 0;
+      }
+
+      let duration;
+      if (endSeconds < startSeconds) {
+        // Time spans midnight
+        duration = endSeconds + 24 * 3600 - startSeconds;
+      } else {
+        duration = endSeconds - startSeconds;
+      }
+
+      return duration > 0 ? duration : 0;
+    } catch (error) {
+      console.error('Error calculating time duration:', error);
+      return 0;
+    }
+  };
+
+  const handlePlanYourDayCompletion = async (planId, isCompleted = true) => {
+    try {
+      const plan = allPlanYourDay.find(p => p.id === planId);
+      if (!plan) {
+        console.error('Plan not found:', planId);
+        return;
+      }
+
+      const originalId = plan.originalId;
+      const completionDate = getCompletionDateString(selectedDate);
+      console.log(
+        `Updating Plan Your Day completion for ${originalId} on ${completionDate}: ${isCompleted}`,
+      );
+
+      let completion;
+
+      switch (plan.evaluationType) {
+        case 'yesNo':
+          completion = await taskCompletionsService.upsertYesNoCompletion(
+            originalId,
+            user.id,
+            completionDate,
+            isCompleted,
+          );
+          break;
+
+        case 'timer':
+          const timerDuration = plan.timerDuration || 25;
+          completion = await taskCompletionsService.upsertTimerCompletion(
+            originalId,
+            user.id,
+            completionDate,
+            isCompleted ? timerDuration : 0,
+            isCompleted,
+          );
+          break;
+
+        case 'timerTracker':
+          completion = await taskCompletionsService.upsertTimerCompletion(
+            originalId,
+            user.id,
+            completionDate,
+            isCompleted ? 1 : 0,
+            isCompleted,
+          );
+          break;
+
+        case 'checklist':
+          const checklistItems = plan.checklistItems || [];
+          const completedItems = isCompleted
+            ? checklistItems.map(item => ({...item, completed: true}))
+            : checklistItems.map(item => ({...item, completed: false}));
+
+          completion = await taskCompletionsService.upsertChecklistCompletion(
+            originalId,
+            user.id,
+            completionDate,
+            completedItems,
+            isCompleted ? completedItems.length : 0,
+            isCompleted,
+          );
+          break;
+
+        case 'numeric':
+          const numericValue = isCompleted
+            ? plan.targetHours || plan.targetTasks || 1
+            : 0;
+          completion = await taskCompletionsService.upsertNumericCompletion(
+            originalId,
+            user.id,
+            completionDate,
+            numericValue,
+            plan.planType === 'hours' ? 'hours' : 'tasks',
+            isCompleted,
+          );
+          break;
+
+        default:
+          completion = await taskCompletionsService.upsertYesNoCompletion(
+            originalId,
+            user.id,
+            completionDate,
+            isCompleted,
+          );
+          break;
+      }
+
+      setTaskCompletions(prev => ({
+        ...prev,
+        [planId]: completion,
+      }));
+
+      if (isCompleted) {
+        setCheckboxStates(prev => ({
+          ...prev,
+          [planId]: 4,
+        }));
+
+        setTimeout(() => navigateToAchievementScreen(plan), 300);
+      } else {
+        setCheckboxStates(prev => ({
+          ...prev,
+          [planId]: 1,
+        }));
+      }
+
+      console.log(
+        `Plan ${planId} (originalId: ${originalId}) marked as ${
+          isCompleted ? 'completed' : 'not completed'
+        }`,
+      );
+    } catch (error) {
+      console.error('Error updating Plan Your Day completion:', error);
+      Alert.alert('Error', 'Failed to update plan. Please try again.');
+
+      const currentCompletion = taskCompletions[planId];
+      const revertState = currentCompletion?.is_completed === true ? 4 : 1;
+      setCheckboxStates(prev => ({
+        ...prev,
+        [planId]: revertState,
+      }));
+    }
+  };
+
   const toggleCheckbox = async id => {
     console.log(
       'toggleCheckbox called with id:',
@@ -666,6 +995,83 @@ const Home = () => {
       typeof selectedDate,
     );
 
+    if (id.startsWith('plan_')) {
+      const plan = allPlanYourDay.find(p => p.id === id);
+      if (!plan) return;
+
+      console.log(
+        'Toggling Plan Your Day item:',
+        plan.title,
+        'Current completion:',
+        taskCompletions[id]?.is_completed || false,
+      );
+
+      switch (plan.evaluationType) {
+        case 'yesNo':
+          const currentCompletion = taskCompletions[id];
+          const isCurrentlyCompleted = currentCompletion?.is_completed === true;
+          await handlePlanYourDayCompletion(id, !isCurrentlyCompleted);
+          break;
+
+        case 'timer':
+          console.log(
+            'Navigating to timer for Plan Your Day with selectedDate:',
+            selectedDate,
+          );
+          navigation.navigate('PomoScreen', {
+            task: plan,
+            taskId: plan.originalId,
+            selectedDate: selectedDate,
+            isPlan: true,
+          });
+          break;
+
+        case 'timerTracker':
+          console.log(
+            'Navigating to timer tracker for Plan Your Day with selectedDate:',
+            selectedDate,
+          );
+          navigation.navigate('PomoTrackerScreen', {
+            task: plan,
+            taskId: plan.originalId,
+            selectedDate: selectedDate,
+            isPlan: true,
+            isTimerTracker: true,
+          });
+          break;
+
+        case 'checklist':
+          console.log(
+            'Navigating to checklist evaluation for Plan Your Day with selectedDate:',
+            selectedDate,
+          );
+          navigation.navigate('TaskEvaluation', {
+            taskData: plan,
+            taskId: plan.originalId,
+            selectedDate: selectedDate,
+            isPlan: true,
+          });
+          break;
+
+        case 'numeric':
+          console.log(
+            'Opening numeric modal for Plan Your Day with selectedDate:',
+            selectedDate,
+          );
+          setSelectedTask(plan);
+          setNumericModalVisible(true);
+          break;
+
+        default:
+          const defaultCurrentCompletion = taskCompletions[id];
+          const defaultIsCompleted =
+            defaultCurrentCompletion?.is_completed === true;
+          await handlePlanYourDayCompletion(id, !defaultIsCompleted);
+          break;
+      }
+      return;
+    }
+
     const task = tasks.find(task => task.id === id);
 
     if (task && task.type === 'numeric') {
@@ -675,7 +1081,6 @@ const Home = () => {
       return;
     }
 
-    // UPDATED: Timer tasks handle their own completion screen - no achievement screen here
     if (task && task.type === 'timer') {
       console.log('Navigating to timer with selectedDate:', selectedDate);
       navigation.navigate('PomodoroTimerScreen', {
@@ -686,7 +1091,6 @@ const Home = () => {
     }
 
     if (task && task.type === 'checklist') {
-      // FIXED: Always pass selectedDate, with proper logging
       console.log('Navigating to TaskEvaluation:');
       console.log('  - selectedDate:', selectedDate);
       console.log('  - selectedDate type:', typeof selectedDate);
@@ -696,7 +1100,7 @@ const Home = () => {
       navigation.navigate('TaskEvaluation', {
         taskData: task,
         taskId: task.id,
-        selectedDate: selectedDate, // This is the key fix - always pass selectedDate
+        selectedDate: selectedDate,
       });
       return;
     }
@@ -707,31 +1111,28 @@ const Home = () => {
         const isCurrentlyCompleted = currentCompletion?.is_completed === true;
         const newIsCompleted = !isCurrentlyCompleted;
 
-        // Update UI immediately
         if (newIsCompleted) {
           setCheckboxStates(prev => ({
             ...prev,
-            [id]: 2, // Loading state
+            [id]: 2,
           }));
 
           setTimeout(() => {
             setCheckboxStates(prev => ({
               ...prev,
-              [id]: 4, // Completed state
+              [id]: 4,
             }));
           }, 200);
         } else {
           setCheckboxStates(prev => ({
             ...prev,
-            [id]: 1, // Initial state
+            [id]: 1,
           }));
         }
 
-        // FIXED: Use consistent date conversion
         const completionDate = getCompletionDateString(selectedDate);
         console.log('Saving Yes/No completion for date:', completionDate);
 
-        // Save to task_completions table
         const completion = await taskCompletionsService.upsertYesNoCompletion(
           task.id,
           user.id,
@@ -739,13 +1140,11 @@ const Home = () => {
           newIsCompleted,
         );
 
-        // Update local completions state
         setTaskCompletions(prev => ({
           ...prev,
           [task.id]: completion,
         }));
 
-        // UPDATED: Navigate to AchievementScreen instead of AppreciationModal
         if (newIsCompleted) {
           setTimeout(() => navigateToAchievementScreen(task), 300);
         }
@@ -759,7 +1158,6 @@ const Home = () => {
         console.error('Error updating Yes/No task completion:', error);
         Alert.alert('Error', 'Failed to update task. Please try again.');
 
-        // Revert UI state on error
         const currentCompletion = taskCompletions[id];
         const revertState = currentCompletion?.is_completed === true ? 4 : 1;
         setCheckboxStates(prev => ({
@@ -771,32 +1169,46 @@ const Home = () => {
     }
   };
 
-  // FIXED: markTaskCompleted function with proper date handling
   const markTaskCompleted = async (taskId, specificCompletionDate = null) => {
-    const task =
-      allTasks.find(t => t.id === taskId) || tasks.find(t => t.id === taskId);
+    let item = null;
+    let isPlan = false;
 
-    if (!task) {
-      console.log('Task not found for completion:', taskId);
+    if (taskId.startsWith('plan_')) {
+      item = allPlanYourDay.find(p => p.id === taskId);
+      isPlan = true;
+    } else {
+      item =
+        allTasks.find(t => t.id === taskId) || tasks.find(t => t.id === taskId);
+    }
+
+    if (!item) {
+      console.log('Item not found for completion:', taskId);
       await loadTasks();
+      await loadTaskCompletions(selectedDate);
       return;
     }
 
     try {
+      if (isPlan) {
+        await handlePlanYourDayCompletion(taskId, true);
+        setTimeout(async () => {
+          await loadTaskCompletions(selectedDate);
+        }, 500);
+        return;
+      }
+
       setCheckboxStates(prev => ({
         ...prev,
-        [taskId]: 2, // Loading state
+        [taskId]: 2,
       }));
 
-      // FIXED: Use the specific completion date or fall back to current selected date
       const completionDate =
         specificCompletionDate || getCompletionDateString(selectedDate);
       console.log('Marking task completed for date:', completionDate);
 
-      // Handle different task types
-      if (task.type === 'yesNo') {
+      if (item.type === 'yesNo') {
         const completion = await taskCompletionsService.upsertYesNoCompletion(
-          task.id,
+          item.id,
           user.id,
           completionDate,
           true,
@@ -804,27 +1216,25 @@ const Home = () => {
 
         setTaskCompletions(prev => ({
           ...prev,
-          [task.id]: completion,
+          [item.id]: completion,
         }));
-      } else if (task.type === 'numeric') {
-        // For numeric tasks marked as completed externally, use the goal value
-        const value = task.numericGoal || task.numericValue || 1;
+      } else if (item.type === 'numeric') {
+        const value = item.numericGoal || item.numericValue || 1;
         const completion = await taskCompletionsService.upsertNumericCompletion(
-          task.id,
+          item.id,
           user.id,
           completionDate,
           value,
-          task.numericUnit || '',
+          item.numericUnit || '',
           true,
         );
 
         setTaskCompletions(prev => ({
           ...prev,
-          [task.id]: completion,
+          [item.id]: completion,
         }));
-      } else if (task.type === 'checklist') {
-        // For checklist tasks, get the current checklist items and mark all as completed
-        const checklistItems = task.checklistItems || [];
+      } else if (item.type === 'checklist') {
+        const checklistItems = item.checklistItems || [];
         const completedItems = checklistItems.map(item => ({
           ...item,
           completed: true,
@@ -832,7 +1242,7 @@ const Home = () => {
 
         const completion =
           await taskCompletionsService.upsertChecklistCompletion(
-            task.id,
+            item.id,
             user.id,
             completionDate,
             completedItems,
@@ -842,13 +1252,12 @@ const Home = () => {
 
         setTaskCompletions(prev => ({
           ...prev,
-          [task.id]: completion,
+          [item.id]: completion,
         }));
-      } else if (task.type === 'timer') {
-        // For timer tasks, mark as completed with the timer duration
-        const duration = task.timerDuration || 1;
+      } else if (item.type === 'timer') {
+        const duration = item.timerDuration || 1;
         const completion = await taskCompletionsService.upsertTimerCompletion(
-          task.id,
+          item.id,
           user.id,
           completionDate,
           duration,
@@ -857,112 +1266,133 @@ const Home = () => {
 
         setTaskCompletions(prev => ({
           ...prev,
-          [task.id]: completion,
+          [item.id]: completion,
         }));
       }
 
       setTimeout(() => {
         setCheckboxStates(prev => ({
           ...prev,
-          [taskId]: 4, // Completed state
+          [taskId]: 4,
         }));
       }, 200);
 
-      // UPDATED: Navigate to AchievementScreen for non-timer tasks only
-      if (task.type !== 'timer') {
+      if (item.type !== 'timer') {
         setTimeout(() => {
-          navigateToAchievementScreen(task);
+          navigateToAchievementScreen(item);
         }, 300);
       }
+
+      setTimeout(async () => {
+        await loadTaskCompletions(selectedDate);
+      }, 500);
     } catch (error) {
-      console.error('Error marking task as completed:', error);
+      console.error('Error marking item as completed:', error);
       setCheckboxStates(prev => ({
         ...prev,
-        [taskId]: 1, // Revert to uncompleted state
+        [taskId]: 1,
       }));
       Alert.alert(
         'Error',
-        'Failed to mark task as completed. Please try again.',
+        'Failed to mark item as completed. Please try again.',
       );
     }
   };
 
-  // FIXED: handleNumericSave function with proper date handling
   const handleNumericSave = async (value, isCompleted) => {
     if (selectedTask) {
       try {
         console.log(
-          `Task ${selectedTask.id} updated with value: ${value}, completed: ${isCompleted}`,
+          `${selectedTask.isPlan ? 'Plan' : 'Task'} ${
+            selectedTask.id
+          } updated with value: ${value}, completed: ${isCompleted}`,
         );
 
-        // FIXED: Use consistent date conversion
         const completionDate = getCompletionDateString(selectedDate);
         console.log('Saving numeric completion for date:', completionDate);
 
-        // Save to task_completions table using the new service
-        const completion = await taskCompletionsService.upsertNumericCompletion(
-          selectedTask.id,
+        let completion;
+        const taskId = selectedTask.isPlan
+          ? selectedTask.originalId
+          : selectedTask.id;
+        const unit = selectedTask.isPlan
+          ? selectedTask.planType === 'hours'
+            ? 'hours'
+            : 'tasks'
+          : selectedTask.numericUnit || '';
+
+        completion = await taskCompletionsService.upsertNumericCompletion(
+          taskId,
           user.id,
           completionDate,
           value,
-          selectedTask.numericUnit || '',
+          unit,
           isCompleted,
         );
 
-        // Update local completions state
+        const stateId = selectedTask.isPlan ? selectedTask.id : selectedTask.id;
+
         setTaskCompletions(prev => ({
           ...prev,
-          [selectedTask.id]: completion,
+          [stateId]: completion,
         }));
 
-        // Update UI state
         if (isCompleted) {
           setCheckboxStates(prev => ({
             ...prev,
-            [selectedTask.id]: 4, // Completed state
+            [stateId]: 4,
           }));
 
-          // UPDATED: Navigate to AchievementScreen instead of AppreciationModal
           setTimeout(() => navigateToAchievementScreen(selectedTask), 300);
         } else {
           setCheckboxStates(prev => ({
             ...prev,
-            [selectedTask.id]: 1, // Uncompleted state
+            [stateId]: 1,
           }));
         }
 
         console.log(
-          `Numeric task ${selectedTask.title} saved with value: ${value}, completed: ${isCompleted} for ${completionDate}`,
+          `${selectedTask.isPlan ? 'Plan' : 'Numeric task'} ${
+            selectedTask.title
+          } saved with value: ${value}, completed: ${isCompleted} for ${completionDate}`,
         );
+
+        setTimeout(async () => {
+          await loadTaskCompletions(selectedDate);
+        }, 500);
       } catch (error) {
-        console.error('Error updating numeric task completion:', error);
-        Alert.alert('Error', 'Failed to update task. Please try again.');
+        console.error('Error updating numeric completion:', error);
+        Alert.alert('Error', 'Failed to update item. Please try again.');
       }
     }
     setSelectedTask(null);
   };
 
   const renderTask = ({item, index}) => {
-    // FIXED: Determine checkbox state based on completion data for the current date
-    let displayCheckboxState = 1; // Default state
+    const isPlan = item.isPlan || false;
 
+    let displayCheckboxState = 1;
     const completion = taskCompletions[item.id];
+
     if (completion?.is_completed === true) {
-      displayCheckboxState = 4; // Completed state
+      displayCheckboxState = 4;
     } else if (checkboxStates[item.id]) {
       displayCheckboxState = checkboxStates[item.id];
     }
 
+    const totalItems = filteredTasks.length;
+
     return (
-      <View style={index === tasks.length - 1 ? styles.lastTaskCard : null}>
+      <View style={index === totalItems - 1 ? styles.lastTaskCard : null}>
         <TaskCard
           item={item}
           checkboxState={displayCheckboxState}
           onToggle={() => toggleCheckbox(item.id)}
           onTaskCompleted={markTaskCompleted}
           onTaskDelete={deleteTask}
-          selectedDate={selectedDate} // FIXED: Pass selectedDate to TaskCard
+          selectedDate={selectedDate}
           taskCompletions={taskCompletions}
+          isPlan={isPlan}
         />
       </View>
     );
@@ -974,7 +1404,7 @@ const Home = () => {
       checked={!!checkboxStates[item.id]}
       onToggle={() => toggleCheckbox(item.id)}
       isFirstItem={index === 0}
-      isGoalOfDay={item.Heading === 'Create Challenge'}
+      isGoalOfDay={index === modaltasks.length - 1}
     />
   );
 
@@ -1030,18 +1460,18 @@ const Home = () => {
           contentContainerStyle={{marginTop: HP(0.7)}}
           showsVerticalScrollIndicator={false}
         />
-      ) : tasks.length === 0 ? (
+      ) : filteredTasks.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>
-            No tasks for {new Date(selectedDate).toLocaleDateString()}
+            No tasks or plans for {new Date(selectedDate).toLocaleDateString()}
           </Text>
           <Text style={styles.emptySubText}>
-            Select a different date or create a new task!
+            Select a different date or create a new task or plan!
           </Text>
         </View>
       ) : (
         <FlatList
-          data={tasks}
+          data={filteredTasks}
           keyExtractor={item => item.id}
           renderItem={renderTask}
           contentContainerStyle={{marginTop: HP(0.7)}}
@@ -1064,7 +1494,10 @@ const Home = () => {
         onSwipeComplete={() => setModalVisible(false)}
         useNativeDriver>
         <View style={styles.modalContent}>
-          <StatusBar backgroundColor={colors.ModelBackground} barStyle="dark-content" />
+          <StatusBar
+            backgroundColor={colors.ModelBackground}
+            barStyle="dark-content"
+          />
           <FlatList
             data={modaltasks}
             keyExtractor={item => item.id}
@@ -1092,6 +1525,19 @@ const Home = () => {
         onDateSelect={handleDatePickerSelect}
         initialDate={new Date(selectedDate)}
         title="Select Date"
+      />
+
+      <WelcomePopup
+        visible={isWelcomePopupVisible}
+        onClose={handleWelcomeClose}
+        userName={user?.name || user?.email || user?.display_name}
+      />
+
+      {/* NEW: Month Reminder Modal */}
+      <MonthReminderModal
+        visible={isMonthReminderVisible}
+        onClose={handleMonthReminderClose}
+        userName={user?.name || user?.email || user?.display_name}
       />
     </View>
   );
@@ -1226,17 +1672,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.White,
     borderTopLeftRadius: WP(10.7),
     borderTopRightRadius: WP(10.7),
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: HP(20),
-  },
-  loadingText: {
-    fontSize: FS(1.8),
-    fontFamily: 'OpenSans-SemiBold',
-    color: colors.Primary,
   },
   emptyContainer: {
     flex: 1,

@@ -1,327 +1,1148 @@
-import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { AppState, DeviceEventEmitter } from 'react-native';
-import { AuthProvider, useAuth } from './Src/contexts/AuthContext';
+import React, {useEffect, useState, useRef} from 'react';
+import {NavigationContainer} from '@react-navigation/native';
+import {AppState, DeviceEventEmitter} from 'react-native';
+import {AuthProvider, useAuth} from './Src/contexts/AuthContext';
+import {SessionProvider, useSession} from './Src/contexts/SessionContext';
+import {MusicProvider, useMusic} from './Src/contexts/MusicContext';
+import {NotesProvider} from './Src/contexts/NotesContext';
 import AuthNavigator from './Src/Navigation/AuthNavigator';
 import NotificationService from './Src/services/notifications/NotificationService';
 import AlarmSchedulerService from './Src/services/notifications/AlarmSchedulerService';
 import NativeAlarmService from './Src/services/notifications/NativeAlarmService';
 import EnhancedTTSService from './Src/services/notifications/EnhancedTTSService';
 import AlarmTTSEventHandler from './Src/services/notifications/AlarmTTSEventHandler';
-import { taskBlockingBackgroundService } from './Src/services/AppBlocking/TaskBlockingBackgroundService';
+import MonthReminderNotificationService from './Src/services/notifications/MonthReminderNotificationService';
+import WaterReminderNotificationService from './Src/services/notifications/WaterReminderNotificationService';
+import DailyTaskReminderModal from './Src/Components/DailyTaskReminderModal';
+import MonthReminderModal from './Src/Components/MonthReminderModal';
+import {dailyReminderService} from './Src/services/challenges/DailyReminderService';
+import {useSessionTracking} from './Src/hooks/useSessionTracking';
+import {challengeService} from './Src/services/api/challengeService';
+import SleepTrackerModal from './Src/Components/SleepTrackerModal';
+import {sleepTrackerService} from './Src/services/api/SleepTrackerService';
 
-// Task Blocking Service Manager - Lightweight version
-const TaskBlockingServiceManager = () => {
-  const { user } = useAuth();
+// Music Manager Component
+const MusicManager = () => {
+  const {stopPlanMusic, forceStopPlanMusic, isPlanMusicActive} = useMusic();
 
   useEffect(() => {
-    console.log('[DEBUG] TaskBlockingServiceManager useEffect triggered with user:', user?.id);
-    
-    if (!user) {
-      console.log('[DEBUG] No user available, skipping initialization');
+    console.log('🎵 MusicManager: Initialized');
+
+    const handleAppStateChange = async nextAppState => {
+      console.log('🎵 MusicManager: App state changed to:', nextAppState);
+
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        if (isPlanMusicActive) {
+          console.log('🎵 MusicManager: App backgrounded - stopping music');
+          try {
+            await forceStopPlanMusic();
+            console.log(
+              '🎵 MusicManager: Music stopped successfully on background',
+            );
+          } catch (error) {
+            console.error(
+              '🎵 MusicManager: Error stopping music on background:',
+              error,
+            );
+          }
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
+    return () => {
+      console.log('🎵 MusicManager: Cleanup - stopping music');
+      subscription?.remove();
+
+      if (isPlanMusicActive) {
+        forceStopPlanMusic().catch(error => {
+          console.error('🎵 MusicManager: Error during cleanup:', error);
+        });
+      }
+    };
+  }, [isPlanMusicActive, forceStopPlanMusic]);
+
+  return null;
+};
+
+// Month Reminder Notification Manager - Independent from SessionContext
+const MonthReminderNotificationManager = () => {
+  const {user} = useAuth();
+  const hasChecked = useRef(false);
+
+  useEffect(() => {
+    const checkAndShowMonthNotification = async () => {
+      if (hasChecked.current) {
+        console.log('[MONTH NOTIF MANAGER] Already checked this session');
+        return;
+      }
+
+      if (!user || !user.id) {
+        console.log('[MONTH NOTIF MANAGER] No valid user');
+        return;
+      }
+
+      try {
+        console.log(
+          '[MONTH NOTIF MANAGER] Checking if should show notification',
+        );
+
+        // Check only the notification service (independent of SessionContext)
+        const shouldShowNotif =
+          await MonthReminderNotificationService.shouldShowToday();
+
+        console.log(
+          '[MONTH NOTIF MANAGER] Should show notification:',
+          shouldShowNotif,
+        );
+
+        if (shouldShowNotif) {
+          // Extract user name from user object
+          const userName =
+            user.user_metadata?.username ||
+            user.user_metadata?.display_name ||
+            user.user_metadata?.full_name ||
+            user.email;
+
+          console.log(
+            '[MONTH NOTIF MANAGER] Showing month reminder notification for:',
+            userName,
+          );
+
+          // Show the notification
+          const shown = await MonthReminderNotificationService.showNotification(
+            userName,
+          );
+
+          if (shown) {
+            console.log(
+              '[MONTH NOTIF MANAGER] Notification shown and marked successfully',
+            );
+          }
+        } else {
+          console.log('[MONTH NOTIF MANAGER] Notification already shown today');
+        }
+
+        hasChecked.current = true;
+      } catch (error) {
+        console.error(
+          '[MONTH NOTIF MANAGER] Error showing notification:',
+          error,
+        );
+      }
+    };
+
+    // Delay to ensure app is fully loaded
+    const timer = setTimeout(checkAndShowMonthNotification, 3000);
+    return () => clearTimeout(timer);
+  }, [user?.id]);
+
+  // Reset check flag when app comes from background
+  useEffect(() => {
+    const handleAppStateChange = nextAppState => {
+      if (nextAppState === 'active') {
+        console.log(
+          '[MONTH NOTIF MANAGER] App became active - resetting check flag',
+        );
+        hasChecked.current = false;
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription?.remove();
+  }, []);
+
+  return null;
+};
+
+/**
+ * Water Reminder Manager - Manages hourly water drinking reminders
+ */
+const WaterReminderManager = () => {
+  const {user} = useAuth();
+  const hasInitialized = useRef(false);
+
+  useEffect(() => {
+    const initializeWaterReminder = async () => {
+      if (hasInitialized.current) {
+        console.log('[WATER REMINDER MANAGER] Already initialized');
+        return;
+      }
+
+      if (!user || !user.id) {
+        console.log('[WATER REMINDER MANAGER] No valid user');
+        return;
+      }
+
+      try {
+        console.log(
+          '[WATER REMINDER MANAGER] Initializing water reminder service',
+        );
+
+        // Initialize the service
+        await WaterReminderNotificationService.initialize();
+
+        // Extract user name
+        const userName =
+          user.user_metadata?.username ||
+          user.user_metadata?.display_name ||
+          user.user_metadata?.full_name ||
+          user.email;
+
+        // Check if reminders are enabled
+        // Check if reminders are enabled
+        const isEnabled = await WaterReminderNotificationService.isEnabled();
+
+        if (!isEnabled) {
+          // First time - auto-enable
+          console.log(
+            '[WATER REMINDER MANAGER] First time - enabling water reminders',
+          );
+          await WaterReminderNotificationService.scheduleHourlyReminders(
+            userName,
+          );
+        } else {
+          // Already enabled - just reschedule with current user name
+          console.log(
+            '[WATER REMINDER MANAGER] Rescheduling with user name:',
+            userName,
+          );
+          await WaterReminderNotificationService.scheduleHourlyReminders(
+            userName,
+          );
+        }
+
+        hasInitialized.current = true;
+      } catch (error) {
+        console.error('[WATER REMINDER MANAGER] Error initializing:', error);
+      }
+    };
+
+    // Delay to ensure app is fully loaded
+    const timer = setTimeout(initializeWaterReminder, 4000);
+    return () => clearTimeout(timer);
+  }, [user?.id]);
+
+  // Reset initialization flag when app comes from background
+  useEffect(() => {
+    const handleAppStateChange = nextAppState => {
+      if (nextAppState === 'active') {
+        console.log('[WATER REMINDER MANAGER] App became active');
+        // Don't reset the flag - we want to initialize only once
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription?.remove();
+  }, []);
+
+  return null;
+};
+
+// Daily Modal Manager (keeping existing modal)
+const DailyModalManager = () => {
+  const {user} = useAuth();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalData, setModalData] = useState(null);
+  const [lastCheckedUserId, setLastCheckedUserId] = useState(null);
+  const [totalCompletedHours, setTotalCompletedHours] = useState(0);
+
+  useEffect(() => {
+    const context = 'DailyModalManager-initial';
+
+    if (!user || !user.id) {
+      console.log(`[DAILY MODAL] ${context}: No valid user`);
+      setModalVisible(false);
+      setModalData(null);
+      setLastCheckedUserId(null);
+      setTotalCompletedHours(0);
       return;
     }
 
-    // Initialize the background service when user is available
-    const initializeTaskBlocking = async () => {
+    const userId = user.id;
+
+    if (lastCheckedUserId === userId) {
+      console.log(`[DAILY MODAL] ${context}: Already checked for user`);
+      return;
+    }
+
+    const checkAndShowDailyModal = async () => {
       try {
-        console.log('[DEBUG] Initializing Task Blocking Background Service for user:', user.id);
-        
-        const initialized = await taskBlockingBackgroundService.initialize(user.id);
-        
-        if (initialized) {
-          console.log('[DEBUG] Task Blocking Background Service initialized successfully');
-          
-          // Log the service status after initialization
-          const status = taskBlockingBackgroundService.getStatus();
-          console.log('[DEBUG] Service status after initialization:', status);
+        console.log(`[DAILY MODAL] ${context}: Checking for user`);
+        setLastCheckedUserId(userId);
+
+        const modalInfo = await dailyReminderService.checkDailyModal(userId);
+
+        if (modalInfo) {
+          console.log(
+            `[DAILY MODAL] ${context}: Showing modal for challenge:`,
+            modalInfo.challenge.name,
+          );
+
+          const challengeId = modalInfo.challenge.id;
+          const totalHours = await challengeService.getTotalHoursCompleted(
+            challengeId,
+            userId,
+          );
+
+          console.log(`[DAILY MODAL] Total completed hours: ${totalHours}`);
+
+          setTotalCompletedHours(totalHours);
+          setModalData(modalInfo);
+          setModalVisible(true);
+          await dailyReminderService.markModalShownToday();
         } else {
-          console.warn('[DEBUG] Task Blocking Background Service failed to initialize');
+          console.log(`[DAILY MODAL] ${context}: No modal to show`);
         }
       } catch (error) {
-        console.error('[DEBUG] Error initializing Task Blocking Background Service:', error);
+        console.error(`[DAILY MODAL] ${context}: Error:`, error);
       }
     };
 
-    initializeTaskBlocking();
-
-    // Cleanup when user changes or component unmounts
-    return () => {
-      console.log('[DEBUG] TaskBlockingServiceManager cleanup triggered');
-      taskBlockingBackgroundService.cleanup().catch(error => 
-        console.error('[DEBUG] Error during task blocking service cleanup:', error)
-      );
-    };
-  }, [user?.id]); // Changed dependency to user?.id to be more specific
-
-  return null; // This component doesn't render anything
-};
-
-// Main App Component
-const AppContent = () => {
-  const { user } = useAuth();
+    const timer = setTimeout(checkAndShowDailyModal, 1000);
+    return () => clearTimeout(timer);
+  }, [user?.id]);
 
   useEffect(() => {
-    // Initialize services - Enhanced with ElevenLabs TTS
-    const initializeServices = async () => {
-      try {
-        console.log('Initializing enhanced services with ElevenLabs TTS...');
-        
-        // Initialize notification service (for backup notifications only)
-        await NotificationService.initialize();
-        console.log('NotificationService initialized');
-        
-        // Initialize native alarm service (primary alarm system)
-        await NativeAlarmService.initialize();
-        console.log('NativeAlarmService initialized');
-        
-        // NEW: Initialize ElevenLabs TTS service
-        await EnhancedTTSService.initialize();
-        console.log('EnhancedTTSService (ElevenLabs) initialized');
-        
-        // Initialize alarm scheduler service (manages native alarms with ElevenLabs)
-        await AlarmSchedulerService.initialize();
-        console.log('AlarmSchedulerService with ElevenLabs initialized');
-        
-        // NEW: Start listening for alarm TTS events from Android
-        AlarmTTSEventHandler.startListening();
-        console.log('AlarmTTSEventHandler started listening');
-        
-        // Set user profile for personalized messages if user is available
-        if (user) {
-          const userProfile = {
-            username: user.user_metadata?.username || user.user_metadata?.display_name,
-            display_name: user.user_metadata?.display_name || user.user_metadata?.full_name,
-            email: user.email,
-            user_metadata: user.user_metadata
-          };
-          
-          AlarmSchedulerService.setUserProfile(userProfile);
-          EnhancedTTSService.setUserProfile(userProfile);
-          console.log('User profile set for personalized ElevenLabs TTS:', userProfile.username || userProfile.display_name);
+    const handleAppStateChange = nextAppState => {
+      const context = 'DailyModalManager-appstate';
+
+      if (nextAppState === 'active') {
+        if (!user || !user.id) {
+          console.log(`[DAILY MODAL] ${context}: No valid user`);
+          return;
         }
-        
-        console.log('All services initialized successfully - Native alarms with ElevenLabs TTS enabled');
-        
-        // Log service information
-        const serviceInfo = AlarmSchedulerService.getServiceInfo();
-        console.log('Enhanced Alarm System Info:', serviceInfo);
-        
-      } catch (error) {
-        console.error('Error initializing enhanced services:', error);
+
+        const userId = user.id;
+
+        const checkModalOnFocus = async () => {
+          try {
+            const shouldShow =
+              await dailyReminderService.shouldShowDailyModal();
+            if (shouldShow && !modalVisible) {
+              const modalInfo = await dailyReminderService.checkDailyModal(
+                userId,
+              );
+              if (modalInfo) {
+                const challengeId = modalInfo.challenge.id;
+                const totalHours =
+                  await challengeService.getTotalHoursCompleted(
+                    challengeId,
+                    userId,
+                  );
+
+                console.log(
+                  `[DAILY MODAL] ${context}: Total hours: ${totalHours}`,
+                );
+
+                setTotalCompletedHours(totalHours);
+                setModalData(modalInfo);
+                setModalVisible(true);
+                await dailyReminderService.markModalShownToday();
+              }
+            }
+          } catch (error) {
+            console.error(`[DAILY MODAL] ${context}: Error:`, error);
+          }
+        };
+
+        setTimeout(checkModalOnFocus, 500);
       }
     };
-    
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription?.remove();
+  }, [user?.id, modalVisible]);
+
+  const handleClose = () => {
+    console.log('[DAILY MODAL] Modal closed');
+    setModalVisible(false);
+    setModalData(null);
+    setTotalCompletedHours(0);
+  };
+
+  return (
+    <DailyTaskReminderModal
+      visible={modalVisible}
+      challenge={modalData?.challenge}
+      totalCompletedDays={modalData?.totalCompletedDays}
+      totalCompletedHours={totalCompletedHours}
+      onClose={handleClose}
+    />
+  );
+};
+
+const SleepTrackerModalManager = () => {
+  const {user} = useAuth();
+  const [modalVisible, setModalVisible] = useState(false);
+  const hasChecked = useRef(false);
+
+  useEffect(() => {
+    const checkAndShowSleepModal = async () => {
+      if (hasChecked.current) {
+        console.log('[SLEEP TRACKER MODAL] Already checked this session');
+        return;
+      }
+
+      if (!user || !user.id) {
+        console.log('[SLEEP TRACKER MODAL] No valid user');
+        return;
+      }
+
+      try {
+        console.log('[SLEEP TRACKER MODAL] Checking if should show modal');
+
+        // Initialize service
+        await sleepTrackerService.initialize();
+
+        // Check if we should show the modal today
+        const shouldShow = await sleepTrackerService.shouldShowToday();
+
+        console.log('[SLEEP TRACKER MODAL] Should show:', shouldShow);
+
+        if (shouldShow) {
+          console.log('[SLEEP TRACKER MODAL] Showing sleep tracker modal');
+
+          // Small delay to ensure app is fully loaded (after other modals)
+          setTimeout(() => {
+            setModalVisible(true);
+          }, 4000); // 4 seconds delay after app load
+        } else {
+          console.log('[SLEEP TRACKER MODAL] Modal already shown today');
+        }
+
+        hasChecked.current = true;
+      } catch (error) {
+        console.error('[SLEEP TRACKER MODAL] Error showing modal:', error);
+      }
+    };
+
+    // Delay to ensure app is fully loaded
+    const timer = setTimeout(checkAndShowSleepModal, 2000);
+    return () => clearTimeout(timer);
+  }, [user?.id]);
+
+  // Reset check flag when app comes from background
+  useEffect(() => {
+    const handleAppStateChange = nextAppState => {
+      if (nextAppState === 'active') {
+        console.log(
+          '[SLEEP TRACKER MODAL] App became active - resetting check flag',
+        );
+        hasChecked.current = false;
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription?.remove();
+  }, []);
+
+  const handleClose = () => {
+    console.log('[SLEEP TRACKER MODAL] Modal closed (skipped)');
+    setModalVisible(false);
+    // Mark as shown even if skipped
+    sleepTrackerService.markShownToday();
+  };
+
+  const handleSave = async wakeupTime => {
+    try {
+      console.log('[SLEEP TRACKER MODAL] Saving wakeup time:', wakeupTime);
+
+      // Save the wakeup time to database
+      await sleepTrackerService.saveWakeupTime(
+        user.id,
+        wakeupTime.toISOString(),
+      );
+
+      // Mark as shown for today
+      await sleepTrackerService.markShownToday();
+
+      console.log('[SLEEP TRACKER MODAL] Wakeup time saved successfully');
+      setModalVisible(false);
+    } catch (error) {
+      console.error('[SLEEP TRACKER MODAL] Error saving wakeup time:', error);
+      throw error; // Re-throw to let modal handle the error
+    }
+  };
+
+  const userName =
+    user?.user_metadata?.username ||
+    user?.user_metadata?.display_name ||
+    user?.user_metadata?.full_name ||
+    null;
+
+  return (
+    <SleepTrackerModal
+      visible={modalVisible}
+      onClose={handleClose}
+      onSave={handleSave}
+      userName={userName}
+    />
+  );
+};
+
+// NEW: Month Reminder Modal Manager (for showing modal if preferred)
+const MonthReminderModalManager = () => {
+  const {user} = useAuth();
+  const {shouldShowMonthReminder, markMonthReminderShown} = useSession();
+  const [modalVisible, setModalVisible] = useState(false);
+
+  useEffect(() => {
+    const checkAndShowModal = async () => {
+      if (!user || !user.id) {
+        console.log('[MONTH MODAL] No valid user');
+        return;
+      }
+
+      const shouldShow = shouldShowMonthReminder();
+      console.log('[MONTH MODAL] Should show:', shouldShow);
+
+      if (shouldShow) {
+        // Small delay for better UX (after daily modal if shown)
+        setTimeout(() => {
+          setModalVisible(true);
+          markMonthReminderShown();
+        }, 3000);
+      }
+    };
+
+    const timer = setTimeout(checkAndShowModal, 1500);
+    return () => clearTimeout(timer);
+  }, [user?.id]);
+
+  const handleClose = () => {
+    console.log('[MONTH MODAL] Modal closed');
+    setModalVisible(false);
+  };
+
+  const userName =
+    user?.user_metadata?.username ||
+    user?.user_metadata?.display_name ||
+    user?.user_metadata?.full_name ||
+    user?.email;
+
+  return (
+    <MonthReminderModal
+      visible={modalVisible}
+      onClose={handleClose}
+      userName={userName}
+    />
+  );
+};
+
+// Session Tracking Manager
+const SessionTrackingManager = () => {
+  const {user} = useAuth();
+
+  const {
+    triggerBatchUpload,
+    getSessionStats,
+    testSessionSystem,
+    clearAllSessionData,
+    isSessionActive,
+  } = useSessionTracking(user);
+
+  useEffect(() => {
+    if (user?.id) {
+      console.log(
+        `[SESSION MANAGER] User logged in: ${user.id}, Session active: ${isSessionActive}`,
+      );
+    }
+  }, [user?.id, isSessionActive]);
+
+  useEffect(() => {
+    global.sessionTracking = {
+      triggerBatchUpload,
+      getSessionStats,
+      testSessionSystem,
+      clearAllSessionData,
+    };
+  }, [
+    triggerBatchUpload,
+    getSessionStats,
+    testSessionSystem,
+    clearAllSessionData,
+  ]);
+
+  return null;
+};
+
+// Edit Screen Broadcast Listener
+const EditScreenListener = ({navigationRef}) => {
+  const [pendingNavigation, setPendingNavigation] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [isNavigationReady, setIsNavigationReady] = useState(false);
+
+  useEffect(() => {
+    if (navigationRef.current) {
+      const unsubscribe = navigationRef.current.addListener('state', () => {
+        setIsNavigationReady(true);
+      });
+
+      if (navigationRef.current.isReady()) {
+        setIsNavigationReady(true);
+      }
+
+      return unsubscribe;
+    }
+  }, [navigationRef]);
+
+  useEffect(() => {
+    console.log('[EDIT SCREEN] Listener initialized');
+
+    const editScreenListener = DeviceEventEmitter.addListener(
+      'OPEN_EDIT_SCREEN',
+      data => {
+        console.log('[EDIT SCREEN] RECEIVED OPEN_EDIT_SCREEN EVENT');
+        console.log('[EDIT SCREEN] Event data:', JSON.stringify(data, null, 2));
+
+        try {
+          const {planId, screen, evaluationType, fromReschedule} = data;
+
+          if (!planId || !screen) {
+            console.error('[EDIT SCREEN] Missing required data!');
+            return;
+          }
+
+          const navData = {
+            screen: screen,
+            params: {
+              planId: planId,
+              fromReschedule: fromReschedule || false,
+              evaluationType: evaluationType,
+            },
+          };
+
+          setPendingNavigation(navData);
+          setRetryCount(0);
+          setIsNavigating(false);
+        } catch (error) {
+          console.error('[EDIT SCREEN] ERROR HANDLING BROADCAST:', error);
+        }
+      },
+    );
+
+    return () => editScreenListener?.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!pendingNavigation || isNavigating) {
+      return;
+    }
+
+    const attemptNavigation = () => {
+      if (!navigationRef.current) {
+        if (retryCount < 5) {
+          setTimeout(() => setRetryCount(prev => prev + 1), 1000);
+        } else {
+          setPendingNavigation(null);
+          setRetryCount(0);
+          setIsNavigating(false);
+        }
+        return;
+      }
+
+      const navReady = navigationRef.current.isReady();
+      if (!navReady || !isNavigationReady) {
+        if (retryCount < 10) {
+          setTimeout(() => setRetryCount(prev => prev + 1), 500);
+        } else {
+          setPendingNavigation(null);
+          setRetryCount(0);
+          setIsNavigating(false);
+        }
+        return;
+      }
+
+      try {
+        setIsNavigating(true);
+        navigationRef.current.navigate(
+          pendingNavigation.screen,
+          pendingNavigation.params,
+        );
+
+        setTimeout(() => {
+          setPendingNavigation(null);
+          setRetryCount(0);
+          setIsNavigating(false);
+        }, 500);
+      } catch (error) {
+        console.error('[EDIT SCREEN] NAVIGATION ERROR:', error);
+        setIsNavigating(false);
+
+        if (retryCount < 3) {
+          setTimeout(() => setRetryCount(prev => prev + 1), 1000);
+        } else {
+          setPendingNavigation(null);
+          setRetryCount(0);
+        }
+      }
+    };
+
+    const timer = setTimeout(attemptNavigation, 500);
+    return () => clearTimeout(timer);
+  }, [
+    pendingNavigation,
+    navigationRef,
+    retryCount,
+    isNavigating,
+    isNavigationReady,
+  ]);
+
+  return null;
+};
+
+// Intention Broadcast Listener
+const IntentionBroadcastListener = ({navigationRef}) => {
+  const [pendingNavigation, setPendingNavigation] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [isNavigationReady, setIsNavigationReady] = useState(false);
+
+  useEffect(() => {
+    if (navigationRef.current) {
+      const unsubscribe = navigationRef.current.addListener('state', () => {
+        setIsNavigationReady(true);
+      });
+
+      if (navigationRef.current.isReady()) {
+        setIsNavigationReady(true);
+      }
+
+      return unsubscribe;
+    }
+  }, [navigationRef]);
+
+  useEffect(() => {
+    console.log('[INTENTION] Broadcast listener initialized');
+
+    const intentionListener = DeviceEventEmitter.addListener(
+      'OPEN_POMO_TRACKER',
+      data => {
+        console.log('[INTENTION] RECEIVED OPEN_POMO_TRACKER EVENT');
+
+        try {
+          const {planId, taskTitle, taskDescription, startTime, category} =
+            data;
+
+          if (!planId || !taskTitle) {
+            console.error('[INTENTION] Missing required data!');
+            return;
+          }
+
+          const navData = {
+            task: {
+              id: planId,
+              title: taskTitle,
+              description: taskDescription || '',
+              start_time: startTime || '',
+              category: category || 'Work and Career',
+            },
+            selectedDate: new Date().toDateString(),
+          };
+
+          setPendingNavigation(navData);
+          setRetryCount(0);
+          setIsNavigating(false);
+        } catch (error) {
+          console.error('[INTENTION] ERROR HANDLING BROADCAST:', error);
+        }
+      },
+    );
+
+    return () => intentionListener?.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!pendingNavigation || isNavigating) {
+      return;
+    }
+
+    const attemptNavigation = () => {
+      if (!navigationRef.current) {
+        if (retryCount < 5) {
+          setTimeout(() => setRetryCount(prev => prev + 1), 1000);
+        } else {
+          setPendingNavigation(null);
+          setRetryCount(0);
+          setIsNavigating(false);
+        }
+        return;
+      }
+
+      const navReady = navigationRef.current.isReady();
+      if (!navReady || !isNavigationReady) {
+        if (retryCount < 10) {
+          setTimeout(() => setRetryCount(prev => prev + 1), 500);
+        } else {
+          setPendingNavigation(null);
+          setRetryCount(0);
+          setIsNavigating(false);
+        }
+        return;
+      }
+
+      try {
+        setIsNavigating(true);
+        navigationRef.current.navigate('PomoTrackerScreen', pendingNavigation);
+
+        setTimeout(() => {
+          setPendingNavigation(null);
+          setRetryCount(0);
+          setIsNavigating(false);
+        }, 500);
+      } catch (error) {
+        console.error('[INTENTION] NAVIGATION ERROR:', error);
+        setIsNavigating(false);
+
+        if (retryCount < 3) {
+          setTimeout(() => setRetryCount(prev => prev + 1), 1000);
+        } else {
+          setPendingNavigation(null);
+          setRetryCount(0);
+        }
+      }
+    };
+
+    const timer = setTimeout(attemptNavigation, 500);
+    return () => clearTimeout(timer);
+  }, [
+    pendingNavigation,
+    navigationRef,
+    retryCount,
+    isNavigating,
+    isNavigationReady,
+  ]);
+
+  return null;
+};
+
+// Main App Content
+const AppContent = () => {
+  const {user} = useAuth();
+  const [servicesInitialized, setServicesInitialized] = useState(false);
+  const navigationRef = useRef(null);
+
+  useEffect(() => {
+    const initializeServices = async () => {
+      if (servicesInitialized) {
+        console.log('Services already initialized, skipping...');
+        return;
+      }
+
+      try {
+        console.log('Initializing services...');
+
+        await NotificationService.initialize();
+        console.log('NotificationService initialized');
+
+        await NativeAlarmService.initialize();
+        console.log('NativeAlarmService initialized');
+
+        await EnhancedTTSService.initialize();
+        console.log('EnhancedTTSService initialized');
+
+        await AlarmSchedulerService.initialize();
+        console.log('AlarmSchedulerService initialized');
+
+        // Initialize Month Reminder Notification Service
+        await MonthReminderNotificationService.initialize();
+        console.log('MonthReminderNotificationService initialized');
+
+        AlarmTTSEventHandler.startListening();
+        console.log('AlarmTTSEventHandler started');
+
+        setServicesInitialized(true);
+        console.log('All services initialized successfully');
+      } catch (error) {
+        console.error('Error initializing services:', error);
+      }
+    };
+
     initializeServices();
 
-    // Handle app state changes - Enhanced for alarms, TTS, and task blocking
-    const handleAppStateChange = (nextAppState) => {
+    const updateUserProfile = () => {
+      if (!user || !user.id) {
+        console.log('No valid user for profile update');
+        return;
+      }
+
+      const userProfile = {
+        username:
+          user.user_metadata?.username || user.user_metadata?.display_name,
+        display_name:
+          user.user_metadata?.display_name || user.user_metadata?.full_name,
+        email: user.email,
+        user_metadata: user.user_metadata,
+      };
+
+      try {
+        AlarmSchedulerService.setUserProfile(userProfile);
+        EnhancedTTSService.setUserProfile(userProfile);
+        console.log(
+          'User profile set for TTS:',
+          userProfile.username || userProfile.display_name,
+        );
+      } catch (error) {
+        console.error('Error setting user profile:', error);
+      }
+    };
+
+    if (servicesInitialized && user) {
+      updateUserProfile();
+    }
+
+    const handleAppStateChange = nextAppState => {
       if (nextAppState === 'background') {
-        console.log('App went to background - TTS may continue playing');
+        console.log('App went to background');
       } else if (nextAppState === 'active') {
         console.log('App became active');
-        
-        // Cleanup expired alarms when app becomes active
+
         setTimeout(() => {
           NativeAlarmService.loadStoredAlarms();
         }, 100);
-        
-        // Check if any TTS cleanup is needed
+
         setTimeout(() => {
           EnhancedTTSService.cleanup().catch(console.error);
         }, 500);
       }
     };
 
-    // Enhanced native alarm event handler
-    const handleNativeAlarmResult = (result) => {
+    const handleNativeAlarmResult = result => {
       console.log('Native alarm action received:', result);
-      
-      // Handle alarm actions from native module
-      const { action, alarmId, taskId, snoozeMinutes } = result;
-      
+      const {action, alarmId, taskId, snoozeMinutes} = result;
+
       switch (action) {
         case 'dismissed':
           console.log(`Alarm ${alarmId} dismissed`);
-          // Stop any playing TTS
           EnhancedTTSService.stopAudio();
           break;
         case 'snoozed':
           console.log(`Alarm ${alarmId} snoozed for ${snoozeMinutes} minutes`);
-          // TTS confirmation will be handled by the alarm activity
           break;
         case 'stopped':
           console.log(`Alarm ${alarmId} stopped`);
-          // Stop any playing TTS
           EnhancedTTSService.stopAudio();
           break;
         case 'opened':
           console.log(`Alarm ${alarmId} opened task ${taskId}`);
-          // You can navigate to task details here if needed
           break;
         default:
           console.log('Unknown alarm action:', action);
       }
     };
 
-    // Enhanced notification action handler
-    const handleNotificationAction = async (action) => {
+    const handleNotificationAction = async action => {
       console.log('Notification action received:', action);
-      
-      const { type, pressAction, notification } = action;
-      
+      const {type, pressAction, notification} = action;
+
       if (notification?.data?.isBackup === 'true') {
         console.log('Backup notification action:', pressAction?.id);
-        
+
         switch (pressAction?.id) {
           case 'open_task':
-            // Navigate to task if needed
             console.log('Opening task from backup notification');
             break;
           case 'dismiss':
-            // Dismiss notification
             await NotificationService.cancelNotification(notification.id);
             break;
           case 'open_alarm':
-            // This could trigger a fallback alarm screen if needed
             console.log('Opening alarm from backup notification');
             break;
         }
       }
     };
 
-    // NEW: Handle TTS events from Android alarm activity
-    const handleAlarmTTSEvents = () => {
-      // These are handled by AlarmTTSEventHandler, but we can add additional logic here
-      console.log('TTS event handlers are active');
-    };
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    const alarmResultListener = DeviceEventEmitter.addListener(
+      'NativeAlarmResult',
+      handleNativeAlarmResult,
+    );
 
-    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
-    const alarmResultListener = DeviceEventEmitter.addListener('NativeAlarmResult', handleNativeAlarmResult);
-    
-    // Listen for notification actions
     NotificationService.setForegroundEventListener?.(handleNotificationAction);
     NotificationService.setBackgroundEventListener?.(handleNotificationAction);
 
-    // Initialize TTS event handling
-    handleAlarmTTSEvents();
-
-    // Cleanup function
     return () => {
       appStateSubscription?.remove();
       alarmResultListener?.remove();
-      
-      // NEW: Stop TTS event handler
       AlarmTTSEventHandler.stopListening();
-      
-      // Cleanup TTS service
       EnhancedTTSService.cleanup().catch(console.error);
-      
-      console.log('App cleanup completed - including ElevenLabs TTS');
+      console.log('App cleanup completed');
     };
-  }, [user]); // Include user dependency for profile setup
-
-  // NEW: Test functions for ElevenLabs integration (can be called from debug menu or settings)
-  const testElevenLabsIntegration = async () => {
-    try {
-      console.log('Testing ElevenLabs integration...');
-      
-      // Test TTS service directly
-      const ttsSuccess = await EnhancedTTSService.testTTS(
-        user?.user_metadata?.username || user?.user_metadata?.display_name || 'Test User'
-      );
-      
-      if (ttsSuccess) {
-        console.log('ElevenLabs TTS test successful - should hear English + Hindi');
-      }
-      
-      // Test alarm scheduler
-      const alarmSuccess = await AlarmSchedulerService.testTTS(
-        user?.user_metadata?.username || 'Test User'
-      );
-      
-      if (alarmSuccess) {
-        console.log('Alarm scheduler TTS test successful');
-      }
-      
-      // Test event handler
-      await AlarmTTSEventHandler.testEventHandler();
-      
-      return { ttsSuccess, alarmSuccess };
-    } catch (error) {
-      console.error('Error testing ElevenLabs integration:', error);
-      return { ttsSuccess: false, alarmSuccess: false };
-    }
-  };
-
-  // NEW: Test only Hindi quotes
-  const testHindiQuotes = async () => {
-    try {
-      console.log('Testing Hindi motivational quotes...');
-      const success = await AlarmSchedulerService.testHindiQuotes();
-      
-      if (success) {
-        console.log('Hindi quotes test successful - should hear Hindi motivation');
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('Error testing Hindi quotes:', error);
-      return false;
-    }
-  };
+  }, [servicesInitialized, user?.id]);
 
   return (
-    <>
-      <AuthNavigator />
-      {/* Task blocking service manager runs in background - no UI impact */}
-      <TaskBlockingServiceManager />
-      {/* 
-        Note: You can add a debug/settings screen that calls:
-        - testElevenLabsIntegration() to test full system
-        - testHindiQuotes() to test Hindi quotes only
-        - AlarmSchedulerService.getServiceInfo() to see system status
-      */}
-    </>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        console.log('[NAVIGATION] NavigationContainer is ready');
+      }}>
+      <SessionProvider>
+        <MusicManager />
+        <IntentionBroadcastListener navigationRef={navigationRef} />
+        <EditScreenListener navigationRef={navigationRef} />
+        <AuthNavigator />
+        <DailyModalManager />
+        <SleepTrackerModalManager />
+        <MonthReminderNotificationManager />
+        <WaterReminderManager />
+        <SessionTrackingManager />
+      </SessionProvider>
+    </NavigationContainer>
   );
 };
 
-// NEW: Global functions for testing (can be called from anywhere in the app)
+// Export test functions
 export const testEnhancedAlarmSystem = async () => {
   try {
     console.log('Testing complete enhanced alarm system...');
-    
-    // Test ElevenLabs TTS
     const ttsTest = await EnhancedTTSService.testTTS('Demo User');
     console.log('TTS Test Result:', ttsTest);
-    
-    // Test alarm scheduling with ElevenLabs
     const alarmTest = await AlarmSchedulerService.testTTS('Demo User');
     console.log('Alarm Test Result:', alarmTest);
-    
-    // Test Hindi quotes only
     const hindiTest = await AlarmSchedulerService.testHindiQuotes();
     console.log('Hindi Test Result:', hindiTest);
-    
-    // Get system info
     const systemInfo = AlarmSchedulerService.getServiceInfo();
     console.log('System Info:', systemInfo);
-    
-    return {
-      ttsTest,
-      alarmTest, 
-      hindiTest,
-      systemInfo
-    };
+    return {ttsTest, alarmTest, hindiTest, systemInfo};
   } catch (error) {
     console.error('Error testing enhanced alarm system:', error);
     return null;
   }
 };
 
-// NEW: Schedule an enhanced alarm with ElevenLabs (can be called from task creation)
-export const scheduleEnhancedTaskAlarm = async (taskData, reminderData, userProfile) => {
+export const testDailyModalSystem = async userId => {
   try {
+    console.log('Testing daily modal system...');
+    if (!userId) {
+      console.error('Invalid userId provided to testDailyModalSystem:', userId);
+      return null;
+    }
+    await dailyReminderService.resetModalStatus();
+    const status = await dailyReminderService.getModalStatus();
+    console.log('Modal Status:', status);
+    const modalData = await dailyReminderService.checkDailyModal(userId);
+    console.log('Modal Data:', modalData);
+    return {status, modalData, hasActiveChallenges: modalData !== null};
+  } catch (error) {
+    console.error('Error testing daily modal system:', error);
+    return null;
+  }
+};
+
+export const testMonthReminderNotification = async () => {
+  try {
+    console.log('Testing month reminder notification system...');
+
+    // Reset status for testing
+    await MonthReminderNotificationService.resetStatus();
+
+    // Get current status
+    const status = await MonthReminderNotificationService.getStatus();
+    console.log('Month Reminder Status:', status);
+
+    // Test showing notification
+    const shown = await MonthReminderNotificationService.showNotification(
+      'TestUser',
+    );
+    console.log('Notification shown:', shown);
+
+    return {
+      status,
+      shown,
+      message: 'Month reminder notification test completed',
+    };
+  } catch (error) {
+    console.error('Error testing month reminder notification:', error);
+    return {error: error.message};
+  }
+};
+
+export const testSessionTrackingSystem = async () => {
+  try {
+    console.log('Testing session tracking system...');
+    if (global.sessionTracking) {
+      const result = await global.sessionTracking.testSessionSystem();
+      console.log('Session tracking test result:', result);
+      return result;
+    } else {
+      console.error(
+        'Session tracking not available. Make sure the app is running.',
+      );
+      return {error: 'Session tracking not initialized'};
+    }
+  } catch (error) {
+    console.error('Error testing session tracking system:', error);
+    return {error: error.message};
+  }
+};
+
+export const getSessionStats = async () => {
+  try {
+    if (global.sessionTracking) {
+      const stats = await global.sessionTracking.getSessionStats();
+      console.log('Current session stats:', stats);
+      return stats;
+    } else {
+      console.error('Session tracking not available.');
+      return null;
+    }
+  } catch (error) {
+    console.error('Error getting session stats:', error);
+    return null;
+  }
+};
+
+export const triggerSessionUpload = async () => {
+  try {
+    if (global.sessionTracking) {
+      const result = await global.sessionTracking.triggerBatchUpload();
+      console.log('Manual upload result:', result);
+      return result;
+    } else {
+      console.error('Session tracking not available.');
+      return {error: 'Session tracking not initialized'};
+    }
+  } catch (error) {
+    console.error('Error triggering session upload:', error);
+    return {error: error.message};
+  }
+};
+
+export const scheduleEnhancedTaskAlarm = async (
+  taskData,
+  reminderData,
+  userProfile,
+) => {
+  try {
+    if (!taskData || !taskData.id) {
+      console.error(
+        'Invalid task data provided to scheduleEnhancedTaskAlarm:',
+        taskData,
+      );
+      return null;
+    }
+
     const alarmData = {
       id: `enhanced_${taskData.id}_${Date.now()}`,
       taskId: taskData.id,
@@ -331,16 +1152,16 @@ export const scheduleEnhancedTaskAlarm = async (taskData, reminderData, userProf
       type: 'alarm',
       taskData: taskData,
       userProfile: userProfile,
-      reminderData: reminderData
+      reminderData: reminderData,
     };
 
     const alarmId = await AlarmSchedulerService.scheduleAlarm(alarmData);
-    
+
     if (alarmId) {
       console.log(`Enhanced alarm scheduled: ${alarmId}`);
       console.log('Will play English task message + Hindi motivational quote');
     }
-    
+
     return alarmId;
   } catch (error) {
     console.error('Error scheduling enhanced task alarm:', error);
@@ -348,12 +1169,28 @@ export const scheduleEnhancedTaskAlarm = async (taskData, reminderData, userProf
   }
 };
 
+// Make month reminder notification service globally accessible for testing
+global.testMonthNotification = async () => {
+  return await testMonthReminderNotification();
+};
+
+global.getMonthNotificationStatus = async () => {
+  return await MonthReminderNotificationService.getStatus();
+};
+
+global.resetMonthNotification = async () => {
+  await MonthReminderNotificationService.resetStatus();
+  console.log('Month notification status reset');
+};
+
 export default function App() {
   return (
     <AuthProvider>
-      <NavigationContainer>
-        <AppContent />
-      </NavigationContainer>
+      <NotesProvider>
+        <MusicProvider>
+          <AppContent />
+        </MusicProvider>
+      </NotesProvider>
     </AuthProvider>
   );
 }

@@ -64,7 +64,27 @@
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
         tools:ignore="ProtectedPermissions" />
 
+    <uses-permission android:name="android.permission.DEVICE_POWER" />
 
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+
+    <!-- Phone state permission for call blocking -->
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+<uses-permission android:name="android.permission.READ_CALL_LOG" />
+<uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
+
+<!-- Additional critical permissions for complete lock -->
+<uses-permission android:name="android.permission.EXPAND_STATUS_BAR" 
+    tools:ignore="ProtectedPermissions" />
+<uses-permission android:name="android.permission.STATUS_BAR" 
+    tools:ignore="ProtectedPermissions" />
+
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+<uses-permission android:name="android.permission.CALL_PHONE" />
+
+<!-- Add this permission for COMPLETE audio control -->
+<uses-permission android:name="android.permission.MODIFY_PHONE_STATE" 
+    tools:ignore="ProtectedPermissions" />
 
     <application
         android:name=".MainApplication"
@@ -90,6 +110,313 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+    android:name=".DigitalDetoxLockActivity"
+    android:exported="false"
+    android:launchMode="singleTask"
+    android:excludeFromRecents="true"
+    android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|screenSize|keyboardHidden|keyboard"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:taskAffinity="com.wingsfly.detox"
+    android:stateNotNeeded="true"
+    android:clearTaskOnLaunch="false"
+    android:finishOnTaskLaunch="false"
+    android:noHistory="false" />
+
+    <activity
+    android:name=".GetBackLockActivity"
+    android:exported="false"
+    android:launchMode="singleTask"
+    android:excludeFromRecents="true"
+    android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|screenSize|keyboardHidden|keyboard"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:taskAffinity="com.wingsfly.getback"
+    android:stateNotNeeded="true"
+    android:clearTaskOnLaunch="false"
+    android:finishOnTaskLaunch="false"
+    android:noHistory="false" />
+
+        <activity
+    android:name=".TaskRescheduleActivity"
+    android:excludeFromRecents="true"
+    android:exported="false"
+    android:launchMode="singleTop"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true" />
+
+        <!-- Intention Voice Activity -->
+<activity
+    android:name=".IntentionVoiceActivity"
+    android:exported="false"
+    android:launchMode="singleTop"
+    android:taskAffinity=""
+    android:excludeFromRecents="false"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:theme="@style/AlarmTheme"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode"
+    android:priority="1000"
+    android:enabled="true">
+    
+    <intent-filter android:priority="2147483647">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+    
+    <intent-filter android:priority="2147483647">
+        <action android:name="com.wingsfly.SHOW_INTENTION_VOICE" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</activity>
+
+        <!-- Task Confirmation Alarm Activity -->
+<activity
+    android:name=".TaskConfirmationAlarmActivity"
+    android:exported="true"
+    android:launchMode="singleTop"
+    android:taskAffinity=""
+    android:excludeFromRecents="false"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:theme="@style/AlarmTheme"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode"
+    android:priority="1000"
+    android:enabled="true">
+    
+    <intent-filter android:priority="2147483647">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+    
+    <intent-filter android:priority="2147483647">
+        <action android:name="com.wingsfly.SHOW_TASK_CONFIRMATION" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</activity>
+
+<!-- Task Confirmation Alarm Service -->
+<service
+    android:name=".TaskConfirmationAlarmService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="specialUse"
+    android:process=":taskConfirmation"
+    android:priority="1000">
+    <property 
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="task_confirmation" />
+    
+    <intent-filter>
+        <action android:name="com.wingsfly.START_TASK_CONFIRMATION_SERVICE" />
+        <action android:name="com.wingsfly.STOP_TASK_CONFIRMATION_SERVICE" />
+    </intent-filter>
+</service>
+
+<!-- Task Confirmation Alarm Receiver -->
+<receiver
+    android:name=".TaskConfirmationAlarmReceiver"
+    android:enabled="true"
+    android:exported="false"
+    android:directBootAware="true"
+    android:process=":taskConfirmation"
+    android:priority="1000">
+    
+    <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+    </intent-filter>
+    
+    <intent-filter android:priority="1000">
+        <action android:name="com.wingsfly.TASK_CONFIRMATION_ALARM" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</receiver>
+
+        <!-- Voice Command Alarm Activity - NEW -->
+<activity
+    android:name=".VoiceCommandAlarmActivity"
+    android:label="Voice Command"
+    android:theme="@style/AlarmTheme"
+    android:launchMode="singleTop"
+    android:taskAffinity=""
+    android:excludeFromRecents="false"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:exported="false"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode|locale|layoutDirection"
+    android:priority="1000"
+    android:enabled="true">
+    
+    <!-- Handle voice command alarm intents -->
+    <intent-filter android:priority="2147483647">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+    
+    <intent-filter android:priority="2147483647">
+        <action android:name="com.wingsfly.SHOW_VOICE_COMMAND_ALARM" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</activity>
+
+<!-- Voice Command Alarm Service - NEW -->
+<service
+    android:name=".VoiceCommandAlarmService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="specialUse|mediaPlayback"
+    android:process=":voiceCommandAlarm"
+    android:priority="1000">
+    <property 
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="voice_command_alarm" />
+    
+    <intent-filter>
+        <action android:name="com.wingsfly.START_VOICE_COMMAND_ALARM_SERVICE" />
+        <action android:name="com.wingsfly.STOP_VOICE_COMMAND_ALARM_SERVICE" />
+    </intent-filter>
+</service>
+
+<!-- Voice Command Alarm Receiver - NEW -->
+<receiver
+    android:name=".VoiceCommandAlarmReceiver"
+    android:enabled="true"
+    android:exported="false"
+    android:directBootAware="true"
+    android:process=":voiceCommandAlarm"
+    android:priority="1000">
+    
+    <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+    </intent-filter>
+    
+    <intent-filter android:priority="1000">
+        <action android:name="com.wingsfly.VOICE_COMMAND_ALARM" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</receiver>
+
+        <!-- Custom Alarm Activity - NEW -->
+<activity
+    android:name=".CustomAlarmActivity"
+    android:label="Custom Alarm"
+    android:theme="@style/AlarmTheme"
+    android:launchMode="singleTop"
+    android:taskAffinity=""
+    android:excludeFromRecents="false"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:exported="false"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode|locale|layoutDirection"
+    android:priority="1000"
+    android:enabled="true"
+    android:clearTaskOnLaunch="false"
+    android:finishOnTaskLaunch="false"
+    android:alwaysRetainTaskState="false"
+    android:stateNotNeeded="false"
+    android:noHistory="false"
+    android:allowTaskReparenting="false"
+    android:relinquishTaskIdentity="false">
+    
+    <!-- Handle custom alarm intents -->
+    <intent-filter android:priority="2147483647">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.LAUNCHER" />
+    </intent-filter>
+    
+    <!-- Handle from custom alarm service -->
+    <intent-filter android:priority="2147483647">
+        <action android:name="com.wingsfly.SHOW_CUSTOM_ALARM" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+
+    <!-- Handle full screen intent notifications -->
+    <intent-filter android:priority="2147483647">
+        <action android:name="com.wingsfly.CUSTOM_FULL_SCREEN_ALARM" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</activity>
+
+<!-- Custom Alarm Service - NEW -->
+<service
+    android:name=".CustomAlarmService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="specialUse|mediaPlayback"
+    android:process=":customAlarm"
+    android:priority="1000">
+    <property 
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="custom_alarm" />
+    
+    <!-- Handle service control intents -->
+    <intent-filter>
+        <action android:name="com.wingsfly.START_CUSTOM_ALARM_SERVICE" />
+        <action android:name="com.wingsfly.STOP_CUSTOM_ALARM_SERVICE" />
+    </intent-filter>
+</service>
+
+<!-- Custom Alarm Receiver - NEW -->
+<receiver
+    android:name=".CustomAlarmReceiver"
+    android:enabled="true"
+    android:exported="false"
+    android:directBootAware="true"
+    android:process=":customAlarm"
+    android:priority="1000">
+    
+    <!-- Boot and system events with highest priority -->
+    <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+        <action android:name="android.intent.action.PACKAGE_REPLACED" />
+        <data android:scheme="package" />
+    </intent-filter>
+    
+    <!-- Custom alarm triggers with highest priority -->
+    <intent-filter android:priority="1000">
+        <action android:name="com.wingsfly.CUSTOM_ALARM" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+
+    <!-- Time zone and time change events -->
+    <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.TIME_SET" />
+        <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+        <action android:name="android.intent.action.DATE_CHANGED" />
+    </intent-filter>
+</receiver>
+
+<!-- Custom Alarm Action Receiver - NEW -->
+<receiver
+    android:name=".CustomAlarmActionReceiver"
+    android:enabled="true"
+    android:exported="false"
+    android:priority="999">
+    
+    <!-- Handle notification actions -->
+    <intent-filter android:priority="999">
+        <action android:name="com.wingsfly.CUSTOM_ALARM_ACTION" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</receiver>
 
         <!-- CRITICAL: Enhanced Native Alarm Activity - MAXIMUM VISIBILITY -->
         <activity
@@ -270,6 +597,18 @@
                 <action android:name="android.intent.action.SCREEN_ON" />
             </intent-filter>
         </receiver>
+
+        <service
+    android:name=".DigitalDetoxService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="dataSync" />
+
+    <service
+    android:name=".GetBackService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="dataSync" />
 
 
 

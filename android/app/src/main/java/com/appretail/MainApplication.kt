@@ -32,6 +32,13 @@ class MainApplication : Application(), ReactApplication {
               add(AppUsagePackage())
               add(RunningAppsPackage())
               add(PomodoroPackage())
+              add(UserDataPackage())
+              add(CustomAlarmModulePackage())
+              add(VoiceCommandAlarmModulePackage())
+              add(TaskConfirmationAlarmPackage())
+              add(IntentionPackage())
+              add(DigitalDetoxPackage())
+              add(GetBackPackage())
               // Add the AlarmPackage for native alarms
               add(AlarmPackage())
             }

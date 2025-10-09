@@ -23,6 +23,7 @@ import android.widget.TextView
 import kotlinx.coroutines.*
 import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
+import com.wingsfly.notification.UnifiedNotificationManager
 
 class UsageLimitBlockingService : Service() {
     private lateinit var windowManager: WindowManager
@@ -31,10 +32,14 @@ class UsageLimitBlockingService : Service() {
     private lateinit var sharedPreferences: SharedPreferences
     private val mainHandler = Handler(Looper.getMainLooper())
     
-    // Enhanced tracking with better precision
+    // Unified notification manager
+    private lateinit var notificationManager: UnifiedNotificationManager
+    
+    // Enhanced tracking
     private val activeAppSessions = ConcurrentHashMap<String, AppSession>()
     private var currentForegroundApp = ""
     private var lastAppSwitchTime = 0L
+    private var isServiceRunning = false
     
     // Monitoring jobs
     private var usageMonitoringJob: Job? = null
@@ -42,16 +47,13 @@ class UsageLimitBlockingService : Service() {
     private var realTimeBlockingJob: Job? = null
     private var systemUsageUpdateJob: Job? = null
     
-    // Constants
     private val TAG = "UsageLimitBlocking"
-    private val NOTIFICATION_CHANNEL_ID = "UsageLimitChannel"
-    private val NOTIFICATION_ID = 2001
     
-    // More frequent monitoring for better accuracy
+    // Monitoring intervals
     private val APP_SWITCH_CHECK_INTERVAL = 100L
-    private val USAGE_UPDATE_INTERVAL = 5000L     // Update every 5 seconds
-    private val BLOCKING_CHECK_INTERVAL = 200L    // Check blocking every 200ms
-    private val SYSTEM_USAGE_SYNC_INTERVAL = 10000L // Sync with system every 10 seconds
+    private val USAGE_UPDATE_INTERVAL = 5000L
+    private val BLOCKING_CHECK_INTERVAL = 200L
+    private val SYSTEM_USAGE_SYNC_INTERVAL = 10000L
     
     data class AppSession(
         var startTime: Long = 0L,
@@ -92,9 +94,9 @@ class UsageLimitBlockingService : Service() {
                     )
                 }
                 
-                Log.d("UsageLimitBlocking", "Usage limit service alarm scheduled")
+                Log.d("UsageLimitBlocking", "Usage alarm scheduled")
             } catch (e: Exception) {
-                Log.e("UsageLimitBlocking", "Error scheduling usage alarm: ${e.message}", e)
+                Log.e("UsageLimitBlocking", "Error scheduling alarm: ${e.message}", e)
             }
         }
     }
@@ -108,10 +110,14 @@ class UsageLimitBlockingService : Service() {
             usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             sharedPreferences = getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             
+            // Initialize unified notification manager
+            notificationManager = UnifiedNotificationManager.getInstance(this)
+            
             startForegroundService()
             startAllMonitoringJobs()
             scheduleUsageAlarm(this)
             
+            isServiceRunning = true
             Log.d(TAG, "UsageLimitBlockingService initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate: ${e.message}", e)
@@ -119,48 +125,28 @@ class UsageLimitBlockingService : Service() {
     }
 
     private fun startForegroundService() {
-        try {
-            val channelId = NOTIFICATION_CHANNEL_ID
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    channelId,
-                    "Usage Limit Monitor",
-                    NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description = "Monitors app usage limits in real-time"
-                    setShowBadge(false)
-                    enableLights(false)
-                    enableVibration(false)
-                }
-                notificationManager.createNotificationChannel(channel)
-            }
-            
-            val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(this, channelId)
-            } else {
-                Notification.Builder(this)
-            }.apply {
-                setContentTitle("Usage Limit Monitor Active")
-                setContentText("Monitoring app usage limits in real-time")
-                setSmallIcon(android.R.drawable.ic_dialog_info)
-                setOngoing(true)
-                setCategory(Notification.CATEGORY_SERVICE)
-                setVisibility(Notification.VISIBILITY_PUBLIC)
-                setAutoCancel(false)
-            }.build()
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-            
-            Log.d(TAG, "Foreground service started successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting foreground service: ${e.message}", e)
+    try {
+        Log.d(TAG, "Starting foreground service")
+        
+        val notification = notificationManager.showForegroundNotification(this)
+        
+        // ✅ CORRECT - Using SAME ID as AppLockService (1000)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1000, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(1000, notification)
         }
+        
+        Log.d(TAG, "Foreground service started with ID 1000")
+    } catch (e: Exception) {
+        Log.e(TAG, "Error starting foreground: ${e.message}", e)
+    }
+}
+
+    fun updateNotification() {
+        Log.d(TAG, "Manual notification update requested")
+        // Notify unified manager about usage limits change
+        notificationManager.onUsageLimitsChanged()
     }
 
     private fun startAllMonitoringJobs() {
@@ -170,8 +156,25 @@ class UsageLimitBlockingService : Service() {
         startSystemUsageSync()
     }
 
+    private fun startForegroundWithNotification() {
+    try {
+        val notification = notificationManager.showForegroundNotification(this)
+        
+        // Use same ID as AppLockService (1000)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1000, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(1000, notification)
+        }
+        
+        Log.d(TAG, "Started foreground with notification ID 1000")
+    } catch (e: Exception) {
+        Log.e(TAG, "Error starting foreground: ${e.message}", e)
+    }
+}
+
     private fun startUsageMonitoring() {
-        Log.d(TAG, "Starting precise usage monitoring")
+        Log.d(TAG, "Starting usage monitoring")
         usageMonitoringJob = GlobalScope.launch {
             try {
                 while (true) {
@@ -181,7 +184,7 @@ class UsageLimitBlockingService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error in usage monitoring: ${e.message}", e)
                 delay(5000)
-                if (isActive) startUsageMonitoring()
+                if (isServiceRunning) startUsageMonitoring()
             }
         }
     }
@@ -195,15 +198,15 @@ class UsageLimitBlockingService : Service() {
                     delay(USAGE_UPDATE_INTERVAL)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error in continuous usage update: ${e.message}", e)
+                Log.e(TAG, "Error in continuous update: ${e.message}", e)
                 delay(5000)
-                if (isActive) startContinuousUsageUpdate()
+                if (isServiceRunning) startContinuousUsageUpdate()
             }
         }
     }
 
     private fun startRealTimeBlocking() {
-        Log.d(TAG, "Starting real-time blocking monitor")
+        Log.d(TAG, "Starting real-time blocking")
         realTimeBlockingJob = GlobalScope.launch {
             try {
                 while (true) {
@@ -213,12 +216,11 @@ class UsageLimitBlockingService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error in real-time blocking: ${e.message}", e)
                 delay(5000)
-                if (isActive) startRealTimeBlocking()
+                if (isServiceRunning) startRealTimeBlocking()
             }
         }
     }
 
-    // NEW: Sync with system usage stats periodically
     private fun startSystemUsageSync() {
         Log.d(TAG, "Starting system usage sync")
         systemUsageUpdateJob = GlobalScope.launch {
@@ -228,18 +230,15 @@ class UsageLimitBlockingService : Service() {
                     delay(SYSTEM_USAGE_SYNC_INTERVAL)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error in system usage sync: ${e.message}", e)
+                Log.e(TAG, "Error in system sync: ${e.message}", e)
                 delay(10000)
-                if (isActive) startSystemUsageSync()
+                if (isServiceRunning) startSystemUsageSync()
             }
         }
     }
 
-    // IMPROVED: Better system usage synchronization
     private suspend fun syncWithSystemUsageStats() {
         try {
-            Log.d(TAG, "Syncing with system usage stats")
-            
             val calendar = Calendar.getInstance()
             calendar.set(Calendar.HOUR_OF_DAY, 0)
             calendar.set(Calendar.MINUTE, 0)
@@ -258,7 +257,6 @@ class UsageLimitBlockingService : Service() {
                 val todayDate = getTodayDateString()
                 val editor = sharedPreferences.edit()
                 
-                // Process each app with usage limits
                 usageStats.forEach { stat ->
                     if (stat.totalTimeInForeground > 0) {
                         val packageName = stat.packageName
@@ -273,18 +271,15 @@ class UsageLimitBlockingService : Service() {
                                 0
                             }
                             
-                            // Use the higher value between system and stored usage
                             val finalUsage = maxOf(systemUsageMinutes, storedUsage)
                             
                             if (finalUsage != storedUsage) {
-                                Log.d(TAG, "Updating usage for $packageName: system=$systemUsageMinutes, stored=$storedUsage, final=$finalUsage")
                                 editor.putLong("usage_today_$packageName", finalUsage.toLong())
                                 editor.putString("usage_date_$packageName", todayDate)
                                 
-                                // Check if limit is reached
                                 if (finalUsage >= limitMinutes) {
                                     editor.putBoolean("usage_limit_reached_$packageName", true)
-                                    Log.d(TAG, "USAGE LIMIT REACHED: $packageName used ${finalUsage}min >= ${limitMinutes}min")
+                                    Log.d(TAG, "LIMIT REACHED: $packageName")
                                 }
                             }
                         }
@@ -295,7 +290,7 @@ class UsageLimitBlockingService : Service() {
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error syncing with system usage stats: ${e.message}", e)
+            Log.e(TAG, "Error syncing system stats: ${e.message}", e)
         }
     }
 
@@ -315,9 +310,8 @@ class UsageLimitBlockingService : Service() {
     }
 
     private fun handleAppSwitch(fromApp: String, toApp: String, switchTime: Long) {
-        Log.d(TAG, "App switch detected: $fromApp -> $toApp")
+        Log.d(TAG, "App switch: $fromApp -> $toApp")
         
-        // End session for previous app
         if (fromApp.isNotEmpty()) {
             val session = activeAppSessions[fromApp]
             if (session?.isActive == true) {
@@ -326,13 +320,11 @@ class UsageLimitBlockingService : Service() {
                 session.isActive = false
                 session.lastUpdateTime = switchTime
                 
-                // Save accumulated usage
                 saveSessionUsage(fromApp, sessionDuration)
                 Log.d(TAG, "Ended session for $fromApp: ${sessionDuration / 1000}s")
             }
         }
         
-        // Start session for new app
         if (toApp.isNotEmpty()) {
             val session = activeAppSessions.getOrPut(toApp) { AppSession() }
             session.startTime = switchTime
@@ -355,7 +347,6 @@ class UsageLimitBlockingService : Service() {
                         session.totalSessionTime += sessionDuration
                         session.lastUpdateTime = currentTime
                         
-                        // Save incremental usage
                         saveIncrementalUsage(currentForegroundApp, sessionDuration)
                         
                         Log.d(TAG, "Updated usage for $currentForegroundApp: +${sessionDuration / 1000}s")
@@ -363,11 +354,10 @@ class UsageLimitBlockingService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error updating current app usage: ${e.message}", e)
+            Log.e(TAG, "Error updating app usage: ${e.message}", e)
         }
     }
 
-    // IMPROVED: Better usage limit violation checking
     private suspend fun checkForUsageLimitViolations() {
         try {
             if (currentForegroundApp.isEmpty()) return
@@ -377,29 +367,26 @@ class UsageLimitBlockingService : Service() {
             
             val totalUsageMinutes = getTotalUsageToday(currentForegroundApp)
             
-            // Log current usage status
-            Log.d(TAG, "Usage check for $currentForegroundApp: ${totalUsageMinutes}min / ${usageLimit}min")
+            Log.d(TAG, "Usage check: $currentForegroundApp ${totalUsageMinutes}min / ${usageLimit}min")
             
             if (totalUsageMinutes >= usageLimit) {
-                Log.d(TAG, "USAGE LIMIT EXCEEDED: $currentForegroundApp used ${totalUsageMinutes}min >= ${usageLimit}min")
+                Log.d(TAG, "LIMIT EXCEEDED: $currentForegroundApp")
                 
-                // Mark limit as reached immediately
                 markLimitReached(currentForegroundApp)
                 
-                // Block immediately on main thread
                 mainHandler.post {
                     blockAppForUsageLimit(currentForegroundApp)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking usage limit violations: ${e.message}", e)
+            Log.e(TAG, "Error checking violations: ${e.message}", e)
         }
     }
 
     private fun getCurrentForegroundApp(): String {
         try {
             val endTime = System.currentTimeMillis()
-            val startTime = endTime - 2000 // Check last 2 seconds
+            val startTime = endTime - 2000
             
             val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
             val event = UsageEvents.Event()
@@ -417,7 +404,7 @@ class UsageLimitBlockingService : Service() {
             
             return foregroundApp
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting current foreground app", e)
+            Log.e(TAG, "Error getting foreground app", e)
             return ""
         }
     }
@@ -425,8 +412,8 @@ class UsageLimitBlockingService : Service() {
     private fun saveSessionUsage(packageName: String, sessionDurationMs: Long) {
         try {
             val sessionSeconds = sessionDurationMs / 1000
-            if (sessionSeconds >= 5) { // Only save sessions longer than 5 seconds
-                val sessionMinutes = (sessionSeconds + 30) / 60 // Round to nearest minute
+            if (sessionSeconds >= 5) {
+                val sessionMinutes = (sessionSeconds + 30) / 60
                 
                 if (sessionMinutes > 0) {
                     val todayDate = getTodayDateString()
@@ -444,19 +431,19 @@ class UsageLimitBlockingService : Service() {
                         .putString("usage_date_$packageName", todayDate)
                         .apply()
                     
-                    Log.d(TAG, "Saved session usage for $packageName: +${sessionMinutes}min, total: ${newUsage}min")
+                    Log.d(TAG, "Saved session: $packageName +${sessionMinutes}min, total: ${newUsage}min")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving session usage: ${e.message}", e)
+            Log.e(TAG, "Error saving session: ${e.message}", e)
         }
     }
 
     private fun saveIncrementalUsage(packageName: String, incrementMs: Long) {
         try {
             val incrementSeconds = incrementMs / 1000
-            if (incrementSeconds >= 30) { // Save every 30 seconds of usage
-                val incrementMinutes = (incrementSeconds + 30) / 60 // Round to nearest minute
+            if (incrementSeconds >= 30) {
+                val incrementMinutes = (incrementSeconds + 30) / 60
                 
                 if (incrementMinutes > 0) {
                     val todayDate = getTodayDateString()
@@ -474,15 +461,14 @@ class UsageLimitBlockingService : Service() {
                         .putString("usage_date_$packageName", todayDate)
                         .apply()
                     
-                    Log.d(TAG, "Incremental usage for $packageName: +${incrementMinutes}min, total: ${newUsage}min")
+                    Log.d(TAG, "Incremental: $packageName +${incrementMinutes}min, total: ${newUsage}min")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving incremental usage: ${e.message}", e)
+            Log.e(TAG, "Error saving incremental: ${e.message}", e)
         }
     }
 
-    // IMPROVED: More accurate usage calculation
     private fun getTotalUsageToday(packageName: String): Long {
         try {
             val todayDate = getTodayDateString()
@@ -494,7 +480,6 @@ class UsageLimitBlockingService : Service() {
                 0L
             }
             
-            // Add current active session time (in minutes)
             val activeSession = activeAppSessions[packageName]
             val currentSessionMinutes = if (activeSession?.isActive == true) {
                 val sessionMs = System.currentTimeMillis() - activeSession.startTime
@@ -504,11 +489,10 @@ class UsageLimitBlockingService : Service() {
             }
             
             val totalMinutes = storedUsageMinutes + currentSessionMinutes
-            Log.d(TAG, "Total usage for $packageName today: stored=${storedUsageMinutes}min, active=${currentSessionMinutes}min, total=${totalMinutes}min")
             
             return totalMinutes
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting total usage today: ${e.message}", e)
+            Log.e(TAG, "Error getting total usage: ${e.message}", e)
             return 0L
         }
     }
@@ -527,18 +511,13 @@ class UsageLimitBlockingService : Service() {
         Log.d(TAG, "Marked limit reached for $packageName")
     }
 
-    // IMPROVED: More aggressive blocking
     private fun blockAppForUsageLimit(packageName: String) {
         try {
             Log.d(TAG, "Blocking app for usage limit: $packageName")
             
-            // Force close the app multiple times
             forceCloseApp(packageName)
-            
-            // Show usage limit lock screen
             showUsageLimitLockScreen(packageName)
             
-            // Schedule additional force closes
             mainHandler.postDelayed({ forceCloseApp(packageName) }, 100)
             mainHandler.postDelayed({ forceCloseApp(packageName) }, 300)
             mainHandler.postDelayed({ forceCloseApp(packageName) }, 500)
@@ -552,10 +531,8 @@ class UsageLimitBlockingService : Service() {
         try {
             val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             
-            // Kill background processes
             activityManager.killBackgroundProcesses(packageName)
             
-            // Send to home screen immediately
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
@@ -564,9 +541,9 @@ class UsageLimitBlockingService : Service() {
             }
             startActivity(homeIntent)
             
-            Log.d(TAG, "Force closed app: $packageName")
+            Log.d(TAG, "Force closed: $packageName")
         } catch (e: Exception) {
-            Log.e(TAG, "Error force closing app: ${e.message}", e)
+            Log.e(TAG, "Error force closing: ${e.message}", e)
         }
     }
 
@@ -587,7 +564,6 @@ class UsageLimitBlockingService : Service() {
             val inflater = LayoutInflater.from(this)
             usageLimitLockView = inflater.inflate(R.layout.usage_limit_lock_screen, null)
             
-            // Set up the lock screen UI
             val appNameText = usageLimitLockView!!.findViewById<TextView>(R.id.appName)
             val lockMessage = usageLimitLockView!!.findViewById<TextView>(R.id.lockMessage)
             val usageInfo = usageLimitLockView!!.findViewById<TextView>(R.id.usageInfo)
@@ -596,9 +572,11 @@ class UsageLimitBlockingService : Service() {
             
             appNameText.text = appName
             appIconView.setImageDrawable(appIcon)
+            
             lockMessage.text = "Daily Usage Limit Reached!"
             usageInfo.text = "You've used $appName for ${formatTime(usageMinutes)} today.\nLimit: ${formatTime(limitMinutes)}"
             
+            closeButton.text = "OK"
             closeButton.setOnClickListener {
                 removeUsageLimitLockScreen()
                 forceCloseApp(packageName)
@@ -613,21 +591,22 @@ class UsageLimitBlockingService : Service() {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                         WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
                 PixelFormat.TRANSLUCENT
             )
             
             windowManager.addView(usageLimitLockView, params)
-            Log.d(TAG, "Usage limit lock screen shown for $packageName")
+            Log.d(TAG, "Usage limit lock screen shown")
             
-            // Auto-dismiss after 3 seconds and force close again
             mainHandler.postDelayed({
                 removeUsageLimitLockScreen()
                 forceCloseApp(packageName)
             }, 3000)
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error showing usage limit lock screen: ${e.message}", e)
+            Log.e(TAG, "Error showing usage limit screen: ${e.message}", e)
         }
     }
 
@@ -636,10 +615,10 @@ class UsageLimitBlockingService : Service() {
             if (isUsageLimitLockViewShowing()) {
                 windowManager.removeView(usageLimitLockView)
                 usageLimitLockView = null
-                Log.d(TAG, "Usage limit lock screen removed")
+                Log.d(TAG, "Usage limit screen removed")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error removing usage limit lock screen: ${e.message}", e)
+            Log.e(TAG, "Error removing screen: ${e.message}", e)
         }
     }
 
@@ -667,23 +646,54 @@ class UsageLimitBlockingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "UsageLimitBlockingService onStartCommand")
+        Log.d(TAG, "onStartCommand: flags=$flags, startId=$startId")
         
-        // Ensure all monitoring is running
-        if (usageMonitoringJob?.isActive != true) {
-            startUsageMonitoring()
+        try {
+            if (intent != null) {
+                val refreshNotification = intent.getBooleanExtra("refresh_notification", false)
+                if (refreshNotification) {
+                    Log.d(TAG, "Notification refresh requested")
+                    notificationManager.onUsageLimitsChanged()
+                }
+            }
+            
+            val isRestart = flags == START_FLAG_REDELIVERY || flags == START_FLAG_RETRY
+
+            if (isRestart || !isServiceRunning) {
+                Log.d(TAG, "Initial start or restart")
+                startForegroundService()
+                isServiceRunning = true
+            }
+            
+            if (usageMonitoringJob?.isActive != true) {
+                startUsageMonitoring()
+            }
+            if (continuousUsageUpdateJob?.isActive != true) {
+                startContinuousUsageUpdate()
+            }
+            if (realTimeBlockingJob?.isActive != true) {
+                startRealTimeBlocking()
+            }
+            if (systemUsageUpdateJob?.isActive != true) {
+                startSystemUsageSync()
+            }
+            
+            scheduleUsageAlarm(this)
+            
+            Log.d(TAG, "Service started successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onStartCommand", e)
+            
+            try {
+                if (!isServiceRunning) {
+                    startForegroundService()
+                    isServiceRunning = true
+                }
+            } catch (e2: Exception) {
+                Log.e(TAG, "Recovery failed", e2)
+            }
         }
-        if (continuousUsageUpdateJob?.isActive != true) {
-            startContinuousUsageUpdate()
-        }
-        if (realTimeBlockingJob?.isActive != true) {
-            startRealTimeBlocking()
-        }
-        if (systemUsageUpdateJob?.isActive != true) {
-            startSystemUsageSync()
-        }
-        
-        scheduleUsageAlarm(this)
         
         return START_STICKY
     }
@@ -693,7 +703,8 @@ class UsageLimitBlockingService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         try {
-            // Save any active sessions before destroying
+            isServiceRunning = false
+            
             val currentTime = System.currentTimeMillis()
             activeAppSessions.forEach { (packageName, session) ->
                 if (session.isActive) {
@@ -711,9 +722,26 @@ class UsageLimitBlockingService : Service() {
                 removeUsageLimitLockScreen()
             }
             
-            Log.d(TAG, "UsageLimitBlockingService destroyed")
+            Log.d(TAG, "Service destroyed")
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy: ${e.message}", e)
+        }
+    }
+
+    inner class ServiceBinder : android.os.Binder() {
+        fun asService(): UsageLimitBlockingService = this@UsageLimitBlockingService
+    }
+
+    fun checkAndBlockAppForUsageLimit(packageName: String) {
+        val usageLimit = getAppUsageLimit(packageName)
+        if (usageLimit > 0) {
+            val totalUsage = getTotalUsageToday(packageName)
+            if (totalUsage >= usageLimit) {
+                Log.d(TAG, "Manual check - limit exceeded for $packageName")
+                mainHandler.post {
+                    blockAppForUsageLimit(packageName)
+                }
+            }
         }
     }
 }

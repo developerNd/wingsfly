@@ -61,6 +61,7 @@ export const taskService = {
             start_date: taskData.startDate,
             end_date: taskData.endDate,
             is_end_date_enabled: taskData.isEndDateEnabled || false,
+            start_time: taskData.startTime || null,
 
             // Block time settings
             block_time_enabled: taskData.blockTimeEnabled || false,

@@ -220,7 +220,11 @@ const FrequencyScreen = () => {
     };
 
     console.log('Navigation data with repeat info:', navigationData);
-    navigation.navigate('SchedulePreference', navigationData);
+    if (previousData.evaluationType === 'timerTracker') {
+      navigation.navigate('TimerTrackerScreen', navigationData);
+    } else {
+      navigation.navigate('SchedulePreference', navigationData);
+    }
   };
 
   // Animate radio button selection

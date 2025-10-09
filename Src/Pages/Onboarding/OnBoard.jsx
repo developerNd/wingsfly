@@ -18,10 +18,11 @@ import {useAuth} from '../../contexts/AuthContext';
 const OnBoard = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const {user, completeProfileSetup} = useAuth();
+  const {user, completeProfileSetup, getSelectedGender} = useAuth();
 
+  // Use context as primary source, route params as fallback
   const selectedGender =
-    route.params?.selectedGender || user?.user_metadata?.gender || 'Male';
+    route.params?.selectedGender || getSelectedGender();
 
   const getHikerImage = () => {
     return selectedGender === 'Male' ? Icons.ManHiker : Icons.WomenHiker;
@@ -53,12 +54,18 @@ const OnBoard = () => {
         return;
       }
     }
+
+    // Navigate to AppStack with gender information
     navigation.reset({
       index: 0,
       routes: [
         {
-          name: routes.TASKSLECTION_SCREEN,
-          params: { selectedGender: selectedGender }
+          name: 'AppStack',
+          params: { 
+            selectedGender: selectedGender,
+            screen: routes.TASKSLECTION_SCREEN,
+            params: { selectedGender: selectedGender }
+          }
         }
       ],
     });

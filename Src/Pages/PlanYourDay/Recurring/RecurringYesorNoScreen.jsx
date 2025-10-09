@@ -13,7 +13,7 @@ import {
 import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
 import DatePickerModal from '../../../Components/DatePickerModal';
-import BlockTimeModal from '../../../Components/BlockTime';
+import BlockTimeModalOld from '../../../Components/BlockTimeold';
 import DurationModal from '../../../Components/DurationModal';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
@@ -983,7 +983,7 @@ const RecurringYesorNoScreen = () => {
       />
 
       {/* Block Time Modal */}
-      <BlockTimeModal
+      <BlockTimeModalOld
         visible={showBlockTimeModal}
         onClose={() => setShowBlockTimeModal(false)}
         onSave={handleBlockTimeSave}

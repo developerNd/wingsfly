@@ -2,6 +2,7 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -84,7 +85,25 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.1"
+        
+        // Enable multidex if app becomes large (recommended for PDF libraries)
+        multiDexEnabled true
     }
+    
+    // Add packaging options to handle potential library conflicts
+    packagingOptions {
+        pickFirst "lib/x86/libc++_shared.so"
+        pickFirst "lib/x86_64/libc++_shared.so"
+        pickFirst "lib/arm64-v8a/libc++_shared.so"
+        pickFirst "lib/armeabi-v7a/libc++_shared.so"
+        
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+    }
+    
     signingConfigs {
         release {
             if (project.hasProperty('MY_RELEASE_STORE_FILE')) {
@@ -101,19 +120,33 @@ android {
             keyPassword 'android'
         }
     }
+    
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            debuggable true
+            minifyEnabled false
         }
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-           shrinkResources true
-        minifyEnabled true 
-        signingConfig signingConfigs.release  
-            // minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources false  // Disable resource shrinking to avoid issues
+            minifyEnabled false    // Temporarily disable minification to avoid R8 issues
+            signingConfig signingConfigs.release  
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            debuggable false
         }
+    }
+    
+    // Ensure Java 17 compatibility (matching your build environment)
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // Add Kotlin compiler options to match Java version
+    kotlinOptions {
+        jvmTarget = '17'
     }
 }
 
@@ -125,5 +158,46 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+    
+    // Updated AndroidX Core dependencies to fix OnUserLeaveHintProvider issue
+    implementation 'androidx.core:core:1.12.0'
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.activity:activity:1.8.2'
+    implementation 'androidx.activity:activity-ktx:1.8.2'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    
+    // Multidex support (if enabled above)
+    implementation 'androidx.multidex:multidex:2.0.1'
+}
+
+// Handle potential dependency conflicts with updated versions
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.core:core:1.12.0'
+        force 'androidx.core:core-ktx:1.12.0'
+        force 'androidx.activity:activity:1.8.2'
+        force 'androidx.activity:activity-ktx:1.8.2'
+        force 'androidx.appcompat:appcompat:1.6.1'
+        
+        // Handle any version conflicts that might arise
+        eachDependency { details ->
+            if (details.requested.group == 'androidx.core') {
+                if (details.requested.name == 'core') {
+                    details.useVersion '1.12.0'
+                }
+                if (details.requested.name == 'core-ktx') {
+                    details.useVersion '1.12.0'
+                }
+            }
+            if (details.requested.group == 'androidx.activity') {
+                if (details.requested.name == 'activity') {
+                    details.useVersion '1.8.2'
+                }
+                if (details.requested.name == 'activity-ktx') {
+                    details.useVersion '1.8.2'
+                }
+            }
+        }
     }
 }

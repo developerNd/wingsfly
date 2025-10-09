@@ -2,24 +2,13 @@ import React from 'react';
 import {View, Text, StyleSheet, Image, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
-const AppItem = ({app, onSchedulePress, onUsageLimitPress, loading}) => {
-  // Determine if app is actually locked right now based on schedule
-  const isActuallyLocked =
-    app.isActuallyLocked !== undefined ? app.isActuallyLocked : app.isLocked;
-
-  // Determine if app has schedules
+const AppItem = ({app, onSchedulePress, onUsageLimitPress, onLongPress, loading}) => {
+  const isActuallyLocked = app.isActuallyLocked !== undefined ? app.isActuallyLocked : app.isLocked;
   const hasSchedules = app.schedules && app.schedules.length > 0;
-
-  // Apps are always considered enabled when they have schedules
   const schedulesEnabled = hasSchedules;
-
-  // Determine if app is currently affected by a schedule that's active right now
   const hasActiveSchedule = hasSchedules && isActuallyLocked !== undefined;
-
-  // Check if app is excluded from Pomodoro
   const isExcludedFromPomodoro = app.excludeFromPomodoro === true;
 
-  // Usage limit helpers
   const formatUsageTime = minutes => {
     if (minutes < 60) {
       return `${minutes}m`;
@@ -37,7 +26,6 @@ const AppItem = ({app, onSchedulePress, onUsageLimitPress, loading}) => {
   const usageToday = app.usageToday || 0;
   const usageLimit = app.usageLimit || 0;
 
-  // Determine the primary lock status for display
   const getLockStatus = () => {
     if (isLimitReached) {
       return {
@@ -63,125 +51,137 @@ const AppItem = ({app, onSchedulePress, onUsageLimitPress, loading}) => {
         hasActiveSchedule && styles.scheduledAppItem,
         isLimitReached && styles.limitReachedAppItem,
       ]}>
-      <Image source={{uri: app.icon}} style={styles.appIcon} />
+      
+      {/* FIXED: Separate TouchableOpacity for long press on the entire item */}
+      <TouchableOpacity
+        style={styles.longPressArea}
+        onLongPress={() => {
+          console.log('🔴 Long press triggered for:', app.name);
+          onLongPress && onLongPress(app);
+        }}
+        delayLongPress={800}
+        activeOpacity={0.8}>
+        
+        <Image source={{uri: app.icon}} style={styles.appIcon} />
 
-      <View style={styles.appInfoContainer}>
-        <View style={styles.appDetailsContainer}>
-          <Text style={styles.appName} numberOfLines={1}>
-            {app.name}
-          </Text>
+        <View style={styles.appInfoContainer}>
+          <View style={styles.appDetailsContainer}>
+            <Text style={styles.appName} numberOfLines={1}>
+              {app.name}
+            </Text>
 
-          {/* Usage information */}
-          {hasUsageLimit && (
-            <View style={styles.usageContainer}>
-              <Text
-                style={[
-                  styles.usageText,
-                  isLimitReached && styles.limitReachedText,
-                ]}>
-                {formatUsageTime(usageToday)} / {formatUsageTime(usageLimit)}
-              </Text>
-              {isLimitReached && (
-                <Icon
-                  name="hourglass-empty"
-                  size={14}
-                  color="#F44336"
-                  style={styles.limitIcon}
-                />
+            {hasUsageLimit && (
+              <View style={styles.usageContainer}>
+                <Text
+                  style={[
+                    styles.usageText,
+                    isLimitReached && styles.limitReachedText,
+                  ]}>
+                  {formatUsageTime(usageToday)} / {formatUsageTime(usageLimit)}
+                </Text>
+                {isLimitReached && (
+                  <Icon
+                    name="hourglass-empty"
+                    size={14}
+                    color="#F44336"
+                    style={styles.limitIcon}
+                  />
+                )}
+              </View>
+            )}
+
+            <View style={styles.tagsContainer}>
+              {app.isDistractive && (
+                <View style={styles.distractiveTag}>
+                  <Text style={styles.distractiveTagText}>Distractive</Text>
+                </View>
+              )}
+
+              {lockStatus && (
+                <View
+                  style={[
+                    styles.statusTag,
+                    lockStatus.type === 'usage_limit' && styles.usageLimitTag,
+                    lockStatus.type === 'schedule' &&
+                      isActuallyLocked &&
+                      styles.scheduleLockedTag,
+                    lockStatus.type === 'schedule' &&
+                      !isActuallyLocked &&
+                      styles.scheduleUnlockedTag,
+                  ]}>
+                  <Text style={styles.statusTagText}>{lockStatus.text}</Text>
+                </View>
+              )}
+
+              {isExcludedFromPomodoro && (
+                <View style={styles.pomodoroExcludeTag}>
+                  <Icon name="timer-off" size={12} color="white" />
+                  <Text style={styles.pomodoroExcludeTagText}>Excluded</Text>
+                </View>
               )}
             </View>
-          )}
+          </View>
 
-          {/* Tags container */}
-          <View style={styles.tagsContainer}>
-            {app.isDistractive && (
-              <View style={styles.distractiveTag}>
-                <Text style={styles.distractiveTagText}>Distractive</Text>
-              </View>
-            )}
+          {/* FIXED: Separate action buttons that don't interfere with long press */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.usageLimitButton,
+                hasUsageLimit && styles.activeUsageLimitButton,
+              ]}
+              onPress={() => {
+                console.log('Usage limit button pressed for:', app.name);
+                !loading && onUsageLimitPress && onUsageLimitPress();
+              }}
+              disabled={loading}>
+              <Icon
+                name="timer"
+                size={20}
+                color={hasUsageLimit ? '#FF9800' : '#757575'}
+              />
+              {hasUsageLimit && (
+                <View style={styles.limitIndicator}>
+                  <Text style={styles.limitIndicatorText}>
+                    {formatUsageTime(usageLimit)}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
 
-            {lockStatus && (
-              <View
-                style={[
-                  styles.statusTag,
-                  lockStatus.type === 'usage_limit' && styles.usageLimitTag,
-                  lockStatus.type === 'schedule' &&
-                    isActuallyLocked &&
-                    styles.scheduleLockedTag,
-                  lockStatus.type === 'schedule' &&
-                    !isActuallyLocked &&
-                    styles.scheduleUnlockedTag,
-                ]}>
-                <Text style={styles.statusTagText}>{lockStatus.text}</Text>
-              </View>
-            )}
-
-            {isExcludedFromPomodoro && (
-              <View style={styles.pomodoroExcludeTag}>
-                <Icon name="timer-off" size={12} color="white" />
-                <Text style={styles.pomodoroExcludeTagText}>Excluded</Text>
-              </View>
-            )}
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.scheduleButton,
+                hasSchedules && styles.activeScheduleButton,
+              ]}
+              onPress={() => {
+                console.log('Schedule button pressed for:', app.name);
+                !loading && onSchedulePress();
+              }}
+              disabled={loading}>
+              <Icon
+                name="schedule"
+                size={20}
+                color={hasSchedules ? '#2E7D32' : '#757575'}
+              />
+              {hasSchedules && (
+                <View style={styles.scheduleIndicator}>
+                  <Text style={styles.scheduleIndicatorText}>
+                    {app.schedules.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
-
-        <View style={styles.actionButtons}>
-          {/* Usage Limit Button */}
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              styles.usageLimitButton,
-              hasUsageLimit && styles.activeUsageLimitButton,
-            ]}
-            onPress={() => !loading && onUsageLimitPress && onUsageLimitPress()}
-            disabled={loading}>
-            <Icon
-              name="timer"
-              size={20}
-              color={hasUsageLimit ? '#FF9800' : '#757575'}
-            />
-            {hasUsageLimit && (
-              <View style={styles.limitIndicator}>
-                <Text style={styles.limitIndicatorText}>
-                  {formatUsageTime(usageLimit)}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Schedule Button */}
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              styles.scheduleButton,
-              hasSchedules && styles.activeScheduleButton,
-            ]}
-            onPress={() => !loading && onSchedulePress()}
-            disabled={loading}>
-            <Icon
-              name="schedule"
-              size={20}
-              color={hasSchedules ? '#2E7D32' : '#757575'}
-            />
-            {hasSchedules && (
-              <View style={styles.scheduleIndicator}>
-                <Text style={styles.scheduleIndicatorText}>
-                  {app.schedules.length}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   appItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
     backgroundColor: 'white',
     marginBottom: 12,
     borderRadius: 12,
@@ -190,6 +190,13 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
+    overflow: 'hidden',
+  },
+  longPressArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    width: '100%',
   },
   appIcon: {
     width: 48,

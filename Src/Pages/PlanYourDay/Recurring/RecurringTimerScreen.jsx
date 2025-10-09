@@ -20,7 +20,7 @@ import Headers from '../../../Components/Headers';
 import CustomDropdown from '../../../Components/Dropdown';
 import TimePicker from '../../../Components/TimePicker';
 import DatePickerModal from '../../../Components/DatePickerModal';
-import BlockTimeModal from '../../../Components/BlockTime';
+import BlockTimeModalOld from '../../../Components/BlockTimeold';
 import DurationModal from '../../../Components/DurationModal';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
@@ -1233,7 +1233,7 @@ const RecurringTimerScreen = () => {
         initialData={durationData}
       />
 
-      <BlockTimeModal
+      <BlockTimeModalOld
         visible={showBlockTimeModal}
         onClose={() => setShowBlockTimeModal(false)}
         onSave={handleBlockTimeSave}

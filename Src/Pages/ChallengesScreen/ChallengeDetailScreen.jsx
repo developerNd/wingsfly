@@ -23,6 +23,8 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Headers from '../../Components/Headers';
 import TaskSkeleton from '../../Components/TaskSkeleton';
+import CompleteDayModal from '../../Components/CompleteDayModal';
+import CustomToast from '../../Components/CustomToast';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {challengeService} from '../../services/api/challengeService';
@@ -38,6 +40,12 @@ const ChallengeDetailScreen = () => {
   const [completedDays, setCompletedDays] = useState({});
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
+  // Modal and Toast states
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
   const navigation = useNavigation();
   const route = useRoute();
   const {user} = useAuth();
@@ -47,18 +55,16 @@ const ChallengeDetailScreen = () => {
   // Function to check storage permissions
   const checkStoragePermission = async () => {
     if (Platform.OS !== 'android') {
-      return true; // iOS handles permissions differently
+      return true;
     }
 
     try {
-      // For Android 11+ (API 30+), check for MANAGE_EXTERNAL_STORAGE
       if (Platform.Version >= 30) {
         const granted = await PermissionsAndroid.check(
           PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         );
         return granted;
       } else {
-        // For older Android versions
         const granted = await PermissionsAndroid.check(
           PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         );
@@ -78,7 +84,6 @@ const ChallengeDetailScreen = () => {
 
     try {
       if (Platform.Version >= 30) {
-        // Android 11+ - Request MANAGE_EXTERNAL_STORAGE
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
           {
@@ -91,7 +96,6 @@ const ChallengeDetailScreen = () => {
         );
         return granted === PermissionsAndroid.RESULTS.GRANTED;
       } else {
-        // Older Android versions
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
           {
@@ -230,7 +234,7 @@ const ChallengeDetailScreen = () => {
   const openAppSettingsAlternative = () => {
     if (Platform.OS === 'android') {
       Linking.sendIntent('android.settings.APPLICATION_DETAILS_SETTINGS', [
-        {key: 'package', value: 'com.wingsfly'}, // Replace with your actual package name
+        {key: 'package', value: 'com.wingsfly'},
       ]).catch(error => {
         console.error('Error opening settings with intent:', error);
         Linking.openSettings();
@@ -249,31 +253,52 @@ const ChallengeDetailScreen = () => {
     });
   };
 
-  // Handle day completion
-  const handleCompleteDay = async dayNumber => {
+  // Show toast message
+  const showToast = (message) => {
+    setToastMessage(message);
+    setToastVisible(true);
+  };
+
+  // Hide toast message
+  const hideToast = () => {
+    setToastVisible(false);
+    setToastMessage('');
+  };
+
+  // Handle day completion - UPDATED TO ACCEPT HOURS
+  const handleCompleteDay = async (hoursCompleted) => {
+    if (!selectedDay) return;
+
     try {
       setCompletedDays(prev => ({
         ...prev,
-        [dayNumber]: {
+        [selectedDay.day]: {
           completed: true,
           completedDate: new Date().toISOString().split('T')[0],
           createdAt: new Date().toISOString(),
+          hoursCompleted: hoursCompleted,
         },
       }));
 
-      await challengeService.markDayComplete(challengeId, user.id, dayNumber);
-
-      Alert.alert(
-        'Congratulations! 🎉',
-        `Day ${dayNumber} completed successfully!`,
-        [{text: 'Continue', style: 'default'}],
+      await challengeService.markDayComplete(
+        challengeId, 
+        user.id, 
+        selectedDay.day, 
+        hoursCompleted
       );
+
+      setModalVisible(false);
+      setSelectedDay(null);
+
+      // Show custom toast instead of alert
+      showToast(`Congratulations! Day ${selectedDay.day} completed with ${hoursCompleted} hours!`);
+
     } catch (error) {
       console.error('Error completing day:', error);
 
       setCompletedDays(prev => {
         const newState = {...prev};
-        delete newState[dayNumber];
+        delete newState[selectedDay.day];
         return newState;
       });
 
@@ -284,27 +309,30 @@ const ChallengeDetailScreen = () => {
   };
 
   // Handle undo completion
-  const handleUndoCompleteDay = async dayNumber => {
+  const handleUndoCompleteDay = async () => {
+    if (!selectedDay) return;
+
     try {
       setCompletedDays(prev => {
         const newState = {...prev};
-        delete newState[dayNumber];
+        delete newState[selectedDay.day];
         return newState;
       });
 
-      await challengeService.unmarkDayComplete(challengeId, user.id, dayNumber);
+      await challengeService.unmarkDayComplete(challengeId, user.id, selectedDay.day);
 
-      Alert.alert(
-        'Day Unmarked',
-        `Day ${dayNumber} has been unmarked as incomplete.`,
-        [{text: 'OK', style: 'default'}],
-      );
+      setModalVisible(false);
+      setSelectedDay(null);
+
+      // Show custom toast for undo
+      showToast(`Day ${selectedDay.day} has been unmarked as incomplete.`);
+
     } catch (error) {
       console.error('Error undoing day completion:', error);
 
       setCompletedDays(prev => ({
         ...prev,
-        [dayNumber]: {
+        [selectedDay.day]: {
           completed: true,
           completedDate: new Date().toISOString().split('T')[0],
           createdAt: new Date().toISOString(),
@@ -361,7 +389,7 @@ const ChallengeDetailScreen = () => {
     });
   };
 
-  // Handle day press
+  // Handle day press - UPDATED TO INCLUDE HOURS DATA
   const handleDayPress = useCallback(
     (dayNumber, currentDate) => {
       console.log('Day pressed:', dayNumber, 'Date:', currentDate);
@@ -371,40 +399,21 @@ const ChallengeDetailScreen = () => {
         return;
       }
 
-      const isCompleted = completedDays[dayNumber]?.completed || false;
+      const completionData = completedDays[dayNumber];
+      const isCompleted = completionData?.completed || false;
+      const hoursCompleted = completionData?.hoursCompleted || 0;
       const dateString = formatDisplayDate(currentDate);
 
-      console.log('Day', dayNumber, 'isCompleted:', isCompleted);
-
-      if (isCompleted) {
-        Alert.alert(
-          `Day ${dayNumber} - ${dateString}`,
-          `✅ Completed!\n\n"${challenge.name}"\n\nWould you like to undo this completion?`,
-          [
-            {text: 'Keep Complete', style: 'default'},
-            {
-              text: 'Undo',
-              style: 'destructive',
-              onPress: () => handleUndoCompleteDay(dayNumber),
-            },
-          ],
-        );
-      } else {
-        Alert.alert(
-          `Day ${dayNumber} - ${dateString}`,
-          `"${challenge.name}"\n\nMark this day as complete?`,
-          [
-            {text: 'Cancel', style: 'cancel'},
-            {
-              text: 'Complete ✅',
-              style: 'default',
-              onPress: () => handleCompleteDay(dayNumber),
-            },
-          ],
-        );
-      }
+      setSelectedDay({
+        day: dayNumber,
+        date: currentDate,
+        dateString: dateString,
+        isCompleted: isCompleted,
+        hoursCompleted: hoursCompleted,
+      });
+      setModalVisible(true);
     },
-    [challenge, completedDays, handleCompleteDay, handleUndoCompleteDay],
+    [challenge, completedDays],
   );
 
   // Generate day cards
@@ -610,6 +619,34 @@ const ChallengeDetailScreen = () => {
           )}
         </View>
       </ScrollView>
+
+      {/* Custom Completion Modal - UPDATED WITH HOURS PROPS */}
+      <CompleteDayModal
+        visible={modalVisible}
+        dayNumber={selectedDay?.day}
+        challengeName={challenge?.name}
+        dateString={selectedDay?.dateString}
+        isCompleted={selectedDay?.isCompleted}
+        hoursCompleted={selectedDay?.hoursCompleted}
+        targetHoursPerDay={challenge?.hours_per_day}
+        onCancel={() => {
+          setModalVisible(false);
+          setSelectedDay(null);
+        }}
+        onComplete={handleCompleteDay}
+        onUndo={handleUndoCompleteDay}
+      />
+
+      {/* Custom Toast */}
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type="success"
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
+      />
     </View>
   );
 };
@@ -717,7 +754,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // Days Container - Updated for direct screen display
+  // Days Container
   daysContainer: {
     backgroundColor: colors.White,
     paddingHorizontal: WP(-5),
@@ -736,7 +773,7 @@ const styles = StyleSheet.create({
     marginBottom: HP(1.5),
   },
 
-  // Day Cards - Same styling as modal
+  // Day Cards
   dayCard: {
     backgroundColor: '#F8F9FA',
     borderRadius: WP(2),

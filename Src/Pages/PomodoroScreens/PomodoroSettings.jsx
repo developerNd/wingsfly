@@ -247,7 +247,17 @@ const PomodoroSettings = () => {
           
         case 'GoalScreen':
           // Return to GoalScreen with pomodoro settings
-          navigation.navigate('GoalTaskScreen', {
+          navigation.navigate('TaskScreen', {
+            ...routeParams,
+            pomodoroSettings: pomodoroSettingsData,
+            // Remove non-serializable function
+            onPomodoroSave: undefined
+          });
+          break;
+
+          case 'PlanScreen':
+          // Return to PlanScreen with pomodoro settings
+          navigation.navigate('PlanScreen', {
             ...routeParams,
             pomodoroSettings: pomodoroSettingsData,
             // Remove non-serializable function

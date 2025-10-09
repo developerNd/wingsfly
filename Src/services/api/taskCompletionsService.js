@@ -8,14 +8,19 @@ export const taskCompletionsService = {
         ? completionDate.toISOString().split('T')[0] 
         : completionDate;
 
+      // Determine if it's a plan or task
+      const isplan = taskId.toString().startsWith('plan_');
+      const actualId = isplan ? taskId.replace('plan_', '') : taskId;
+
+      console.log(`Upserting completion for: ${actualId}`);
+
       const baseData = {
-        task_id: taskId,
+        task_id: actualId,
         user_id: userId,
         completion_date: dateString,
         updated_at: new Date().toISOString(),
       };
 
-      // Add type-specific data
       const upsertData = { ...baseData, ...completionData };
 
       const {data, error} = await supabase
@@ -45,10 +50,13 @@ export const taskCompletionsService = {
         ? completionDate.toISOString().split('T')[0] 
         : completionDate;
 
+      const isplan = taskId.toString().startsWith('plan_');
+      const actualId = isplan ? taskId.replace('plan_', '') : taskId;
+
       const {data, error} = await supabase
         .from('task_completions')
         .select('*')
-        .eq('task_id', taskId)
+        .eq('task_id', actualId)
         .eq('user_id', userId)
         .eq('completion_date', dateString)
         .maybeSingle();
@@ -127,10 +135,13 @@ export const taskCompletionsService = {
         ? completionDate.toISOString().split('T')[0] 
         : completionDate;
 
+      const isplan = taskId.toString().startsWith('plan_');
+      const actualId = isplan ? taskId.replace('plan_', '') : taskId;
+
       const {error} = await supabase
         .from('task_completions')
         .delete()
-        .eq('task_id', taskId)
+        .eq('task_id', actualId)
         .eq('user_id', userId)
         .eq('completion_date', dateString);
 
@@ -146,14 +157,65 @@ export const taskCompletionsService = {
     }
   },
 
+  // Yes/No task completion
+  async upsertYesNoCompletion(taskId, userId, completionDate, isCompleted) {
+    return this.upsertTaskCompletion(taskId, userId, completionDate, {
+      is_completed: isCompleted,
+      timer_value: null,
+      checklist_items: null,
+      checklist_completed_count: null,
+      numeric_value: null,
+      numeric_unit: null,
+    });
+  },
+
+  // Timer task completion
+  async upsertTimerCompletion(taskId, userId, completionDate, timerValue, isCompleted) {
+    return this.upsertTaskCompletion(taskId, userId, completionDate, {
+      is_completed: isCompleted,
+      timer_value: timerValue,
+      checklist_items: null,
+      checklist_completed_count: null,
+      numeric_value: null,
+      numeric_unit: null,
+    });
+  },
+
+  // Checklist task completion
+  async upsertChecklistCompletion(taskId, userId, completionDate, checklistItems, completedCount, isCompleted) {
+    return this.upsertTaskCompletion(taskId, userId, completionDate, {
+      is_completed: isCompleted,
+      checklist_items: checklistItems,
+      checklist_completed_count: completedCount,
+      timer_value: null,
+      numeric_value: null,
+      numeric_unit: null,
+    });
+  },
+
+  // Numeric task completion
+  async upsertNumericCompletion(taskId, userId, completionDate, numericValue, numericUnit, isCompleted) {
+    return this.upsertTaskCompletion(taskId, userId, completionDate, {
+      is_completed: isCompleted,
+      numeric_value: numericValue,
+      numeric_unit: numericUnit,
+      timer_value: null,
+      checklist_items: null,
+      checklist_completed_count: null,
+    });
+  },
+
   // Get task completion statistics
   async getTaskCompletionStats(userId, taskId, startDate = null, endDate = null) {
     try {
+      const isplan = taskId.toString().startsWith('plan_');
+      const actualId = isplan ? taskId.replace('plan_', '') : taskId;
+
       let query = supabase
         .from('task_completions')
         .select('*')
         .eq('user_id', userId)
-        .eq('task_id', taskId);
+        .eq('task_id', actualId);
 
       if (startDate) {
         const startDateString = startDate instanceof Date 
@@ -221,59 +283,5 @@ export const taskCompletionsService = {
       console.error('Error in getTaskCompletionStats:', error);
       throw error;
     }
-  },
-
-  // Specialized methods for different task types
-
-  // Yes/No task completion
-  async upsertYesNoCompletion(taskId, userId, completionDate, isCompleted) {
-    return this.upsertTaskCompletion(taskId, userId, completionDate, {
-      is_completed: isCompleted,
-      // Clear other type-specific fields
-      timer_value: null,
-      checklist_items: null,
-      checklist_completed_count: null,
-      numeric_value: null,
-      numeric_unit: null,
-    });
-  },
-
-  // Timer task completion
-  async upsertTimerCompletion(taskId, userId, completionDate, timerValue, isCompleted) {
-    return this.upsertTaskCompletion(taskId, userId, completionDate, {
-      is_completed: isCompleted,
-      timer_value: timerValue,
-      // Clear other type-specific fields
-      checklist_items: null,
-      checklist_completed_count: null,
-      numeric_value: null,
-      numeric_unit: null,
-    });
-  },
-
-  // Checklist task completion
-  async upsertChecklistCompletion(taskId, userId, completionDate, checklistItems, completedCount, isCompleted) {
-    return this.upsertTaskCompletion(taskId, userId, completionDate, {
-      is_completed: isCompleted,
-      checklist_items: checklistItems,
-      checklist_completed_count: completedCount,
-      // Clear other type-specific fields
-      timer_value: null,
-      numeric_value: null,
-      numeric_unit: null,
-    });
-  },
-
-  // Numeric task completion
-  async upsertNumericCompletion(taskId, userId, completionDate, numericValue, numericUnit, isCompleted) {
-    return this.upsertTaskCompletion(taskId, userId, completionDate, {
-      is_completed: isCompleted,
-      numeric_value: numericValue,
-      numeric_unit: numericUnit,
-      // Clear other type-specific fields
-      timer_value: null,
-      checklist_items: null,
-      checklist_completed_count: null,
-    });
   },
 };

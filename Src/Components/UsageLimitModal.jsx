@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,22 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Image
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import {appBlockerService} from '../services/api/appBlockerService';
+import {useAuth} from '../contexts/AuthContext';
 
-const UsageLimitModal = ({ 
-  visible, 
-  selectedApp, 
-  loadingUsageData, 
-  onClose, 
-  onAppUpdate, 
-  InstalledApps 
+const UsageLimitModal = ({
+  visible,
+  selectedApp,
+  loadingUsageData,
+  onClose,
+  onAppUpdate,
+  InstalledApps,
 }) => {
+  const {user} = useAuth();
+
   const [limitMinutes, setLimitMinutes] = useState('');
   const [limitHours, setLimitHours] = useState('');
   const [saving, setSaving] = useState(false);
@@ -28,20 +32,20 @@ const UsageLimitModal = ({
   const [localUsageData, setLocalUsageData] = useState({
     usageToday: 0,
     usageLimit: 0,
-    isLimitReached: false
+    isLimitReached: false,
   });
 
   useEffect(() => {
     if (selectedApp && visible) {
       console.log('Setting up usage limit modal for:', selectedApp.name);
-      
+
       // Initialize local usage data from the app
       setLocalUsageData({
         usageToday: selectedApp.usageToday || 0,
         usageLimit: selectedApp.usageLimit || 0,
-        isLimitReached: selectedApp.isLimitReached || false
+        isLimitReached: selectedApp.isLimitReached || false,
       });
-      
+
       // Convert existing limit to hours and minutes for display
       const existingLimit = selectedApp.usageLimit || 0;
       if (existingLimit > 0) {
@@ -56,7 +60,7 @@ const UsageLimitModal = ({
     }
   }, [selectedApp, visible]);
 
-  const formatTime = (minutes) => {
+  const formatTime = minutes => {
     if (minutes < 60) {
       return `${minutes}m`;
     }
@@ -70,25 +74,25 @@ const UsageLimitModal = ({
 
   const refreshUsageData = async () => {
     if (!selectedApp) return;
-    
+
     try {
       setRefreshing(true);
       console.log('Refreshing usage data for:', selectedApp.name);
-      
+
       const [usageToday, usageLimit, isLimitReached] = await Promise.all([
         InstalledApps.getAppUsageToday(selectedApp.packageName),
         InstalledApps.getAppUsageLimit(selectedApp.packageName),
-        InstalledApps.isAppLimitReached(selectedApp.packageName)
+        InstalledApps.isAppLimitReached(selectedApp.packageName),
       ]);
-      
+
       const updatedData = {
         usageToday: usageToday || 0,
         usageLimit: usageLimit || 0,
-        isLimitReached: isLimitReached || false
+        isLimitReached: isLimitReached || false,
       };
-      
+
       setLocalUsageData(updatedData);
-      
+
       console.log('Refreshed usage data:', updatedData);
     } catch (error) {
       console.error('Error refreshing usage data:', error);
@@ -98,208 +102,294 @@ const UsageLimitModal = ({
     }
   };
 
-  // IMPROVED: Fixed handleSaveLimit method in UsageLimitModal.js
+  const handleSaveLimit = async () => {
+    if (!selectedApp) return;
 
-const handleSaveLimit = async () => {
-  if (!selectedApp) return;
-  
-  try {
-    setSaving(true);
-    
-    // Calculate total minutes from hours and minutes input
-    const hours = parseInt(limitHours) || 0;
-    const minutes = parseInt(limitMinutes) || 0;
-    const totalMinutes = (hours * 60) + minutes;
-    
-    console.log('Setting usage limit for', selectedApp.name, ':', totalMinutes, 'minutes');
-    
-    if (totalMinutes <= 0) {
-      Alert.alert(
-        'Invalid Limit',
-        'Please enter a valid time limit (at least 1 minute).',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
-    if (totalMinutes > 1440) { // 24 hours
-      Alert.alert(
-        'Invalid Limit',
-        'Usage limit cannot exceed 24 hours per day.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
-    // Set the usage limit
-    const success = await InstalledApps.setAppUsageLimit(selectedApp.packageName, totalMinutes);
-    
-    if (success) {
-      // IMPORTANT: Force re-evaluation of blocking status after setting new limit
-      console.log('Re-evaluating blocking status after setting new limit');
-      const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(selectedApp.packageName);
-      
-      // Refresh all usage data to get updated status
-      const [usageToday, isLimitReached] = await Promise.all([
-        InstalledApps.getAppUsageToday(selectedApp.packageName),
-        InstalledApps.isAppLimitReached(selectedApp.packageName)
-      ]);
-      
-      const updatedApp = {
-        ...selectedApp,
-        usageLimit: totalMinutes,
-        usageToday: usageToday || 0,
-        isLimitReached: isLimitReached || false,
-        isActuallyLocked: shouldBeLocked || false  // NEW: Include actual lock status
-      };
-      
-      console.log('Updated app state after setting limit:', {
-        name: updatedApp.name,
-        limit: updatedApp.usageLimit,
-        usage: updatedApp.usageToday,
-        limitReached: updatedApp.isLimitReached,
-        actuallyLocked: updatedApp.isActuallyLocked
-      });
-      
-      // Update local data
-      setLocalUsageData({
-        usageToday: usageToday || 0,
-        usageLimit: totalMinutes,
-        isLimitReached: isLimitReached || false
-      });
-      
-      // Update the parent component with complete app state
-      onAppUpdate(updatedApp);
-      
-      Alert.alert(
-        'Success',
-        `Usage limit of ${formatTime(totalMinutes)} set for ${selectedApp.name}${!isLimitReached ? '\n\nApp is now unlocked as current usage is below the new limit.' : ''}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              console.log('Usage limit set and blocking status updated successfully');
-            }
-          }
-        ]
-      );
-    } else {
-      Alert.alert('Error', 'Failed to set usage limit');
-    }
-  } catch (error) {
-    console.error('Error setting usage limit:', error);
-    Alert.alert('Error', 'Failed to set usage limit');
-  } finally {
-    setSaving(false);
-  }
-};
+    try {
+      setSaving(true);
 
-// IMPROVED: Enhanced handleRemoveLimit method
-const handleRemoveLimit = async () => {
-  if (!selectedApp) return;
-  
-  Alert.alert(
-    'Remove Usage Limit',
-    `Are you sure you want to remove the usage limit for ${selectedApp.name}?`,
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
+      // Calculate total minutes from hours and minutes input
+      const hours = parseInt(limitHours) || 0;
+      const minutes = parseInt(limitMinutes) || 0;
+      const totalMinutes = hours * 60 + minutes;
+
+      console.log(
+        'Setting usage limit for',
+        selectedApp.name,
+        ':',
+        totalMinutes,
+        'minutes',
+      );
+
+      if (totalMinutes <= 0) {
+        Alert.alert(
+          'Invalid Limit',
+          'Please enter a valid time limit (at least 1 minute).',
+          [{text: 'OK'}],
+        );
+        return;
+      }
+
+      if (totalMinutes > 1440) {
+        // 24 hours
+        Alert.alert(
+          'Invalid Limit',
+          'Usage limit cannot exceed 24 hours per day.',
+          [{text: 'OK'}],
+        );
+        return;
+      }
+
+      // Set the usage limit in native module
+      const success = await InstalledApps.setAppUsageLimit(
+        selectedApp.packageName,
+        totalMinutes,
+      );
+
+      if (success) {
+        // Force re-evaluation of blocking status after setting new limit
+        console.log('Re-evaluating blocking status after setting new limit');
+        const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(
+          selectedApp.packageName,
+        );
+
+        // Refresh all usage data to get updated status
+        const [usageToday, isLimitReached] = await Promise.all([
+          InstalledApps.getAppUsageToday(selectedApp.packageName),
+          InstalledApps.isAppLimitReached(selectedApp.packageName),
+        ]);
+
+        const updatedApp = {
+          ...selectedApp,
+          usageLimit: totalMinutes,
+          usageToday: usageToday || 0,
+          isLimitReached: isLimitReached || false,
+          isActuallyLocked: shouldBeLocked || false,
+        };
+
+        // Sync to Supabase if user is logged in
+        if (user?.id) {
           try {
-            setSaving(true);
-            console.log('Removing usage limit for:', selectedApp.name);
-            
-            const success = await InstalledApps.removeAppUsageLimit(selectedApp.packageName);
-            
-            if (success) {
-              // IMPORTANT: Force re-evaluation of blocking status after removing limit
-              console.log('Re-evaluating blocking status after removing limit');
-              const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(selectedApp.packageName);
-              
-              const updatedApp = {
-                ...selectedApp,
-                usageLimit: 0,
-                isLimitReached: false,
-                isActuallyLocked: shouldBeLocked || false  // NEW: Include actual lock status
-              };
-              
-              console.log('Updated app state after removing limit:', {
-                name: updatedApp.name,
-                actuallyLocked: updatedApp.isActuallyLocked
-              });
-              
-              // Update local data
-              setLocalUsageData(prev => ({
-                ...prev,
-                usageLimit: 0,
-                isLimitReached: false
-              }));
-              
-              // Clear the input fields
-              setLimitHours('');
-              setLimitMinutes('');
-              
-              // Update the parent component
-              onAppUpdate(updatedApp);
-              
-              Alert.alert('Success', `Usage limit removed for ${selectedApp.name}\n\nApp blocking status has been updated.`);
-            } else {
-              Alert.alert('Error', 'Failed to remove usage limit');
-            }
-          } catch (error) {
-            console.error('Error removing usage limit:', error);
-            Alert.alert('Error', 'Failed to remove usage limit');
-          } finally {
-            setSaving(false);
+            await appBlockerService.setAppUsageLimit(
+              user.id,
+              selectedApp.packageName,
+              selectedApp.name,
+              totalMinutes,
+            );
+            console.log('Usage limit synced to Supabase successfully');
+          } catch (syncError) {
+            console.error(
+              'Failed to sync usage limit to Supabase (silent):',
+              syncError,
+            );
           }
         }
+
+        try {
+          await InstalledApps.refreshNotification();
+          console.log('Notification refreshed immediately');
+        } catch (error) {
+          console.warn('Failed to refresh notification:', error);
+        }
+
+        console.log('Updated app state after setting limit:', {
+          name: updatedApp.name,
+          limit: updatedApp.usageLimit,
+          usage: updatedApp.usageToday,
+          limitReached: updatedApp.isLimitReached,
+          actuallyLocked: updatedApp.isActuallyLocked,
+        });
+
+        // Update local data
+        setLocalUsageData({
+          usageToday: usageToday || 0,
+          usageLimit: totalMinutes,
+          isLimitReached: isLimitReached || false,
+        });
+
+        // Update the parent component with complete app state
+        onAppUpdate(updatedApp);
+
+        Alert.alert(
+          'Success',
+          `Usage limit of ${formatTime(totalMinutes)} set for ${
+            selectedApp.name
+          }${
+            !isLimitReached
+              ? '\n\nApp is now unlocked as current usage is below the new limit.'
+              : ''
+          }`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                console.log(
+                  'Usage limit set and blocking status updated successfully',
+                );
+              },
+            },
+          ],
+        );
+      } else {
+        Alert.alert('Error', 'Failed to set usage limit');
       }
-    ]
-  );
-};
+    } catch (error) {
+      console.error('Error setting usage limit:', error);
+      Alert.alert('Error', 'Failed to set usage limit');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveLimit = async () => {
+    if (!selectedApp) return;
+
+    Alert.alert(
+      'Remove Usage Limit',
+      `Are you sure you want to remove the usage limit for ${selectedApp.name}?`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSaving(true);
+              console.log('Removing usage limit for:', selectedApp.name);
+
+              const success = await InstalledApps.removeAppUsageLimit(
+                selectedApp.packageName,
+              );
+
+              if (success) {
+                // Force re-evaluation of blocking status after removing limit
+                console.log(
+                  'Re-evaluating blocking status after removing limit',
+                );
+                const shouldBeLocked =
+                  await InstalledApps.reevaluateAppBlockingStatus(
+                    selectedApp.packageName,
+                  );
+
+                // Sync removal to Supabase if user is logged in
+                if (user?.id) {
+                  try {
+                    await appBlockerService.removeAppUsageLimit(
+                      user.id,
+                      selectedApp.packageName,
+                    );
+                    console.log(
+                      'Usage limit removal synced to Supabase successfully',
+                    );
+                  } catch (syncError) {
+                    console.error(
+                      'Failed to sync usage limit removal to Supabase (silent):',
+                      syncError,
+                    );
+                  }
+                }
+
+                try {
+                  await InstalledApps.refreshNotification();
+                  console.log('Notification refreshed after removing limit');
+                } catch (error) {
+                  console.warn('Failed to refresh notification:', error);
+                }
+
+                const updatedApp = {
+                  ...selectedApp,
+                  usageLimit: 0,
+                  isLimitReached: false,
+                  isActuallyLocked: shouldBeLocked || false,
+                };
+
+                console.log('Updated app state after removing limit:', {
+                  name: updatedApp.name,
+                  actuallyLocked: updatedApp.isActuallyLocked,
+                });
+
+                // Update local data
+                setLocalUsageData(prev => ({
+                  ...prev,
+                  usageLimit: 0,
+                  isLimitReached: false,
+                }));
+
+                // Clear the input fields
+                setLimitHours('');
+                setLimitMinutes('');
+
+                // Update the parent component
+                onAppUpdate(updatedApp);
+
+                Alert.alert(
+                  'Success',
+                  `Usage limit removed for ${selectedApp.name}\n\nApp blocking status has been updated.`,
+                );
+              } else {
+                Alert.alert('Error', 'Failed to remove usage limit');
+              }
+            } catch (error) {
+              console.error('Error removing usage limit:', error);
+              Alert.alert('Error', 'Failed to remove usage limit');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const handleResetUsage = async () => {
     if (!selectedApp) return;
-    
+
     Alert.alert(
       'Reset Usage',
       `Are you sure you want to reset today's usage for ${selectedApp.name}? This will unlock the app if it was locked due to usage limit.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        {text: 'Cancel', style: 'cancel'},
         {
           text: 'Reset',
           onPress: async () => {
             try {
               setSaving(true);
               console.log('Resetting usage for:', selectedApp.name);
-              
-              const success = await InstalledApps.resetAppUsageToday(selectedApp.packageName);
-              
+
+              const success = await InstalledApps.resetAppUsageToday(
+                selectedApp.packageName,
+              );
+
               if (success) {
                 // Refresh usage data
                 const [usageToday, isLimitReached] = await Promise.all([
                   InstalledApps.getAppUsageToday(selectedApp.packageName),
-                  InstalledApps.isAppLimitReached(selectedApp.packageName)
+                  InstalledApps.isAppLimitReached(selectedApp.packageName),
                 ]);
-                
+
+                // Re-evaluate blocking status
+                const shouldBeLocked =
+                  await InstalledApps.reevaluateAppBlockingStatus(
+                    selectedApp.packageName,
+                  );
+
                 const updatedApp = {
                   ...selectedApp,
                   usageToday: usageToday || 0,
-                  isLimitReached: isLimitReached || false
+                  isLimitReached: isLimitReached || false,
+                  isActuallyLocked: shouldBeLocked || false,
                 };
-                
+
                 // Update local data
                 setLocalUsageData(prev => ({
                   ...prev,
                   usageToday: usageToday || 0,
-                  isLimitReached: isLimitReached || false
+                  isLimitReached: isLimitReached || false,
                 }));
-                
+
                 // Update the parent component
                 onAppUpdate(updatedApp);
-                
+
                 Alert.alert('Success', `Usage reset for ${selectedApp.name}`);
               } else {
                 Alert.alert('Error', 'Failed to reset usage');
@@ -310,9 +400,9 @@ const handleRemoveLimit = async () => {
             } finally {
               setSaving(false);
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
@@ -320,17 +410,20 @@ const handleRemoveLimit = async () => {
     return null;
   }
 
-  const usagePercentage = localUsageData.usageLimit > 0 
-    ? Math.min((localUsageData.usageToday / localUsageData.usageLimit) * 100, 100) 
-    : 0;
+  const usagePercentage =
+    localUsageData.usageLimit > 0
+      ? Math.min(
+          (localUsageData.usageToday / localUsageData.usageLimit) * 100,
+          100,
+        )
+      : 0;
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
+      onRequestClose={onClose}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -338,11 +431,10 @@ const handleRemoveLimit = async () => {
             <Icon name="close" size={24} color="#666" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Usage Limit</Text>
-          <TouchableOpacity 
-            onPress={refreshUsageData} 
+          <TouchableOpacity
+            onPress={refreshUsageData}
             style={styles.refreshButton}
-            disabled={refreshing}
-          >
+            disabled={refreshing}>
             {refreshing ? (
               <ActivityIndicator size="small" color="#2E7D32" />
             ) : (
@@ -361,54 +453,70 @@ const handleRemoveLimit = async () => {
             <>
               {/* App Info */}
               <View style={styles.appInfoContainer}>
-                <Image 
-                  source={{ uri: selectedApp.icon }} 
-                  style={styles.appIcon} 
+                <Image
+                  source={{uri: selectedApp.icon}}
+                  style={styles.appIcon}
                 />
                 <View style={styles.appDetails}>
                   <Text style={styles.appName}>{selectedApp.name}</Text>
-                  <Text style={styles.packageName}>{selectedApp.packageName}</Text>
+                  <Text style={styles.packageName}>
+                    {selectedApp.packageName}
+                  </Text>
                 </View>
               </View>
 
               {/* Usage Statistics */}
               <View style={styles.statsContainer}>
                 <Text style={styles.sectionTitle}>Today's Usage</Text>
-                
+
                 <View style={styles.usageStatsCard}>
                   <View style={styles.usageRow}>
                     <Text style={styles.usageLabel}>Time Used Today:</Text>
-                    <Text style={[styles.usageValue, localUsageData.isLimitReached && styles.limitReachedText]}>
+                    <Text
+                      style={[
+                        styles.usageValue,
+                        localUsageData.isLimitReached &&
+                          styles.limitReachedText,
+                      ]}>
                       {formatTime(localUsageData.usageToday)}
                     </Text>
                   </View>
-                  
+
                   {localUsageData.usageLimit > 0 && (
                     <>
                       <View style={styles.usageRow}>
                         <Text style={styles.usageLabel}>Daily Limit:</Text>
-                        <Text style={styles.usageValue}>{formatTime(localUsageData.usageLimit)}</Text>
+                        <Text style={styles.usageValue}>
+                          {formatTime(localUsageData.usageLimit)}
+                        </Text>
                       </View>
-                      
+
                       <View style={styles.progressContainer}>
                         <View style={styles.progressBar}>
-                          <View 
+                          <View
                             style={[
-                              styles.progressFill, 
-                              { 
+                              styles.progressFill,
+                              {
                                 width: `${usagePercentage}%`,
-                                backgroundColor: usagePercentage >= 100 ? '#F44336' : '#2E7D32'
-                              }
-                            ]} 
+                                backgroundColor:
+                                  usagePercentage >= 100
+                                    ? '#F44336'
+                                    : '#2E7D32',
+                              },
+                            ]}
                           />
                         </View>
-                        <Text style={styles.progressText}>{Math.round(usagePercentage)}%</Text>
+                        <Text style={styles.progressText}>
+                          {Math.round(usagePercentage)}%
+                        </Text>
                       </View>
-                      
+
                       {localUsageData.isLimitReached && (
                         <View style={styles.limitReachedContainer}>
                           <Icon name="block" size={20} color="#F44336" />
-                          <Text style={styles.limitReachedText}>Limit Reached - App is Locked</Text>
+                          <Text style={styles.limitReachedText}>
+                            Limit Reached - App is Locked
+                          </Text>
                         </View>
                       )}
                     </>
@@ -419,7 +527,7 @@ const handleRemoveLimit = async () => {
               {/* Set Limit Section */}
               <View style={styles.setLimitContainer}>
                 <Text style={styles.sectionTitle}>Set Daily Usage Limit</Text>
-                
+
                 <View style={styles.timeInputContainer}>
                   <View style={styles.timeInput}>
                     <TextInput
@@ -433,9 +541,9 @@ const handleRemoveLimit = async () => {
                     />
                     <Text style={styles.timeLabel}>Hours</Text>
                   </View>
-                  
+
                   <Text style={styles.timeSeparator}>:</Text>
-                  
+
                   <View style={styles.timeInput}>
                     <TextInput
                       style={styles.timeTextInput}
@@ -451,7 +559,8 @@ const handleRemoveLimit = async () => {
                 </View>
 
                 <Text style={styles.helperText}>
-                  Set how much time per day this app can be used. The app will be locked when the limit is reached.
+                  Set how much time per day this app can be used. The app will
+                  be locked when the limit is reached.
                 </Text>
               </View>
 
@@ -460,8 +569,7 @@ const handleRemoveLimit = async () => {
                 <TouchableOpacity
                   style={[styles.button, styles.primaryButton]}
                   onPress={handleSaveLimit}
-                  disabled={saving}
-                >
+                  disabled={saving}>
                   {saving ? (
                     <ActivityIndicator size="small" color="white" />
                   ) : (
@@ -476,8 +584,7 @@ const handleRemoveLimit = async () => {
                   <TouchableOpacity
                     style={[styles.button, styles.secondaryButton]}
                     onPress={handleRemoveLimit}
-                    disabled={saving}
-                  >
+                    disabled={saving}>
                     <Icon name="delete" size={20} color="#F44336" />
                     <Text style={styles.secondaryButtonText}>Remove Limit</Text>
                   </TouchableOpacity>
@@ -487,10 +594,11 @@ const handleRemoveLimit = async () => {
                   <TouchableOpacity
                     style={[styles.button, styles.tertiaryButton]}
                     onPress={handleResetUsage}
-                    disabled={saving}
-                  >
+                    disabled={saving}>
                     <Icon name="restore" size={20} color="#FF9800" />
-                    <Text style={styles.tertiaryButtonText}>Reset Today's Usage</Text>
+                    <Text style={styles.tertiaryButtonText}>
+                      Reset Today's Usage
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -500,12 +608,12 @@ const handleRemoveLimit = async () => {
                 <Text style={styles.sectionTitle}>Quick Presets</Text>
                 <View style={styles.presetButtons}>
                   {[
-                    { label: '15min', minutes: 15 },
-                    { label: '30min', minutes: 30 },
-                    { label: '1h', minutes: 60 },
-                    { label: '2h', minutes: 120 },
-                    { label: '3h', minutes: 180 }
-                  ].map((preset) => (
+                    {label: '15min', minutes: 15},
+                    {label: '30min', minutes: 30},
+                    {label: '1h', minutes: 60},
+                    {label: '2h', minutes: 120},
+                    {label: '3h', minutes: 180},
+                  ].map(preset => (
                     <TouchableOpacity
                       key={preset.minutes}
                       style={styles.presetButton}
@@ -514,9 +622,10 @@ const handleRemoveLimit = async () => {
                         const minutes = preset.minutes % 60;
                         setLimitHours(hours > 0 ? hours.toString() : '');
                         setLimitMinutes(minutes > 0 ? minutes.toString() : '');
-                      }}
-                    >
-                      <Text style={styles.presetButtonText}>{preset.label}</Text>
+                      }}>
+                      <Text style={styles.presetButtonText}>
+                        {preset.label}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -578,7 +687,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
@@ -616,7 +725,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
@@ -680,7 +789,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,

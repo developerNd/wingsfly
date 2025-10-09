@@ -25,6 +25,8 @@ const EvaluateProgress = () => {
       return 2;
     } else if (type === 'Task') {
       return 2;
+    } else if (type === 'Plan') {
+      return 2;
     }
     return 4;
   };
@@ -75,6 +77,9 @@ const EvaluateProgress = () => {
         case 'timer':
           navigation.navigate('TimerScreen', navigationData);
           break;
+        case 'timerTracker':
+          navigation.navigate('FrequencyScreen', navigationData);
+          break;
         case 'checklist':
           navigation.navigate('ChecklistScreen', navigationData);
           break;
@@ -92,6 +97,9 @@ const EvaluateProgress = () => {
         case 'timer':
           navigation.navigate('RecurringTimerScreen', navigationData);
           break;
+        case 'timerTracker':
+          navigation.navigate('FrequencyScreen', navigationData);
+          break;
         case 'checklist':
           navigation.navigate('RecurringChecklistScreen', navigationData);
           break;
@@ -104,23 +112,138 @@ const EvaluateProgress = () => {
     } else if (type === 'Task') {
       switch (optionType) {
         case 'yesNo':
-          navigation.navigate('GoalTaskScreen', navigationData);
+          navigation.navigate('TaskScreen', navigationData);
           break;
         case 'timer':
-          navigation.navigate('GoalTaskScreen', navigationData);
+          navigation.navigate('TaskScreen', navigationData);
+          break;
+        case 'timerTracker':
+          navigation.navigate('TimerTrackerScreen', navigationData);
           break;
         case 'checklist':
-          navigation.navigate('GoalTaskScreen', navigationData);
+          navigation.navigate('TaskChecklistScreen', navigationData);
           break;
         case 'numeric':
-          navigation.navigate('GoalTaskScreen', navigationData);
+          navigation.navigate('TaskScreen', navigationData);
           break;
         default:
           console.log('Unknown option type for Task:', optionType);
       }
+    } else if (type === 'Plan') {
+      // Special navigation for Plan Your Day task type
+      switch (optionType) {
+        case 'yesNo':
+          navigation.navigate('PlanScreen', navigationData);
+          break;
+        case 'timer':
+          navigation.navigate('PlanScreen', navigationData);
+          break;
+        case 'timerTracker':
+          navigation.navigate('PlanTimerTrackerScreen', navigationData);
+          break;
+        case 'checklist':
+          navigation.navigate('PlanChecklistScreen', navigationData);
+          break;
+        case 'numeric':
+          // For Plan type, skip numeric option or handle differently
+          console.log('Numeric option not available for Plan type');
+          break;
+        default:
+          console.log('Unknown option type for Plan:', optionType);
+      }
     } else {
       console.log('Unknown type:', type);
     }
+  };
+
+  // Function to render evaluation options based on type
+  const renderEvaluationOptions = () => {
+    const commonOptions = [
+      {
+        key: 'yesNo',
+        title: 'Yes or No',
+        description: 'Record whether you succeed with the activity or not',
+        renderHeader: () => (
+          <View style={styles.cardHeader}>
+            <Text style={styles.withText}>With</Text>
+            <Image source={Icons.Arrow} style={styles.arrowImage} />
+            <Text style={styles.optionTitle}>Yes</Text>
+            <Image source={Icons.Ring} style={styles.radioButtonImage} />
+            <Text style={styles.orText}>or</Text>
+            <Text style={styles.optionTitle}>No</Text>
+            <Image source={Icons.Ring} style={styles.radioButtonImage} />
+          </View>
+        ),
+      },
+      {
+        key: 'timer',
+        title: 'Timer',
+        description: 'Establish a value as a daily goal or limit for the habit',
+        renderHeader: () => (
+          <View style={styles.cardHeader}>
+            <Text style={styles.withText}>With</Text>
+            <Image source={Icons.Arrow} style={styles.arrowImage} />
+            <Text style={styles.optionTitle}>Focus Session</Text>
+            <Image source={Icons.Timer} style={styles.iconStyle} />
+          </View>
+        ),
+      },
+      {
+        key: 'timerTracker',
+        title: 'Timer Tracker',
+        description: 'Track time-based activities with frequency settings',
+        renderHeader: () => (
+          <View style={styles.cardHeader}>
+            <Text style={styles.withText}>With</Text>
+            <Image source={Icons.Arrow} style={styles.arrowImage} />
+            <Text style={styles.optionTitle}>Time Tracker</Text>
+            <Image source={Icons.Timer} style={styles.iconStyle} />
+          </View>
+        ),
+      },
+      {
+        key: 'checklist',
+        title: 'Checklist',
+        description: 'Evaluate your activity based on a set of sub-items',
+        renderHeader: () => (
+          <View style={styles.cardHeader}>
+            <Text style={styles.withText}>With</Text>
+            <Image source={Icons.Arrow} style={styles.arrowImage} />
+            <Text style={styles.optionTitle}>Checklist</Text>
+            <Image source={Icons.Check} style={styles.iconStyle} />
+          </View>
+        ),
+      },
+    ];
+
+    // Only show numeric option if type is NOT 'Plan'
+    if (type !== 'Plan') {
+      commonOptions.push({
+        key: 'numeric',
+        title: 'Numeric Value',
+        description:
+          'Establish a time value as a daily goal or limit for the habit',
+        renderHeader: () => (
+          <View style={styles.cardHeader}>
+            <Text style={styles.withText}>With</Text>
+            <Image source={Icons.Arrow} style={styles.arrowImage} />
+            <Text style={styles.optionTitle}>a Numeric Value</Text>
+            <Image source={Icons.Numeric} style={styles.iconStyle} />
+          </View>
+        ),
+      });
+    }
+
+    return commonOptions.map(option => (
+      <React.Fragment key={option.key}>
+        <TouchableOpacity
+          style={styles.optionCard}
+          onPress={() => handleOptionPress(option.key)}>
+          {option.renderHeader()}
+        </TouchableOpacity>
+        <Text style={styles.cardDescription}>{option.description}</Text>
+      </React.Fragment>
+    ));
   };
 
   return (
@@ -132,66 +255,7 @@ const EvaluateProgress = () => {
         </Headers>
       </View>
 
-      <View style={styles.content}>
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleOptionPress('yesNo')}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.withText}>With</Text>
-            <Image source={Icons.Arrow} style={styles.arrowImage} />
-            <Text style={styles.optionTitle}>Yes</Text>
-            <Image source={Icons.Ring} style={styles.radioButtonImage} />
-            <Text style={styles.orText}>or</Text>
-            <Text style={styles.optionTitle}>No</Text>
-            <Image source={Icons.Ring} style={styles.radioButtonImage} />
-          </View>
-        </TouchableOpacity>
-        <Text style={styles.cardDescription}>
-          Record whether you succeed with the activity or not
-        </Text>
-
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleOptionPress('timer')}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.withText}>With</Text>
-            <Image source={Icons.Arrow} style={styles.arrowImage} />
-            <Text style={styles.optionTitle}>Timer</Text>
-            <Image source={Icons.Timer} style={styles.iconStyle} />
-          </View>
-        </TouchableOpacity>
-        <Text style={styles.cardDescription}>
-          Establish a value as a daily goal or limit for the habit
-        </Text>
-
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleOptionPress('checklist')}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.withText}>With</Text>
-            <Image source={Icons.Arrow} style={styles.arrowImage} />
-            <Text style={styles.optionTitle}>Checklist</Text>
-            <Image source={Icons.Check} style={styles.iconStyle} />
-          </View>
-        </TouchableOpacity>
-        <Text style={styles.cardDescription}>
-          Evaluate your activity based on a set of sub-items
-        </Text>
-
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleOptionPress('numeric')}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.withText}>With</Text>
-            <Image source={Icons.Arrow} style={styles.arrowImage} />
-            <Text style={styles.optionTitle}>a Numeric Value</Text>
-            <Image source={Icons.Numeric} style={styles.iconStyle} />
-          </View>
-        </TouchableOpacity>
-        <Text style={styles.cardDescription}>
-          Establish a time value as a daily goal or limit for the habit
-        </Text>
-      </View>
+      <View style={styles.content}>{renderEvaluationOptions()}</View>
 
       {/* Dynamic Progress Indicator */}
       <View style={styles.progressIndicator}>{renderProgressDots()}</View>

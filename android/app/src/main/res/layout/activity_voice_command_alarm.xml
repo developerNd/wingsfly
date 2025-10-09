@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/alarm_gradient_background"
+    android:padding="0dp"
+    android:fitsSystemWindows="false">
+
+    <!-- Background overlay -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/alarm_dark_overlay" />
+
+    <!-- Top section with current time and date -->
+    <LinearLayout
+        android:id="@+id/topSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="60dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingHorizontal="32dp">
+
+        <!-- Current time display -->
+        <TextView
+            android:id="@+id/currentTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="10:32"
+            android:textSize="72sp"
+            android:textColor="#FFFFFF"
+            android:fontFamily="sans-serif-light"
+            android:letterSpacing="0.05"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="4"
+            android:shadowRadius="8" />
+
+        <!-- Current date -->
+        <TextView
+            android:id="@+id/currentDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Saturday, 30 August"
+            android:textSize="16sp"
+            android:textColor="#E0FFFFFF"
+            android:fontFamily="sans-serif"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="4" />
+
+    </LinearLayout>
+
+    <!-- Center content with command -->
+    <LinearLayout
+        android:id="@+id/centerContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:layout_marginTop="-80dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingHorizontal="40dp">
+
+        <!-- Alarm name -->
+        <TextView
+            android:id="@+id/alarmName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Morning Routine"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:fontFamily="sans-serif-medium"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="4"
+            android:layout_marginBottom="16dp"
+            android:visibility="visible" />
+
+        <!-- Command icon -->
+        <FrameLayout
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_marginBottom="32dp">
+
+            <!-- Pulse background circle -->
+            <View
+                android:id="@+id/pulseCircle"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/alarm_pulse_circle" />
+
+            <!-- Command icon -->
+            <ImageView
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_alarm_clock"
+                android:tint="#FFFFFF"
+                android:contentDescription="Voice Command" />
+
+        </FrameLayout>
+
+        <!-- Command counter -->
+        <TextView
+            android:id="@+id/commandCounter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Command 1 of 3"
+            android:textSize="16sp"
+            android:textColor="#B0FFFFFF"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Current command text -->
+        <TextView
+            android:id="@+id/currentCommandText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Do 10 pushups"
+            android:textSize="28sp"
+            android:textColor="#FFFFFF"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="4"
+            android:layout_marginBottom="24dp"
+            android:paddingHorizontal="16dp" />
+
+            <TextView
+    android:id="@+id/waitingText"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Next command in 5 seconds..."
+    android:textSize="24sp"
+    android:textColor="#FFC107"
+    android:fontFamily="sans-serif-medium"
+    android:gravity="center"
+    android:shadowColor="#000000"
+    android:shadowDx="0"
+    android:shadowDy="2"
+    android:shadowRadius="4"
+    android:layout_marginTop="16dp"
+    android:visibility="gone"
+    android:paddingHorizontal="16dp" />
+
+        <!-- Completed commands section -->
+        <LinearLayout
+            android:id="@+id/completedCommandsLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/completedCommandsText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Completed:\n✓ Previous command"
+                android:textSize="14sp"
+                android:textColor="#80FFFFFF"
+                android:fontFamily="sans-serif"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.3" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Bottom action button - SINGLE BUTTON -->
+    <FrameLayout
+        android:id="@+id/bottomActions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="80dp"
+        android:paddingHorizontal="60dp">
+
+        <!-- Next button - CENTERED -->
+        <Button
+            android:id="@+id/nextButton"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:text="Next"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="@drawable/button_snooze_background"
+            android:elevation="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:stateListAnimator="@animator/button_elevation" />
+
+    </FrameLayout>
+
+</RelativeLayout>

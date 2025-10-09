@@ -4,18 +4,21 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import Home from '../Pages/Home/Home';
 import PlannerScreen from '../Pages/Planner/PlannerScreen';
 import SettingsScreen from '../Pages/SettingsScreens/SettingsScreen';
-import TaskAnalyticsScreen from '../Pages/PlanYourDay/AnalysisScreens/AnalysisScreen';
+import TaskAnalyticsScreen from '../Pages/AnalysisScreens/AnalysisScreen';
 import ChallengesScreen from '../Pages/ChallengesScreen/ChallengesTab';
 import {Icons, colors} from '../Helper/Contants';
 
+// Import ONLY NotesButton (NotesModal is rendered in AppStack)
+import NotesButton from '../Components/NotesButton';
+
 const Tab = createBottomTabNavigator();
 
-// Placeholder screens
-const PlaceholderScreen = ({screenName}) => {
+// Wrapper component that adds NotesButton to every tab screen
+const ScreenWithNotes = ({children}) => {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{screenName}</Text>
-      <Text style={styles.subtitle}>Coming Soon</Text>
+    <View style={{flex: 1}}>
+      {children}
+      <NotesButton />
     </View>
   );
 };
@@ -63,7 +66,7 @@ const BottomTabNavigator = () => {
           );
         },
         tabBarActiveTintColor: colors.Black,
-        tabBarInactiveTintColor: '#666666',
+        tabBarInactiveTintColor: '#aba8a8',
         tabBarStyle: {
           backgroundColor: '#F7F7F7',
           height: 75,
@@ -79,13 +82,47 @@ const BottomTabNavigator = () => {
         },
         headerShown: false,
       })}>
-      <Tab.Screen name="Home" component={Home} />
-      <Tab.Screen name="Planner" component={PlannerScreen} />
-      <Tab.Screen name="Analysis" component={TaskAnalyticsScreen} />
-      <Tab.Screen name="Uplift" component={ChallengesScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
-      
+      <Tab.Screen name="Home">
+        {(props) => (
+          <ScreenWithNotes>
+            <Home {...props} />
+          </ScreenWithNotes>
+        )}
+      </Tab.Screen>
+
+      <Tab.Screen name="Planner">
+        {(props) => (
+          <ScreenWithNotes>
+            <PlannerScreen {...props} />
+          </ScreenWithNotes>
+        )}
+      </Tab.Screen>
+
+      <Tab.Screen name="Analysis">
+        {(props) => (
+          <ScreenWithNotes>
+            <TaskAnalyticsScreen {...props} />
+          </ScreenWithNotes>
+        )}
+      </Tab.Screen>
+
+      <Tab.Screen name="Uplift">
+        {(props) => (
+          <ScreenWithNotes>
+            <ChallengesScreen {...props} />
+          </ScreenWithNotes>
+        )}
+      </Tab.Screen>
+
+      <Tab.Screen name="Settings">
+        {(props) => (
+          <ScreenWithNotes>
+            <SettingsScreen {...props} />
+          </ScreenWithNotes>
+        )}
+      </Tab.Screen>
     </Tab.Navigator>
+    // NO NotesModal HERE - It's rendered once in AppStack
   );
 };
 

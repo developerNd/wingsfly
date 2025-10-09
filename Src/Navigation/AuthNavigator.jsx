@@ -6,7 +6,7 @@ import AppStack from './AppStack';
 import Logo from '../assets/Images/brand.svg';
 
 const AuthNavigator = () => {
-  const { user, loading, needsProfileSetup } = useAuth();
+  const { user, loading, needsProfileSetup, isPasswordResetInProgress } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -33,18 +33,28 @@ const AuthNavigator = () => {
     );
   }
 
+  // If no user, show auth stack
   if (!user) {
     return <AuthStack />;
   }
 
-  if (user && !needsProfileSetup) {
-    return <AppStack />;
+  // FIXED: If password reset is in progress, stay in AuthStack even if user exists
+  if (isPasswordResetInProgress) {
+    console.log('Password reset in progress - staying in AuthStack');
+    return <AuthStack />;
   }
 
+  // If user exists and profile setup is needed, show auth stack
   if (user && needsProfileSetup) {
     return <AuthStack />;
   }
 
+  // If user exists, no profile setup needed, and no password reset in progress, show app
+  if (user && !needsProfileSetup) {
+    return <AppStack />;
+  }
+
+  // Fallback to auth stack
   return <AuthStack />;
 };
 

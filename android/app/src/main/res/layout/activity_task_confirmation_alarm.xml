@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF"
+    android:padding="24dp">
+
+    <!-- Top Time Section -->
+    <LinearLayout
+        android:id="@+id/topTimeSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingTop="40dp"
+        android:paddingBottom="20dp">
+
+        <TextView
+            android:id="@+id/currentTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="12:00"
+            android:textSize="72sp"
+            android:textColor="#000000"
+            android:fontFamily="sans-serif-light"
+            android:letterSpacing="-0.02" />
+
+        <TextView
+            android:id="@+id/currentDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Monday, 1 January"
+            android:textSize="16sp"
+            android:textColor="#666666"
+            android:fontFamily="sans-serif"
+            android:layout_marginTop="8dp" />
+
+    </LinearLayout>
+
+    <!-- Main Content Section -->
+    <LinearLayout
+        android:id="@+id/mainContentSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/topTimeSection"
+        android:layout_above="@id/buttonSection"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="20dp">
+
+        <!-- Confirmation Icon -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⏰"
+            android:textSize="64sp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Confirmation Message -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Task Starting Soon"
+            android:textSize="24sp"
+            android:textColor="#000000"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Task Title -->
+        <TextView
+            android:id="@+id/taskTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Task Title"
+            android:textSize="20sp"
+            android:textColor="#333333"
+            android:fontFamily="sans-serif"
+            android:gravity="center"
+            android:layout_marginBottom="12dp"
+            android:paddingHorizontal="16dp" />
+
+        <!-- Task Description -->
+        <TextView
+            android:id="@+id/taskDescription"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Task description goes here"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:fontFamily="sans-serif"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"
+            android:paddingHorizontal="20dp"
+            android:visibility="gone" />
+
+        <!-- Start Time -->
+        <TextView
+            android:id="@+id/startTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Starts at 12:05 PM"
+            android:textSize="16sp"
+            android:textColor="#0059FF"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Confirmation Question -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Are you ready to start this task?"
+            android:textSize="18sp"
+            android:textColor="#000000"
+            android:fontFamily="sans-serif"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+    </LinearLayout>
+
+    <!-- Button Section -->
+    <LinearLayout
+        android:id="@+id/buttonSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingBottom="40dp"
+        android:paddingHorizontal="20dp">
+
+        <!-- No Button -->
+        <Button
+            android:id="@+id/noButton"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1"
+            android:text="Not Ready"
+            android:textSize="18sp"
+            android:textColor="#FFFFFF"
+            android:background="@drawable/button_no_background"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginEnd="12dp"
+            android:elevation="4dp"
+            android:stateListAnimator="@null" />
+
+        <!-- Yes Button -->
+        <Button
+            android:id="@+id/yesButton"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1"
+            android:text="Yes, Ready"
+            android:textSize="18sp"
+            android:textColor="#FFFFFF"
+            android:background="@drawable/button_yes_background"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginStart="12dp"
+            android:elevation="4dp"
+            android:stateListAnimator="@null" />
+
+    </LinearLayout>
+
+</RelativeLayout>

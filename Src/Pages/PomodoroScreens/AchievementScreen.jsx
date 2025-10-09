@@ -1,4 +1,4 @@
-import React, {useRef, useEffect} from 'react';
+import React, {useRef, useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -13,22 +13,26 @@ import LottieView from 'lottie-react-native';
 import {WP, HP, FS} from '../../utils/dimentions';
 import {colors} from '../../Helper/Contants';
 import {useRoute} from '@react-navigation/native';
+import {supabase} from '../../../supabase';
+
+// Import Appreciation Services
+import AppreciationVoiceService from '../../services/Appreciation/appreciationVoiceService';
+import appreciationStorageService from '../../services/Appreciation/appreciationStorageService';
 
 import YouDidItBackground from '../../assets/Images/Achievement-screen/you-did-it-bttn.svg';
 import TaskStatsBackground from '../../assets/Images/Achievement-screen/stats-background.svg';
-
-// Only keeping the blue line SVG for the task count separator
 import BlueLineSvg from '../../assets/Images/Achievement-screen/blue-line.svg';
 
 const AchievementScreen = ({
-  // Default props for fallback - keeping original prop structure
-  userName = 'Harshit',
+  userName = 'Champion',
   onClose,
 }) => {
   const route = useRoute();
   const lottieRef = useRef(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userDisplayName, setUserDisplayName] = useState(userName);
+  const [voicePlayed, setVoicePlayed] = useState(false);
 
-  // FIXED: Enhanced data extraction from route params with proper fallbacks
   const {
     taskData,
     sessionStructure,
@@ -44,9 +48,112 @@ const AchievementScreen = ({
     totalCompletedTime = 0,
     completionDate,
     timerData,
+    userProfile,
   } = route.params || {};
 
-  // FIXED: Calculate progress percentage based on total sessions (focus + breaks)
+  // Fetch user profile from Supabase
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError) {
+          console.error('Auth error:', authError);
+          return;
+        }
+        
+        if (!user) {
+          return;
+        }
+        
+        setCurrentUser(user);
+        
+        const extractedName = user.user_metadata?.username ||
+          user.user_metadata?.display_name ||
+          user.user_metadata?.full_name ||
+          user.user_metadata?.name ||
+          (user.email ? user.email.split('@')[0] : userName);
+        
+        setUserDisplayName(extractedName);
+        
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
+
+  // Play appreciation voice when screen loads
+  useEffect(() => {
+    const playAppreciationMessage = async () => {
+      if (!voicePlayed) {
+        // Add a small delay for better user experience
+        setTimeout(async () => {
+          try {
+            console.log('🎵 Playing appreciation message...');
+            
+            // Get appreciation data from storage
+            const appreciationData = await appreciationStorageService.getAppreciationData();
+            
+            if (appreciationData && (appreciationData.text || appreciationData.audioFilePath)) {
+              // Play custom appreciation message
+              const success = await AppreciationVoiceService.playAppreciationMessage(appreciationData);
+              
+              if (success) {
+                console.log('✅ Appreciation message played successfully');
+                setVoicePlayed(true);
+              } else {
+                console.log('⚠️ Failed to play appreciation message');
+              }
+            } else {
+              console.log('ℹ️ No custom appreciation message set');
+            }
+          } catch (error) {
+            console.error('❌ Error playing appreciation message:', error);
+          }
+        }, 1000); // 1 second delay after screen appears
+      }
+    };
+
+    playAppreciationMessage();
+
+    // Cleanup on unmount
+    return () => {
+      AppreciationVoiceService.stopAudio();
+    };
+  }, [voicePlayed]);
+
+  const getDynamicUserName = () => {
+    if (userDisplayName !== userName) {
+      return userDisplayName;
+    }
+    
+    if (userProfile) {
+      const extractedName = userProfile.username ||
+        userProfile.display_name ||
+        userProfile.user_metadata?.display_name ||
+        userProfile.user_metadata?.username ||
+        (userProfile.email ? userProfile.email.split('@')[0] : userName);
+      
+      return extractedName;
+    }
+    
+    if (taskData && taskData.userProfile) {
+      const extractedName = taskData.userProfile.username ||
+        taskData.userProfile.display_name ||
+        taskData.userProfile.user_metadata?.display_name ||
+        taskData.userProfile.user_metadata?.username ||
+        (taskData.userProfile.email ? taskData.userProfile.email.split('@')[0] : userName);
+      
+      return extractedName;
+    }
+    
+    return userName;
+  };
+
+  const dynamicUserName = getDynamicUserName();
+
   const calculateProgress = () => {
     const totalSessions = totalPomodoros + totalBreaks;
     const completedSessions = completedPomodoros + completedBreaks;
@@ -55,7 +162,6 @@ const AchievementScreen = ({
     return Math.round((completedSessions / totalSessions) * 100);
   };
 
-  // FIXED: Format time display with proper conversion
   const formatTime = totalSeconds => {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -66,16 +172,10 @@ const AchievementScreen = ({
     return `${minutes}Min`;
   };
 
-  // FIXED: Calculate comprehensive stats for original UI
   const getTaskStats = () => {
-    // Calculate total expected tasks (focus sessions)
     const totalTasks = totalPomodoros;
     const completedTasks = completedPomodoros;
-
-    // For incomplete tasks, we show remaining focus sessions
     const incompleteTasks = Math.max(0, totalTasks - completedTasks);
-
-    // For complete tasks, we show what was actually completed
     const completeTasks = completedTasks;
 
     console.log('Achievement Screen Stats:', {
@@ -101,16 +201,13 @@ const AchievementScreen = ({
   const timeSpent = formatTime(totalCompletedTime);
   const taskStats = getTaskStats();
 
-  // FIXED: Control animation progress based on completion percentage with proper null checks
   useEffect(() => {
     let timeoutId = null;
     let pauseTimeoutId = null;
 
     if (lottieRef.current) {
-      // Wait for animation to load completely
       timeoutId = setTimeout(() => {
         try {
-          // Check if ref is still valid
           if (!lottieRef.current) {
             console.log('Lottie ref is null, skipping animation control');
             return;
@@ -124,25 +221,21 @@ const AchievementScreen = ({
             progress + '%',
           );
 
-          // Method 1: Direct progress control
           if (typeof lottieRef.current.progress !== 'undefined') {
             lottieRef.current.progress = animationProgress;
           }
 
-          // Method 2: Go to specific frame and stop
           if (
             lottieRef.current.goToAndStop &&
             typeof lottieRef.current.goToAndStop === 'function'
           ) {
-            // Calculate frame number (assuming 60fps or total frames)
             const totalFrames = lottieRef.current.getDuration
               ? Math.floor(lottieRef.current.getDuration() * 60)
-              : 100; // fallback to 100 frames
+              : 100;
             const targetFrame = Math.floor(animationProgress * totalFrames);
             lottieRef.current.goToAndStop(targetFrame, true);
           }
 
-          // Method 3: Play and pause at specific point - FIXED with proper null checks
           if (
             lottieRef.current.play &&
             typeof lottieRef.current.play === 'function' &&
@@ -151,9 +244,7 @@ const AchievementScreen = ({
           ) {
             lottieRef.current.play();
 
-            // FIXED: Store timeout ID and add null check in setTimeout callback
             pauseTimeoutId = setTimeout(() => {
-              // Critical null check before calling pause
               if (
                 lottieRef.current &&
                 lottieRef.current.pause &&
@@ -165,12 +256,11 @@ const AchievementScreen = ({
                   'Lottie ref became null before pause could be called',
                 );
               }
-            }, animationProgress * 7000); // Reduced from 7000 to 1000ms for faster response
+            }, animationProgress * 7000);
           }
         } catch (error) {
           console.error('Error controlling Lottie animation:', error);
 
-          // Fallback: Just play the animation normally if control fails
           if (lottieRef.current && progress === 100 && lottieRef.current.play) {
             try {
               lottieRef.current.play();
@@ -181,7 +271,6 @@ const AchievementScreen = ({
         }
       }, 200);
 
-      // FIXED: Cleanup function to clear timeouts and prevent memory leaks
       return () => {
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -198,12 +287,10 @@ const AchievementScreen = ({
       <StatusBar backgroundColor="#000829" barStyle="light-content" />
 
       <View style={styles.content}>
-        {/* Header with user name */}
         <View style={styles.header}>
-          <Text style={styles.userName}>{userName}</Text>
+          <Text style={styles.userName}>{dynamicUserName}</Text>
         </View>
 
-        {/* You Did It Button with Background Image */}
         <View style={styles.achievementButton}>
           <YouDidItBackground
             width={WP(50)}
@@ -216,7 +303,6 @@ const AchievementScreen = ({
           </View>
         </View>
 
-        {/* Motivational Text */}
         <View style={styles.motivationContainer}>
           <View style={styles.motivationTextLine}>
             <Text style={styles.motivationText}>You are </Text>
@@ -229,15 +315,13 @@ const AchievementScreen = ({
           </View>
         </View>
 
-        {/* Center Progress with Lottie Animation Only */}
         <View style={styles.progressContainer}>
-          {/* FIXED: Lottie Animation Clock - Progress-based animation with proper error handling */}
           <LottieView
             ref={lottieRef}
             source={require('../../assets/animations/apprectince-clock3.json')}
             style={styles.lottieClockAnimation}
-            autoPlay={false} // Changed to false for manual control
-            loop={false} // Changed to false for manual control
+            autoPlay={false}
+            loop={false}
             speed={1}
             resizeMode="contain"
             onAnimationFinish={() => {
@@ -248,7 +332,6 @@ const AchievementScreen = ({
             }}
           />
 
-          {/* Center Content (Text) */}
           <View style={styles.centerContent}>
             <Text style={styles.percentageText}>{progress}%</Text>
             <Text style={styles.timeText}>{timeSpent}</Text>
@@ -256,7 +339,6 @@ const AchievementScreen = ({
             <View style={styles.taskInfo}>
               <View style={styles.taskCountContainer}>
                 <Text style={styles.taskCount1}>{taskStats.completeTasks}</Text>
-                {/* Blue Line SVG - Between the task count numbers */}
                 <BlueLineSvg
                   width={WP(0.7)}
                   height={WP(6)}
@@ -270,7 +352,6 @@ const AchievementScreen = ({
           </View>
         </View>
 
-        {/* FIXED: Task Statistics with Enhanced Break Information */}
         <View style={styles.taskStatsContainer}>
           <TaskStatsBackground
             width={WP(95)}
@@ -325,8 +406,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 20,
     elevation: 10,
   },
-
-  // You Did It Button Styles
   achievementButton: {
     marginBottom: HP(2.5),
     position: 'relative',
@@ -356,7 +435,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
   },
-
   motivationContainer: {
     marginBottom: HP(6),
     alignItems: 'center',
@@ -418,8 +496,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Lottie Clock Animation - Progress-controlled animation
   lottieClockAnimation: {
     position: 'absolute',
     width: WP(98),
@@ -428,8 +504,6 @@ const styles = StyleSheet.create({
     left: 0,
     zIndex: 1,
   },
-
-  // Center Content - Text overlay
   centerContent: {
     position: 'absolute',
     alignItems: 'center',
@@ -470,14 +544,11 @@ const styles = StyleSheet.create({
     marginHorizontal: WP(2),
     marginLeft: WP(-0.8),
   },
-
-  // Blue Line Indicator - Between the task count numbers (10|10)
   blueLineIndicator: {
     marginHorizontal: WP(-0.6),
     marginTop: HP(-1),
     zIndex: 11,
   },
-
   taskLabel: {
     fontSize: FS(1.6),
     fontFamily: 'Orbitron-Bold',
@@ -485,8 +556,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginTop: HP(-2),
   },
-
-  // Task Stats Styles - KEEPING ORIGINAL LAYOUT
   taskStatsContainer: {
     marginTop: HP(2.5),
     position: 'relative',

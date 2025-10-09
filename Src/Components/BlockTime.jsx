@@ -993,7 +993,7 @@ const BlockTimeModal = ({visible, onClose, onSave}) => {
                       (index + 1) * ENGINE.ITEM_HEIGHT,
                       (index + 2.5) * ENGINE.ITEM_HEIGHT,
                     ],
-                    outputRange: ['45deg', '15deg', '0deg', '-15deg', '-45deg'],
+                    outputRange: ['50deg', '35deg', '0deg', '-35deg', '-50deg'],
                     extrapolate: 'clamp',
                   }),
                 },

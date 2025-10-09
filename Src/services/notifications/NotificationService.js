@@ -60,22 +60,28 @@ class NotificationService {
   // Create enhanced notification channels for Android
   createNotificationChannels = async () => {
     try {
-      // Regular notifications channel
+      // Regular notifications channel with custom sound
+      // Place your custom sound file at: android/app/src/main/res/raw/noti.mp3
       const reminderChannelId = await notifee.createChannel({
         id: 'task_reminders',
         name: 'Task Reminders',
         description: 'Notifications for task reminders',
         importance: AndroidImportance.HIGH,
-        sound: 'default',
+        sound: 'noti', // Custom sound - reference to res/raw/noti.mp3
+        vibration: true,
+        badge: true,
+        lights: true,
+        lightColor: '#4A90E2',
       });
       
-      // Critical alarm channel with maximum settings
+      // Critical alarm channel with custom alarm sound
+      // Place your alarm sound file at: android/app/src/main/res/raw/alarm.mp3
       const alarmChannelId = await notifee.createChannel({
         id: 'task_alarms',
         name: 'Task Alarms',
         description: 'Critical alarm notifications for tasks',
         importance: AndroidImportance.MAX,
-        sound: 'alarm',
+        sound: 'alarm', // Custom alarm sound - reference to res/raw/alarm.mp3
         vibration: true,
         badge: true,
         lights: true,
@@ -157,7 +163,7 @@ class NotificationService {
           android: {
             channelId,
             importance: AndroidImportance.HIGH,
-            sound: 'default',
+            sound: 'noti', // Custom sound
             vibrate: true,
             pressAction: {
               id: 'default',
@@ -178,7 +184,7 @@ class NotificationService {
             ],
           },
           ios: {
-            sound: 'default',
+            sound: 'noti.wav', // Custom sound for iOS - place at ios/YourApp/Resources/noti.wav
             categoryId: 'task_reminder',
           },
         },
@@ -223,7 +229,7 @@ class NotificationService {
           android: {
             channelId: 'task_alarms',
             importance: AndroidImportance.MAX,
-            sound: 'alarm',
+            sound: 'alarm', // Custom alarm sound
             vibrate: [500, 500, 500, 500], // Custom vibration pattern
             lights: ['#FF0000', 1000, 500],
             fullScreenIntent: true,
@@ -257,7 +263,7 @@ class NotificationService {
             ],
           },
           ios: {
-            sound: 'alarm.wav',
+            sound: 'alarm.wav', // Custom alarm sound for iOS
             categoryId: 'task_alarm',
             critical: true,
             criticalVolume: 1.0,
@@ -298,7 +304,7 @@ class NotificationService {
         android: {
           channelId: 'task_alarms',
           importance: AndroidImportance.MAX,
-          sound: 'alarm',
+          sound: 'alarm', // Custom alarm sound
           vibrate: true,
           fullScreenIntent: true,
           autoCancel: false,
@@ -331,7 +337,7 @@ class NotificationService {
           ],
         },
         ios: {
-          sound: 'alarm.wav',
+          sound: 'alarm.wav', // Custom alarm sound for iOS
           categoryId: 'task_alarm',
           critical: true,
           criticalVolume: 1.0,

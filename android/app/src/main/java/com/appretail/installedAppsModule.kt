@@ -315,6 +315,27 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
         }
     }
 
+    @ReactMethod
+fun refreshNotification(promise: Promise) {
+    try {
+        Log.d(TAG, "Forcing notification refresh")
+        
+        // Send intent to both services to update notification immediately
+        val appLockIntent = Intent(reactApplicationContext, AppLockService::class.java)
+        appLockIntent.putExtra("refresh_notification", true)
+        reactApplicationContext.startService(appLockIntent)
+        
+        val usageLimitIntent = Intent(reactApplicationContext, UsageLimitBlockingService::class.java)
+        usageLimitIntent.putExtra("refresh_notification", true)
+        reactApplicationContext.startService(usageLimitIntent)
+        
+        promise.resolve(true)
+    } catch (e: Exception) {
+        Log.e(TAG, "Error refreshing notification: ${e.message}", e)
+        promise.reject("ERROR", e.message)
+    }
+}
+
     // SCHEDULE METHODS
     @ReactMethod
     fun setAppSchedule(packageName: String, schedulesArray: ReadableArray, promise: Promise) {

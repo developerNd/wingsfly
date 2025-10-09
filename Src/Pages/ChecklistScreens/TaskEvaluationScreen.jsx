@@ -459,19 +459,23 @@ const TaskEvaluationScreen = () => {
     }
   };
 
-  // Add item function
-  const handleAddItem = async itemText => {
+  // UPDATED: Add item function - handle evaluation type for Task and Plan Your Day
+  const handleAddItem = async (itemText, evaluationType = 'YesNo') => {
     if (!itemText.trim() || isLoading) return;
 
     const newId =
       checklistItems.length > 0
         ? Math.max(...checklistItems.map(item => item.id)) + 1
         : 1;
+    
+    // Create new item with evaluation type (only for Task and Plan Your Day task types)
     const newItem = {
       id: newId,
       text: itemText.trim(),
       completed: false,
+      evaluationType: evaluationType, // Add evaluation type to the item
     };
+    
     const updatedItems = [...checklistItems, newItem];
     setChecklistItems(updatedItems);
 
@@ -489,7 +493,7 @@ const TaskEvaluationScreen = () => {
         isCompleted,
       );
 
-      console.log(`TaskEvaluation - Item added for ${completionDate}`);
+      console.log(`TaskEvaluation - Item added for ${completionDate} with evaluation type: ${evaluationType}`);
     } catch (error) {
       console.error('TaskEvaluation - Error adding item:', error);
       setChecklistItems(prev => prev.filter(item => item.id !== newId));
@@ -582,13 +586,21 @@ const TaskEvaluationScreen = () => {
         <Text style={styles.numberText}>
           {(index + 1).toString().padStart(2, '0')}.
         </Text>
-        <Text
-          style={[
-            styles.checklistText,
-            item.completed && styles.completedText,
-          ]}>
-          {item.text}
-        </Text>
+        <View style={styles.itemTextContainer}>
+          <Text
+            style={[
+              styles.checklistText,
+              item.completed && styles.completedText,
+            ]}>
+            {item.text}
+          </Text>
+          {/* Show evaluation type if it exists and is not default YesNo */}
+          {item.evaluationType && item.evaluationType !== 'YesNo' && (
+            <Text style={styles.evaluationTypeText}>
+              {item.evaluationType}
+            </Text>
+          )}
+        </View>
       </View>
       <View style={styles.checkboxContainer}>
         {item.completed ? (
@@ -606,7 +618,15 @@ const TaskEvaluationScreen = () => {
     <View style={styles.filterItem}>
       <View style={styles.itemLeft}>
         <Text style={styles.numberText}>{index + 1}.</Text>
-        <Text style={styles.filterText}>{item.text}</Text>
+        <View style={styles.itemTextContainer}>
+          <Text style={styles.filterText}>{item.text}</Text>
+          {/* Show evaluation type in filter mode too */}
+          {item.evaluationType && item.evaluationType !== 'YesNo' && (
+            <Text style={styles.evaluationTypeText}>
+              {item.evaluationType}
+            </Text>
+          )}
+        </View>
       </View>
       <TouchableOpacity
         style={styles.deleteButton}
@@ -778,12 +798,14 @@ const TaskEvaluationScreen = () => {
           </TouchableWithoutFeedback>
         </Animated.View>
 
-        {/* ItemInput Modal */}
+        {/* ItemInput Modal - UPDATED with taskType and evaluation type support */}
         <ItemInput
           visible={showItemInput}
           onClose={() => setShowItemInput(false)}
           onSave={handleAddItem}
           initialNote=""
+          taskType={taskData?.taskType || 'Task'} // Pass task type to determine if evaluation type should show
+          initialEvaluationType="YesNo" // Default evaluation type
         />
 
         {/* Success Condition Modal */}

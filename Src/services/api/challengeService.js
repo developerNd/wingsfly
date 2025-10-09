@@ -12,6 +12,7 @@ export const challengeService = {
             name: challengeData.name,
             why: challengeData.why,
             number_of_days: challengeData.numberOfDays,
+            hours_per_day: challengeData.hoursPerDay,
             start_date: challengeData.startDate,
             end_date: challengeData.endDate,
             created_at: new Date().toISOString(),
@@ -31,6 +32,278 @@ export const challengeService = {
     }
   },
 
+  // ========== TASK MANAGEMENT METHODS ==========
+
+  // Create challenge tasks (batch operation)
+  async createChallengeTasks(challengeId, tasks) {
+    try {
+      if (!tasks || tasks.length === 0) {
+        return [];
+      }
+
+      // Create a mapping from temporary IDs to database IDs
+      const taskIdMapping = {};
+      const createdTasks = [];
+
+      // Sort tasks by level (root tasks first, then subtasks)
+      const sortedTasks = tasks.sort((a, b) => (a.level || 0) - (b.level || 0));
+
+      // Get challenge details to get user_id
+      const challenge = await this.getChallengeById(challengeId);
+
+      // Create tasks level by level to handle parent-child relationships
+      for (const task of sortedTasks) {
+        const taskData = {
+          challenge_id: challengeId,
+          parent_task_id: task.parentTaskId ? taskIdMapping[task.parentTaskId] : null,
+          user_id: task.userId || challenge.user_id,
+          title: task.title,
+          // Handle both string and Date object formats
+          start_date: typeof task.startDate === 'string' ? task.startDate : task.startDate.toISOString(),
+          // For tasks, we only store start_date since they don't have separate end dates in your UI
+          end_date: null,
+        };
+
+        const {data, error} = await supabase
+          .from('challenge_tasks')
+          .insert([taskData])
+          .select();
+
+        if (error) {
+          console.error('Error creating task:', error);
+          throw error;
+        }
+
+        // Map temporary ID to database ID
+        taskIdMapping[task.id] = data[0].id;
+        createdTasks.push(data[0]);
+      }
+
+      return createdTasks;
+    } catch (error) {
+      console.error('Error in createChallengeTasks:', error);
+      throw error;
+    }
+  },
+
+  // Get all tasks for a challenge
+  async getChallengeTasks(challengeId) {
+    try {
+      const {data, error} = await supabase
+        .from('challenge_tasks')
+        .select('*')
+        .eq('challenge_id', challengeId)
+        .order('created_at', {ascending: true});
+
+      if (error) {
+        console.error('Error fetching challenge tasks:', error);
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getChallengeTasks:', error);
+      throw error;
+    }
+  },
+
+  // Get tasks organized in a tree structure
+  async getChallengeTasksTree(challengeId) {
+    try {
+      const tasks = await this.getChallengeTasks(challengeId);
+      
+      // Organize tasks into a tree structure
+      const taskMap = {};
+      const rootTasks = [];
+
+      // First pass: create task map
+      tasks.forEach(task => {
+        taskMap[task.id] = {
+          ...task,
+          children: []
+        };
+      });
+
+      // Second pass: organize into tree
+      tasks.forEach(task => {
+        if (task.parent_task_id) {
+          // This is a subtask
+          if (taskMap[task.parent_task_id]) {
+            taskMap[task.parent_task_id].children.push(taskMap[task.id]);
+          }
+        } else {
+          // This is a root task
+          rootTasks.push(taskMap[task.id]);
+        }
+      });
+
+      return rootTasks;
+    } catch (error) {
+      console.error('Error in getChallengeTasksTree:', error);
+      throw error;
+    }
+  },
+
+  // Update a task
+  async updateChallengeTask(taskId, taskData) {
+    try {
+      const updateData = {};
+
+      if (taskData.title !== undefined) updateData.title = taskData.title;
+      if (taskData.startDate !== undefined) {
+        updateData.start_date = typeof taskData.startDate === 'string' ? taskData.startDate : taskData.startDate.toISOString();
+      }
+      if (taskData.endDate !== undefined) {
+        updateData.end_date = taskData.endDate ? (typeof taskData.endDate === 'string' ? taskData.endDate : taskData.endDate.toISOString()) : null;
+      }
+      if (taskData.parentTaskId !== undefined) updateData.parent_task_id = taskData.parentTaskId;
+
+      const {data, error} = await supabase
+        .from('challenge_tasks')
+        .update(updateData)
+        .eq('id', taskId)
+        .select();
+
+      if (error) {
+        console.error('Error updating task:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Error in updateChallengeTask:', error);
+      throw error;
+    }
+  },
+
+  // Delete a task and all its subtasks
+  async deleteChallengeTask(taskId) {
+    try {
+      // Get all descendant tasks
+      const descendants = await this.getTaskDescendants(taskId);
+      const taskIdsToDelete = [taskId, ...descendants.map(t => t.id)];
+
+      // Delete all tasks (cascade will handle subtasks)
+      const {error} = await supabase
+        .from('challenge_tasks')
+        .delete()
+        .in('id', taskIdsToDelete);
+
+      if (error) {
+        console.error('Error deleting task:', error);
+        throw error;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in deleteChallengeTask:', error);
+      throw error;
+    }
+  },
+
+  // Get all descendants of a task (recursive)
+  async getTaskDescendants(taskId) {
+    try {
+      const descendants = [];
+      
+      const {data: children, error} = await supabase
+        .from('challenge_tasks')
+        .select('*')
+        .eq('parent_task_id', taskId);
+
+      if (error) {
+        throw error;
+      }
+
+      for (const child of children) {
+        descendants.push(child);
+        const childDescendants = await this.getTaskDescendants(child.id);
+        descendants.push(...childDescendants);
+      }
+
+      return descendants;
+    } catch (error) {
+      console.error('Error in getTaskDescendants:', error);
+      throw error;
+    }
+  },
+
+  // Get task by ID
+  async getChallengeTaskById(taskId) {
+    try {
+      const {data, error} = await supabase
+        .from('challenge_tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching task by ID:', error);
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getChallengeTaskById:', error);
+      throw error;
+    }
+  },
+
+  // Get tasks for a specific date range
+  async getTasksInDateRange(challengeId, startDate, endDate) {
+    try {
+      const startDateStr = typeof startDate === 'string' ? startDate : startDate.toISOString();
+      const endDateStr = typeof endDate === 'string' ? endDate : endDate.toISOString();
+
+      const {data, error} = await supabase
+        .from('challenge_tasks')
+        .select('*')
+        .eq('challenge_id', challengeId)
+        .gte('start_date', startDateStr)
+        .lte('start_date', endDateStr) // Since tasks only have start_date
+        .order('start_date', {ascending: true});
+
+      if (error) {
+        console.error('Error fetching tasks in date range:', error);
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getTasksInDateRange:', error);
+      throw error;
+    }
+  },
+
+  // Get active tasks for today
+  async getTodayActiveTasks(challengeId) {
+    try {
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+
+      const {data, error} = await supabase
+        .from('challenge_tasks')
+        .select('*')
+        .eq('challenge_id', challengeId)
+        .gte('start_date', todayStart.toISOString())
+        .lte('start_date', todayEnd.toISOString())
+        .order('created_at', {ascending: true});
+
+      if (error) {
+        console.error('Error fetching today active tasks:', error);
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getTodayActiveTasks:', error);
+      throw error;
+    }
+  },
+
+  // ========== EXISTING CHALLENGE METHODS (PRESERVED) ==========
+
   // Get all challenges for a user
   async getChallenges(userId) {
     try {
@@ -48,6 +321,22 @@ export const challengeService = {
       return data;
     } catch (error) {
       console.error('Error in getChallenges:', error);
+      throw error;
+    }
+  },
+
+  // Get challenges with their tasks
+  async getChallengesWithTasks(userId) {
+    try {
+      const challenges = await this.getChallenges(userId);
+      
+      for (const challenge of challenges) {
+        challenge.tasks = await this.getChallengeTasksTree(challenge.id);
+      }
+
+      return challenges;
+    } catch (error) {
+      console.error('Error in getChallengesWithTasks:', error);
       throw error;
     }
   },
@@ -146,20 +435,29 @@ export const challengeService = {
     }
   },
 
+  // Get challenge with tasks by ID
+  async getChallengeWithTasksById(challengeId) {
+    try {
+      const challenge = await this.getChallengeById(challengeId);
+      challenge.tasks = await this.getChallengeTasksTree(challengeId);
+      return challenge;
+    } catch (error) {
+      console.error('Error in getChallengeWithTasksById:', error);
+      throw error;
+    }
+  },
+
   // Update challenge
   async updateChallenge(challengeId, challengeData) {
     try {
       const updateData = {};
 
-      if (challengeData.name !== undefined)
-        updateData.name = challengeData.name;
+      if (challengeData.name !== undefined) updateData.name = challengeData.name;
       if (challengeData.why !== undefined) updateData.why = challengeData.why;
-      if (challengeData.numberOfDays !== undefined)
-        updateData.number_of_days = challengeData.numberOfDays;
-      if (challengeData.startDate !== undefined)
-        updateData.start_date = challengeData.startDate;
-      if (challengeData.endDate !== undefined)
-        updateData.end_date = challengeData.endDate;
+      if (challengeData.numberOfDays !== undefined) updateData.number_of_days = challengeData.numberOfDays;
+      if (challengeData.hoursPerDay !== undefined) updateData.hours_per_day = challengeData.hoursPerDay;
+      if (challengeData.startDate !== undefined) updateData.start_date = challengeData.startDate;
+      if (challengeData.endDate !== undefined) updateData.end_date = challengeData.endDate;
 
       const {data, error} = await supabase
         .from('challenges')
@@ -179,7 +477,7 @@ export const challengeService = {
     }
   },
 
-  // Delete a challenge
+  // Delete a challenge (will cascade to delete tasks and completions)
   async deleteChallenge(challengeId) {
     try {
       const {error} = await supabase
@@ -199,25 +497,29 @@ export const challengeService = {
     }
   },
 
-  // ========== COMPLETION TRACKING METHODS ==========
+  // ========== COMPLETION TRACKING METHODS WITH HOURS ==========
 
-  // Mark a specific day as complete for a challenge
-  async markDayComplete(challengeId, userId, dayNumber) {
+  // Mark a specific day as complete for a challenge with hours
+  async markDayComplete(challengeId, userId, dayNumber, hoursCompleted = null) {
     try {
+      const completionData = {
+        challenge_id: challengeId,
+        user_id: userId,
+        day_number: dayNumber,
+        completed_date: new Date().toISOString().split('T')[0],
+      };
+
+      // Add hours_completed if provided
+      if (hoursCompleted !== null && hoursCompleted !== undefined) {
+        completionData.hours_completed = hoursCompleted;
+      }
+
       const {data, error} = await supabase
         .from('challenge_completions')
-        .insert([
-          {
-            challenge_id: challengeId,
-            user_id: userId,
-            day_number: dayNumber,
-            completed_date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
-          },
-        ])
+        .insert([completionData])
         .select();
 
       if (error) {
-        // Handle unique constraint violation gracefully
         if (error.code === '23505') {
           throw new Error('This day has already been completed');
         }
@@ -232,7 +534,7 @@ export const challengeService = {
     }
   },
 
-  // Unmark a day as complete (undo completion)
+  // Unmark a day as complete
   async unmarkDayComplete(challengeId, userId, dayNumber) {
     try {
       const {error} = await supabase
@@ -254,12 +556,12 @@ export const challengeService = {
     }
   },
 
-  // Get all completed days for a specific challenge
+  // Get all completed days for a specific challenge (updated to include hours)
   async getCompletedDays(challengeId, userId) {
     try {
       const {data, error} = await supabase
         .from('challenge_completions')
-        .select('day_number, completed_date, created_at')
+        .select('day_number, completed_date, created_at, hours_completed')
         .eq('challenge_id', challengeId)
         .eq('user_id', userId)
         .order('day_number', {ascending: true});
@@ -269,13 +571,13 @@ export const challengeService = {
         throw error;
       }
 
-      // Convert to object format for easier lookup
       const completedDaysMap = {};
       data.forEach(completion => {
         completedDaysMap[completion.day_number] = {
           completed: true,
           completedDate: completion.completed_date,
           createdAt: completion.created_at,
+          hoursCompleted: completion.hours_completed || 0,
         };
       });
 
@@ -286,12 +588,12 @@ export const challengeService = {
     }
   },
 
-  // Get completed days for multiple challenges (batch operation)
+  // Get completed days for multiple challenges (updated to include hours)
   async getCompletedDaysForChallenges(challengeIds, userId) {
     try {
       const {data, error} = await supabase
         .from('challenge_completions')
-        .select('challenge_id, day_number, completed_date, created_at')
+        .select('challenge_id, day_number, completed_date, created_at, hours_completed')
         .in('challenge_id', challengeIds)
         .eq('user_id', userId);
 
@@ -300,7 +602,6 @@ export const challengeService = {
         throw error;
       }
 
-      // Group by challenge_id
       const completedDaysByChallenge = {};
       challengeIds.forEach(id => {
         completedDaysByChallenge[id] = {};
@@ -310,12 +611,11 @@ export const challengeService = {
         if (!completedDaysByChallenge[completion.challenge_id]) {
           completedDaysByChallenge[completion.challenge_id] = {};
         }
-        completedDaysByChallenge[completion.challenge_id][
-          completion.day_number
-        ] = {
+        completedDaysByChallenge[completion.challenge_id][completion.day_number] = {
           completed: true,
           completedDate: completion.completed_date,
           createdAt: completion.created_at,
+          hoursCompleted: completion.hours_completed || 0,
         };
       });
 
@@ -339,7 +639,6 @@ export const challengeService = {
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No rows returned, day is not completed
           return false;
         }
         throw error;
@@ -372,9 +671,7 @@ export const challengeService = {
       const completedDays = count || 0;
       const totalDays = challenge.number_of_days;
       const remainingDays = totalDays - completedDays;
-      const completionPercentage = Math.round(
-        (completedDays / totalDays) * 100,
-      );
+      const completionPercentage = Math.round((completedDays / totalDays) * 100);
 
       return {
         challengeId,
@@ -386,6 +683,31 @@ export const challengeService = {
       };
     } catch (error) {
       console.error('Error in getChallengeCompletionStats:', error);
+      throw error;
+    }
+  },
+
+  // Get total hours completed for a challenge
+  async getTotalHoursCompleted(challengeId, userId) {
+    try {
+      const {data, error} = await supabase
+        .from('challenge_completions')
+        .select('hours_completed')
+        .eq('challenge_id', challengeId)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error fetching total hours:', error);
+        throw error;
+      }
+
+      const totalHours = data.reduce((sum, completion) => {
+        return sum + (completion.hours_completed || 0);
+      }, 0);
+
+      return totalHours;
+    } catch (error) {
+      console.error('Error in getTotalHoursCompleted:', error);
       throw error;
     }
   },
@@ -454,9 +776,7 @@ export const challengeService = {
       );
 
       const averageDuration =
-        totalChallenges > 0
-          ? (totalDaysCommitted / totalChallenges).toFixed(1)
-          : 0;
+        totalChallenges > 0 ? (totalDaysCommitted / totalChallenges).toFixed(1) : 0;
 
       return {
         totalChallenges,
@@ -476,7 +796,7 @@ export const challengeService = {
     }
   },
 
-  // Get challenges for today (that should be active today)
+  // Get challenges for today
   async getTodayChallenges(userId) {
     try {
       const today = new Date();
@@ -520,21 +840,16 @@ export const challengeService = {
     const endDate = new Date(challenge.end_date);
     const currentDate = new Date();
 
-    // If challenge hasn't started yet
     if (currentDate < startDate) {
       return 0;
     }
 
-    // If challenge is completed
     if (currentDate > endDate) {
       return 100;
     }
 
-    // Calculate progress based on days passed
-    const totalDays =
-      Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-    const daysPassed =
-      Math.ceil((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    const daysPassed = Math.ceil((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
 
     return Math.min(100, Math.max(0, (daysPassed / totalDays) * 100));
   },
@@ -545,7 +860,7 @@ export const challengeService = {
     const currentDate = new Date();
 
     if (currentDate > endDate) {
-      return 0; // Challenge completed
+      return 0;
     }
 
     const timeDiff = endDate - currentDate;
@@ -560,12 +875,12 @@ export const challengeService = {
     const currentDate = new Date();
 
     if (currentDate < startDate) {
-      return 0; // Challenge hasn't started
+      return 0;
     }
 
     const timeDiff = currentDate - startDate;
     const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
 
-    return Math.max(0, daysDiff + 1); // +1 because start day counts as day 1
+    return Math.max(0, daysDiff + 1);
   },
 };

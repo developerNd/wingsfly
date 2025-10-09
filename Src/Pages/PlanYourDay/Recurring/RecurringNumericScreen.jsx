@@ -14,7 +14,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
 import DatePickerModal from '../../../Components/DatePickerModal';
-import BlockTimeModal from '../../../Components/BlockTime';
+import BlockTimeModalOld from '../../../Components/BlockTimeold';
 import DurationModal from '../../../Components/DurationModal';
 import ReminderModal from '../../../Components/ReminderModal';
 import NoteModal from '../../../Components/NoteModal';
@@ -1083,7 +1083,7 @@ const RecurringNumericScreen = () => {
       />
 
       {/* Block Time Modal */}
-      <BlockTimeModal
+      <BlockTimeModalOld
         visible={showBlockTimeModal}
         onClose={() => setShowBlockTimeModal(false)}
         onSave={handleBlockTimeSave}
@@ -1641,6 +1641,12 @@ const styles = StyleSheet.create({
     marginLeft: WP(0.5),
     marginRight: WP(0.5),
     backgroundColor: colors.Primary,
+  },
+  optionSubtitle: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-Regular',
+    color: '#666666',
+    marginTop: HP(-0.4),
   },
 });
 

@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/alarm_gradient_background"
+    android:padding="0dp"
+    android:fitsSystemWindows="false">
+
+    <!-- Background overlay -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/alarm_dark_overlay" />
+
+    <!-- Top section with current time and date -->
+    <LinearLayout
+        android:id="@+id/topSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="60dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingHorizontal="32dp">
+
+        <!-- Current time display -->
+        <TextView
+            android:id="@+id/currentTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="10:32"
+            android:textSize="72sp"
+            android:textColor="#FFFFFF"
+            android:fontFamily="sans-serif-light"
+            android:letterSpacing="0.05"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="4"
+            android:shadowRadius="8" />
+
+        <!-- Current date -->
+        <TextView
+            android:id="@+id/currentDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Saturday, 30 August"
+            android:textSize="16sp"
+            android:textColor="#E0FFFFFF"
+            android:fontFamily="sans-serif"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="4" />
+
+    </LinearLayout>
+
+    <!-- Center alarm information -->
+    <LinearLayout
+        android:id="@+id/centerContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:layout_marginTop="-80dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingHorizontal="40dp">
+
+        <!-- Alarm icon with pulse animation -->
+        <FrameLayout
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginBottom="40dp">
+
+            <!-- Pulse background circle -->
+            <View
+                android:id="@+id/pulseCircle"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/alarm_pulse_circle" />
+
+            <!-- Alarm clock icon -->
+            <ImageView
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_alarm_clock"
+                android:tint="#FFFFFF"
+                android:contentDescription="Alarm Clock" />
+
+        </FrameLayout>
+
+        <!-- Alarm time -->
+        <TextView
+            android:id="@+id/alarmTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="10:32 AM"
+            android:textSize="32sp"
+            android:textColor="#FFFFFF"
+            android:fontFamily="sans-serif-medium"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="4"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Alarm label -->
+        <TextView
+            android:id="@+id/alarmLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Morning Alarm"
+            android:textSize="18sp"
+            android:textColor="#E0FFFFFF"
+            android:fontFamily="sans-serif"
+            android:gravity="center"
+            android:shadowColor="#000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:layout_marginBottom="32dp"
+            android:visibility="visible" />
+
+    </LinearLayout>
+
+    <!-- Bottom action buttons -->
+    <LinearLayout
+        android:id="@+id/bottomActions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="80dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingHorizontal="40dp">
+
+        <!-- Snooze button -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="24dp">
+
+            <Button
+                android:id="@+id/snoozeButton"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:text="Snooze"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:background="@drawable/button_snooze_background"
+                android:elevation="8dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:stateListAnimator="@animator/button_elevation" />
+
+        </FrameLayout>
+
+        <!-- Stop button -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="24dp">
+
+            <Button
+                android:id="@+id/stopButton"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:text="Stop"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:background="@drawable/button_stop_background"
+                android:elevation="8dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:stateListAnimator="@animator/button_elevation" />
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <!-- Status indicator (optional) -->
+    <LinearLayout
+        android:id="@+id/statusIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_above="@+id/bottomActions"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="32dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/status_dot"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Snoozed"
+            android:textSize="14sp"
+            android:textColor="#CCFFFFFF"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
+
+</RelativeLayout>

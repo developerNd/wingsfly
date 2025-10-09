@@ -9,8 +9,6 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
   Alert,
-  FlatList,
-  Image,
   Switch,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -46,6 +44,9 @@ const Schedule = ({
   const [selectedAppsForLocking, setSelectedAppsForLocking] = useState([]);
   const [excludeFromPomodoro, setExcludeFromPomodoro] = useState(false);
 
+  // Update states
+  const [editingTimeSlot, setEditingTimeSlot] = useState(null);
+
   // Default day names fallback
   const defaultDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -59,6 +60,7 @@ const Schedule = ({
       setEndHour(9);
       setEndMinute(0);
       setSelectedDays([]);
+      setEditingTimeSlot(null);
       
       // Load app selection preferences
       setSelectedAppsForLocking(selectedApp.selectedAppsForLocking || []);
@@ -70,23 +72,25 @@ const Schedule = ({
         const unlockSchedule = selectedApp.schedules.find((s) => s.type === ScheduleType.UNLOCK);
         
         if (lockSchedule) {
-          const lockSlots = lockSchedule.timeRanges.map((range) => ({
-            id: Date.now().toString() + Math.random().toString(),
+          const lockSlots = lockSchedule.timeRanges.map((range, index) => ({
+            id: `lock_${Date.now()}_${index}`,
             startTime: formatTimeForStorage(range.startHour, range.startMinute),
             endTime: formatTimeForStorage(range.endHour, range.endMinute),
             days: range.days || [],
-            isEnabled: true
+            isEnabled: true,
+            type: 'lock'
           }));
           setLockTimeSlots(lockSlots);
         }
         
         if (unlockSchedule) {
-          const unlockSlots = unlockSchedule.timeRanges.map((range) => ({
-            id: Date.now().toString() + Math.random().toString(),
+          const unlockSlots = unlockSchedule.timeRanges.map((range, index) => ({
+            id: `unlock_${Date.now()}_${index}`,
             startTime: formatTimeForStorage(range.startHour, range.startMinute),
             endTime: formatTimeForStorage(range.endHour, range.endMinute),
             days: range.days || [],
-            isEnabled: true
+            isEnabled: true,
+            type: 'unlock'
           }));
           setUnlockTimeSlots(unlockSlots);
         }
@@ -220,7 +224,60 @@ const Schedule = ({
     );
   };
 
-  // Add time slot
+  // Start editing a time slot
+  const startEditTimeSlot = (slot) => {
+    const startTimeParts = slot.startTime.split(':');
+    const endTimeParts = slot.endTime.split(':');
+    
+    setStartHour(parseInt(startTimeParts[0]));
+    setStartMinute(parseInt(startTimeParts[1]));
+    setEndHour(parseInt(endTimeParts[0]));
+    setEndMinute(parseInt(endTimeParts[1]));
+    setSelectedDays([...slot.days]);
+    setTimerType(slot.type);
+    setEditingTimeSlot(slot);
+  };
+
+  // Delete a time slot
+  const deleteTimeSlot = (slotToDelete) => {
+    Alert.alert(
+      'Delete Time Slot',
+      `Are you sure you want to delete this ${slotToDelete.type} time slot?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: () => {
+            console.log(`Deleting ${slotToDelete.type} time slot:`, slotToDelete.id);
+            
+            if (slotToDelete.type === 'lock') {
+              setLockTimeSlots(prev => prev.filter(slot => slot.id !== slotToDelete.id));
+            } else {
+              setUnlockTimeSlots(prev => prev.filter(slot => slot.id !== slotToDelete.id));
+            }
+            
+            // If we were editing this slot, cancel editing
+            if (editingTimeSlot && editingTimeSlot.id === slotToDelete.id) {
+              cancelEdit();
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingTimeSlot(null);
+    setSelectedDays([]);
+    setStartHour(8);
+    setStartMinute(0);
+    setEndHour(9);
+    setEndMinute(0);
+  };
+
+  // Add or update time slot
   const addTimeSlot = () => {
     if (!selectedDays || selectedDays.length === 0) {
       Alert.alert('Error', 'Please select at least one day');
@@ -228,30 +285,37 @@ const Schedule = ({
     }
 
     const newSlot = {
-      id: Date.now().toString() + Math.random().toString(),
+      id: editingTimeSlot ? editingTimeSlot.id : Date.now().toString() + Math.random().toString(),
       startTime: formatTimeForStorage(startHour, startMinute),
       endTime: formatTimeForStorage(endHour, endMinute),
       days: [...selectedDays],
-      isEnabled: true
+      isEnabled: true,
+      type: timerType
     };
     
-    if (timerType === 'lock') {
-      setLockTimeSlots(prev => [...prev, newSlot]);
+    if (editingTimeSlot) {
+      // Update existing slot
+      if (timerType === 'lock') {
+        setLockTimeSlots(prev => prev.map(slot => 
+          slot.id === editingTimeSlot.id ? newSlot : slot
+        ));
+      } else {
+        setUnlockTimeSlots(prev => prev.map(slot => 
+          slot.id === editingTimeSlot.id ? newSlot : slot
+        ));
+      }
+      setEditingTimeSlot(null);
     } else {
-      setUnlockTimeSlots(prev => [...prev, newSlot]);
+      // Add new slot
+      if (timerType === 'lock') {
+        setLockTimeSlots(prev => [...prev, newSlot]);
+      } else {
+        setUnlockTimeSlots(prev => [...prev, newSlot]);
+      }
     }
     
-    // Reset selected days after adding
+    // Reset selected days after adding/updating
     setSelectedDays([]);
-  };
-
-  // Remove time slot
-  const removeTimeSlot = (id) => {
-    if (timerType === 'lock') {
-      setLockTimeSlots(lockTimeSlots.filter(slot => slot.id !== id));
-    } else {
-      setUnlockTimeSlots(unlockTimeSlots.filter(slot => slot.id !== id));
-    }
   };
 
   // Format days display for time slots
@@ -503,38 +567,71 @@ const Schedule = ({
                       />
                     )}
 
-                    <TouchableOpacity
-                      style={styles.addButton}
-                      onPress={addTimeSlot}
-                    >
-                      <Text style={styles.addButtonText}>Add Time Slot</Text>
-                    </TouchableOpacity>
+                    <View style={styles.addButtonContainer}>
+                      <TouchableOpacity
+                        style={[styles.addButton, editingTimeSlot && styles.updateButton]}
+                        onPress={addTimeSlot}
+                      >
+                        <Text style={styles.addButtonText}>
+                          {editingTimeSlot ? 'Update Time Slot' : 'Add Time Slot'}
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      {editingTimeSlot && (
+                        <TouchableOpacity
+                          style={styles.cancelButton}
+                          onPress={cancelEdit}
+                        >
+                          <Text style={styles.cancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
 
-                  {/* Time slots list */}
+                  {/* Time slots list - NOW WITH DELETE FUNCTIONALITY */}
                   <View style={styles.timeSlotsList}>
                     {(timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).length > 0 ? (
                       (timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).map(slot => (
-                        <View key={slot.id} style={styles.timeSlotItem}>
-                          <View style={styles.timeSlotContent}>
-                            <Text style={styles.timeSlotText}>
-                              {formatTimeDisplay(
-                                parseInt(slot.startTime.split(':')[0]),
-                                parseInt(slot.startTime.split(':')[1])
-                              )} to {formatTimeDisplay(
-                                parseInt(slot.endTime.split(':')[0]),
-                                parseInt(slot.endTime.split(':')[1])
-                              )}
-                            </Text>
-                            <Text style={styles.daysText}>
-                              {formatDaysDisplay(slot.days)}
-                            </Text>
-                          </View>
-                          <TouchableOpacity
-                            style={styles.deleteButton}
-                            onPress={() => removeTimeSlot(slot.id)}
+                        <View key={slot.id} style={[
+                          styles.timeSlotItem,
+                          editingTimeSlot?.id === slot.id && styles.editingTimeSlot
+                        ]}>
+                          <TouchableOpacity 
+                            style={styles.timeSlotContent}
+                            onPress={() => startEditTimeSlot(slot)}
+                            activeOpacity={0.7}
                           >
-                            <Text style={styles.deleteButtonText}>✕</Text>
+                            <View style={styles.timeSlotInfo}>
+                              <Text style={styles.timeSlotText}>
+                                {formatTimeDisplay(
+                                  parseInt(slot.startTime.split(':')[0]),
+                                  parseInt(slot.startTime.split(':')[1])
+                                )} to {formatTimeDisplay(
+                                  parseInt(slot.endTime.split(':')[0]),
+                                  parseInt(slot.endTime.split(':')[1])
+                                )}
+                              </Text>
+                              <Text style={styles.daysText}>
+                                {formatDaysDisplay(slot.days)}
+                              </Text>
+                            </View>
+                            
+                            <View style={styles.timeSlotActions}>
+                              <TouchableOpacity
+                                style={styles.editButton}
+                                onPress={() => startEditTimeSlot(slot)}
+                              >
+                                <Icon name="edit" size={18} color="#2E7D32" />
+                              </TouchableOpacity>
+                              
+                              {/* NEW DELETE BUTTON */}
+                              <TouchableOpacity
+                                style={styles.deleteButton}
+                                onPress={() => deleteTimeSlot(slot)}
+                              >
+                                <Icon name="delete" size={18} color="#F44336" />
+                              </TouchableOpacity>
+                            </View>
                           </TouchableOpacity>
                         </View>
                       ))
@@ -549,10 +646,10 @@ const Schedule = ({
 
               <View style={styles.modalButtonsContainer}>
                 <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
+                  style={[styles.modalButton, styles.cancelModalButton]}
                   onPress={onClose}
                 >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles.cancelModalButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -718,6 +815,37 @@ const styles = StyleSheet.create({
     color: '#666',
     marginHorizontal: 8,
   },
+  addButtonContainer: {
+    marginTop: 16,
+    gap: 8,
+  },
+  addButton: {
+    backgroundColor: '#2E7D32',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  updateButton: {
+    backgroundColor: '#FF9800',
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  cancelButton: {
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontWeight: '500',
+    fontSize: 16,
+  },
   modalButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -730,10 +858,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 8,
   },
-  cancelButton: {
+  cancelModalButton: {
     backgroundColor: '#f5f5f5',
   },
-  cancelButtonText: {
+  cancelModalButtonText: {
     color: '#666',
     fontWeight: '500',
   },
@@ -759,47 +887,55 @@ const styles = StyleSheet.create({
   timeSlotsContainer: {
     marginBottom: 20,
   },
-  addButton: {
-    backgroundColor: '#2E7D32',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
   timeSlotsList: {
     marginTop: 10,
   },
   timeSlotItem: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  editingTimeSlot: {
+    borderWidth: 2,
+    borderColor: '#FF9800',
+  },
+  timeSlotContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'white',
     padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
+  },
+  timeSlotInfo: {
+    flex: 1,
   },
   timeSlotText: {
     color: '#333',
     fontSize: 16,
+    fontWeight: '500',
+  },
+  daysText: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  timeSlotActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  editButton: {
+    padding: 8,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 6,
   },
   deleteButton: {
     padding: 8,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FF5722',
-    borderRadius: 16,
-  },
-  deleteButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
+    backgroundColor: '#FFEBEE',
+    borderRadius: 6,
   },
   noTimeSlotsText: {
     color: '#666',
@@ -867,14 +1003,6 @@ const styles = StyleSheet.create({
   },
   dayButtonTextSelected: {
     color: 'white',
-  },
-  timeSlotContent: {
-    flex: 1,
-  },
-  daysText: {
-    color: '#666',
-    fontSize: 12,
-    marginTop: 4,
   },
 });
 

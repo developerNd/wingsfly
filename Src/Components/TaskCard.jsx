@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import {colors, Icons} from '../Helper/Contants';
 import {HP, WP, FS} from '../utils/dimentions';
 import {useNavigation} from '@react-navigation/native';
-import DeleteTaskModal from './DeleteTaskModal';
+import TaskOptionsModal from './TaskOptionsModal';
 
 const TaskCard = ({
   item,
@@ -15,11 +15,11 @@ const TaskCard = ({
   onTaskUpdate,
   selectedDate,
   taskCompletions,
+  isPlan = false,
 }) => {
   const navigation = useNavigation();
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
 
-  // Helper function to get image source from category name
   const getImageSource = categoryName => {
     if (!categoryName) return Icons.Work;
 
@@ -48,6 +48,9 @@ const TaskCard = ({
     if (item.tags && item.tags.some(tag => tag.toLowerCase() === 'important')) {
       return colors.Primary;
     }
+    if (item.tags && item.tags.some(tag => tag.toLowerCase() === 'must')) {
+      return '#AF0000';
+    }
     return '#AF0000';
   };
 
@@ -75,10 +78,176 @@ const TaskCard = ({
     return colorMap[item.id] || '#1A4BFF';
   };
 
-  const getInitialIconInsideRadio = () => {
-    switch (item.type) {
+  const parseTime = (timeStr) => {
+    if (!timeStr || typeof timeStr !== 'string') return null;
+    
+    const timeStr12Hour = timeStr.trim().toUpperCase();
+    const isAM = timeStr12Hour.includes('AM');
+    const isPM = timeStr12Hour.includes('PM');
+    
+    if (!isAM && !isPM) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      if (isNaN(hours) || isNaN(minutes)) return null;
+      return hours * 60 + minutes;
+    } else {
+      const timeWithoutAMPM = timeStr12Hour.replace(/AM|PM/g, '').trim();
+      const [hours, minutes] = timeWithoutAMPM.split(':').map(Number);
+      
+      if (isNaN(hours) || isNaN(minutes)) return null;
+      
+      let adjustedHours = hours;
+      if (isPM && hours !== 12) {
+        adjustedHours += 12;
+      } else if (isAM && hours === 12) {
+        adjustedHours = 0;
+      }
+      
+      return adjustedHours * 60 + minutes;
+    }
+  };
+
+  const isInBlockTimePeriod = () => {
+    if (isPlan) return false;
+    
+    if (!item.blockTimeEnabled || !item.blockTimeData) {
+      return false;
+    }
+
+    const completion = taskCompletions?.[item.id];
+    if (completion?.is_completed === true) {
+      return false;
+    }
+
+    try {
+      const blockTimeData = typeof item.blockTimeData === 'string' 
+        ? JSON.parse(item.blockTimeData) 
+        : item.blockTimeData;
+
+      if (!blockTimeData.startTime || !blockTimeData.endTime) {
+        return false;
+      }
+
+      const now = new Date();
+      const currentTime = now.getHours() * 60 + now.getMinutes();
+
+      const startMinutes = parseTime(blockTimeData.startTime);
+      const endMinutes = parseTime(blockTimeData.endTime);
+
+      if (startMinutes === null || endMinutes === null) {
+        return false;
+      }
+
+      if (endMinutes < startMinutes) {
+        return currentTime >= startMinutes || currentTime <= endMinutes;
+      } else {
+        return currentTime >= startMinutes && currentTime <= endMinutes;
+      }
+
+    } catch (error) {
+      console.error('Error checking block time period:', error);
+      return false;
+    }
+  };
+
+  const isBlockTimeExpiredAndIncomplete = () => {
+    if (isPlan) return false;
+
+    if (!item.blockTimeEnabled || !item.blockTimeData) {
+      return false;
+    }
+
+    const completion = taskCompletions?.[item.id];
+    if (completion?.is_completed === true) {
+      return false;
+    }
+
+    try {
+      const blockTimeData = typeof item.blockTimeData === 'string' 
+        ? JSON.parse(item.blockTimeData) 
+        : item.blockTimeData;
+
+      if (!blockTimeData.startTime || !blockTimeData.endTime) {
+        return false;
+      }
+
+      const now = new Date();
+      const currentTime = now.getHours() * 60 + now.getMinutes();
+
+      const startMinutes = parseTime(blockTimeData.startTime);
+      const endMinutes = parseTime(blockTimeData.endTime);
+
+      if (startMinutes === null || endMinutes === null) {
+        return false;
+      }
+
+      let isExpired = false;
+      if (endMinutes < startMinutes) {
+        const isInActivePeriod = currentTime >= startMinutes || currentTime <= endMinutes;
+        const isUpcomingTask = currentTime < startMinutes;
+        
+        if (isUpcomingTask) {
+          isExpired = false;
+        } else {
+          isExpired = !isInActivePeriod && currentTime > endMinutes;
+        }
+      } else {
+        isExpired = currentTime > endMinutes;
+      }
+
+      if (isExpired && !completion) {
+        return true;
+      }
+
+      return isExpired && !completion?.is_completed;
+
+    } catch (error) {
+      console.error('Error checking block time expiration:', error);
+      return false;
+    }
+  };
+
+  const getPlanInitialIcon = () => {
+    switch (item.evaluationType) {
       case 'timer':
         return <Image source={Icons.Time} style={styles.timerIcon} />;
+      case 'timerTracker':
+        return (
+          <View style={styles.startButtonContainer}>
+            <Text style={styles.startButtonText}>Start</Text>
+          </View>
+        );
+      case 'checklist':
+        return (
+          <View style={styles.staticCircle}>
+            <Image source={Icons.Check} style={styles.iconInsideCircle} />
+          </View>
+        );
+      case 'numeric':
+        return (
+          <View style={styles.staticCircle}>
+            <Image source={Icons.Numeric} style={styles.iconInsideCircle} />
+          </View>
+        );
+      case 'yesNo':
+      default:
+        return <View style={styles.staticCircle}></View>;
+    }
+  };
+
+  const getInitialIconInsideRadio = () => {
+    if (isPlan) {
+      return getPlanInitialIcon();
+    }
+
+    switch (item.evaluation_type || item.type) {
+      case 'timer':
+        return <Image source={Icons.Time} style={styles.timerIcon} />;
+      case 'timerTracker':
+        return (
+          <View style={styles.startButtonContainer}>
+            <Text style={styles.startButtonText}>Start</Text>
+          </View>
+        );
       case 'numeric':
         return (
           <View style={styles.staticCircle}>
@@ -103,149 +272,432 @@ const TaskCard = ({
     }
   };
 
-  // Function to get in-progress icon with same background colors as initial icons
   const getInProgressIcon = () => {
+    const taskType = isPlan ? item.evaluationType : (item.evaluation_type || item.type);
+    
     return (
       <View style={styles.inProgressCircle}>
-        <Image source={Icons.More} style={styles.moreIcon} />
+        {taskType === 'timerTracker' ? (
+          <Icon 
+            name="play-arrow" 
+            size={WP(4.2)} 
+            color="#6C6C6C" 
+          />
+        ) : (
+          <Image source={Icons.More} style={styles.moreIcon} />
+        )}
       </View>
     );
   };
 
-  // FIXED: Enhanced function to determine if task is in progress based on completion data
-  const isTaskInProgress = () => {
-    const completion = taskCompletions?.[item.id];
+  const getStoppedIcon = () => {
+    return (
+      <View style={styles.stoppedCircle}>
+        <Icon 
+          name="close" 
+          size={WP(3.8)} 
+          color="#FF4444"
+        />
+      </View>
+    );
+  };
 
+  const isPlanTimerTrackerStarted = () => {
+    if (!isPlan) return false;
+    
+    const completion = taskCompletions?.[item.id];
     if (!completion) return false;
 
-    // If task is already completed, don't show in-progress
+    if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
+      const timerData = completion.timer_value;
+      
+      if (timerData.wasStopped || timerData.wasReset) {
+        return false;
+      }
+      
+      const totalSeconds = timerData.totalSeconds || timerData.actualCompletedTime || 0;
+      const currentTime = timerData.currentTime || 0;
+      const completedPomodoros = timerData.completedPomodoros || 0;
+      const completedBreaks = timerData.completedBreaks || 0;
+      const currentSessionIndex = timerData.currentSessionIndex || 0;
+
+      return totalSeconds > 0 || currentTime > 0 || completedPomodoros > 0 || 
+             completedBreaks > 0 || currentSessionIndex > 0;
+    } else {
+      const timerValueSeconds = completion.timer_value || 0;
+      const timerValueMinutes = completion.timer_minutes || 0;
+      const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
+      return totalTimerValue > 0;
+    }
+  };
+
+  const isPlanTimerTrackerStopped = () => {
+    if (!isPlan) return false;
+    
+    const completion = taskCompletions?.[item.id];
+    if (!completion || completion.is_completed === true) return false;
+
+    if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
+      const timerData = completion.timer_value;
+      const wasStopped = timerData.wasStopped || timerData.wasReset || false;
+      return wasStopped;
+    }
+    
+    return false;
+  };
+
+  const isTimerTrackerStopped = () => {
+    if (isPlan) return isPlanTimerTrackerStopped();
+    
+    const completion = taskCompletions?.[item.id];
+    if (!completion || completion.is_completed === true) return false;
+
+    if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
+      const timerData = completion.timer_value;
+      const wasStopped = timerData.wasStopped || timerData.wasReset || false;
+      return wasStopped;
+    }
+    
+    return false;
+  };
+
+  const isTimerTrackerStarted = () => {
+    if (isPlan) return isPlanTimerTrackerStarted();
+    
+    const completion = taskCompletions?.[item.id];
+    if (!completion) return false;
+
+    if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
+      const timerData = completion.timer_value;
+      
+      if (timerData.wasStopped || timerData.wasReset) {
+        return false;
+      }
+      
+      const totalSeconds = timerData.totalSeconds || timerData.actualCompletedTime || 0;
+      const currentTime = timerData.currentTime || 0;
+      const completedPomodoros = timerData.completedPomodoros || 0;
+      const completedBreaks = timerData.completedBreaks || 0;
+      const currentSessionIndex = timerData.currentSessionIndex || 0;
+
+      return totalSeconds > 0 || currentTime > 0 || completedPomodoros > 0 || 
+             completedBreaks > 0 || currentSessionIndex > 0;
+    } else {
+      const timerValueSeconds = completion.timer_value || 0;
+      const timerValueMinutes = completion.timer_minutes || 0;
+      const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
+      return totalTimerValue > 0;
+    }
+  };
+
+  const isPlanInProgress = () => {
+    if (!isPlan) return false;
+    
+    const completion = taskCompletions?.[item.id];
+    if (!completion) return false;
     if (completion.is_completed === true) return false;
 
-    console.log(
-      'TaskCard - Checking progress for task:',
-      item.id,
-      'completion:',
-      completion,
-    );
+    const taskType = item.evaluationType;
 
-    switch (item.type) {
+    switch (taskType) {
       case 'timer':
-        // FIXED: Timer is in progress if:
-        // 1. Timer value exists and has progress data
-        // 2. Task is not marked as completed
-
-        // Handle both old format (simple number) and new format (object)
-        if (
-          typeof completion.timer_value === 'object' &&
-          completion.timer_value !== null
-        ) {
-          // New format - check for any actual progress
+        if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
           const timerData = completion.timer_value;
-          const totalSeconds =
-            timerData.totalSeconds || timerData.actualCompletedTime || 0;
+          const totalSeconds = timerData.totalSeconds || timerData.actualCompletedTime || 0;
           const currentTime = timerData.currentTime || 0;
           const completedPomodoros = timerData.completedPomodoros || 0;
           const completedBreaks = timerData.completedBreaks || 0;
           const currentSessionIndex = timerData.currentSessionIndex || 0;
 
-          // Show in-progress if:
-          // - Has completed time OR current session time > 0
-          // - OR has completed any pomodoros/breaks
-          // - OR has progressed through sessions
-          // - AND not fully completed
-          const hasProgress =
-            totalSeconds > 0 ||
-            currentTime > 0 ||
-            completedPomodoros > 0 ||
-            completedBreaks > 0 ||
-            currentSessionIndex > 0;
+          const hasProgress = totalSeconds > 0 || currentTime > 0 || completedPomodoros > 0 || 
+                            completedBreaks > 0 || currentSessionIndex > 0;
           const isNotFullyCompleted = !timerData.isFullyCompleted;
-
-          console.log('TaskCard - Timer progress check:', {
-            hasProgress,
-            isNotFullyCompleted,
-            totalSeconds,
-            currentTime,
-            completedPomodoros,
-            completedBreaks,
-            currentSessionIndex,
-            isFullyCompleted: timerData.isFullyCompleted,
-            finalResult:
-              hasProgress && isNotFullyCompleted && !completion.is_completed,
-          });
 
           return hasProgress && isNotFullyCompleted && !completion.is_completed;
         } else {
-          // Old format - simple number check for backward compatibility
           const timerValueSeconds = completion.timer_value || 0;
           const timerValueMinutes = completion.timer_minutes || 0;
           const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
+          return totalTimerValue > 0 && !completion.is_completed;
+        }
 
-          console.log('TaskCard - Timer old format check:', {
-            timerValueSeconds,
-            timerValueMinutes,
-            totalTimerValue,
-            result: totalTimerValue > 0 && !completion.is_completed,
-          });
+      case 'timerTracker':
+        if (isPlanTimerTrackerStopped()) {
+          return false;
+        }
+        
+        if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
+          const timerData = completion.timer_value;
+          const totalSeconds = timerData.totalSeconds || timerData.actualCompletedTime || 0;
+          const currentTime = timerData.currentTime || 0;
+          const completedPomodoros = timerData.completedPomodoros || 0;
+          const completedBreaks = timerData.completedBreaks || 0;
+          const currentSessionIndex = timerData.currentSessionIndex || 0;
 
+          const hasProgress = totalSeconds > 0 || currentTime > 0 || completedPomodoros > 0 || 
+                            completedBreaks > 0 || currentSessionIndex > 0;
+          const isNotFullyCompleted = !timerData.isFullyCompleted;
+          const wasNotStopped = !timerData.wasStopped && !timerData.wasReset;
+
+          return hasProgress && isNotFullyCompleted && !completion.is_completed && wasNotStopped;
+        } else {
+          const timerValueSeconds = completion.timer_value || 0;
+          const timerValueMinutes = completion.timer_minutes || 0;
+          const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
           return totalTimerValue > 0 && !completion.is_completed;
         }
 
       case 'numeric':
-        // In progress if numeric_value > 0 but not completed
         return completion.numeric_value > 0 && !completion.is_completed;
 
       case 'checklist':
-        // In progress if some items are completed but not all
-        if (
-          completion.checklist_items &&
-          completion.checklist_items.length > 0
-        ) {
+        if (completion.checklist_items && completion.checklist_items.length > 0) {
           const completedItems = completion.checklist_items.filter(
             checklistItem => checklistItem.completed,
           );
-          return (
-            completedItems.length > 0 &&
-            completedItems.length < completion.checklist_items.length
-          );
+          return completedItems.length > 0 && completedItems.length < completion.checklist_items.length;
         }
         return false;
 
       case 'yesNo':
-        // yesNo tasks are either completed or not, no in-progress state
         return false;
 
-      case 'task':
       default:
-        // Regular tasks don't have in-progress states
         return false;
     }
   };
 
+  const isTaskInProgress = () => {
+    if (isPlan) {
+      return isPlanInProgress();
+    }
+
+    const completion = taskCompletions?.[item.id];
+
+    if (!completion) return false;
+    if (completion.is_completed === true) return false;
+
+    const taskType = item.evaluation_type || item.type;
+
+    switch (taskType) {
+      case 'timer':
+        if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
+          const timerData = completion.timer_value;
+          const totalSeconds = timerData.totalSeconds || timerData.actualCompletedTime || 0;
+          const currentTime = timerData.currentTime || 0;
+          const completedPomodoros = timerData.completedPomodoros || 0;
+          const completedBreaks = timerData.completedBreaks || 0;
+          const currentSessionIndex = timerData.currentSessionIndex || 0;
+
+          const hasProgress = totalSeconds > 0 || currentTime > 0 || completedPomodoros > 0 || 
+                            completedBreaks > 0 || currentSessionIndex > 0;
+          const isNotFullyCompleted = !timerData.isFullyCompleted;
+
+          return hasProgress && isNotFullyCompleted && !completion.is_completed;
+        } else {
+          const timerValueSeconds = completion.timer_value || 0;
+          const timerValueMinutes = completion.timer_minutes || 0;
+          const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
+          return totalTimerValue > 0 && !completion.is_completed;
+        }
+
+      case 'timerTracker':
+        if (isTimerTrackerStopped()) {
+          return false;
+        }
+        
+        if (typeof completion.timer_value === 'object' && completion.timer_value !== null) {
+          const timerData = completion.timer_value;
+          const totalSeconds = timerData.totalSeconds || timerData.actualCompletedTime || 0;
+          const currentTime = timerData.currentTime || 0;
+          const completedPomodoros = timerData.completedPomodoros || 0;
+          const completedBreaks = timerData.completedBreaks || 0;
+          const currentSessionIndex = timerData.currentSessionIndex || 0;
+
+          const hasProgress = totalSeconds > 0 || currentTime > 0 || completedPomodoros > 0 || 
+                            completedBreaks > 0 || currentSessionIndex > 0;
+          const isNotFullyCompleted = !timerData.isFullyCompleted;
+          const wasNotStopped = !timerData.wasStopped && !timerData.wasReset;
+
+          return hasProgress && isNotFullyCompleted && !completion.is_completed && wasNotStopped;
+        } else {
+          const timerValueSeconds = completion.timer_value || 0;
+          const timerValueMinutes = completion.timer_minutes || 0;
+          const totalTimerValue = timerValueSeconds || timerValueMinutes * 60;
+          return totalTimerValue > 0 && !completion.is_completed;
+        }
+
+      case 'numeric':
+        return completion.numeric_value > 0 && !completion.is_completed;
+
+      case 'checklist':
+        if (completion.checklist_items && completion.checklist_items.length > 0) {
+          const completedItems = completion.checklist_items.filter(
+            checklistItem => checklistItem.completed,
+          );
+          return completedItems.length > 0 && completedItems.length < completion.checklist_items.length;
+        }
+        return false;
+
+      case 'yesNo':
+        return false;
+
+      case 'task':
+      default:
+        return false;
+    }
+  };
+
+  const getTaskTypeText = () => {
+    if (isPlan) {
+      return 'Plan Your Day';
+    }
+
+    const taskType = item.taskType || item.evaluation_type || item.type;
+
+    switch (taskType) {
+      case 'Habit':
+        return 'Habit';
+      case 'Recurring':
+      case 'Recurring Task':
+        return 'Recurring';
+      case 'Task':
+        return 'Task';
+      case 'timer':
+        return 'Timer';
+      case 'timerTracker':
+        return 'Timer Tracker';
+      case 'numeric':
+        return 'Numeric';
+      case 'checklist':
+        return 'Checklist';
+      case 'yesNo':
+        return 'Yes/No';
+      default:
+        return taskType || 'Task';
+    }
+  };
+
+  const buildTagsArray = () => {
+    const tagsArray = [];
+    const existingTags = item.tags || [];
+    
+    if (isPlan) {
+      tagsArray.push('Plan Your Day');
+      
+      const hasImportantTags = existingTags.some(tag => {
+        const tagLower = tag.toLowerCase();
+        return tagLower === 'important' || tagLower === 'must' || 
+               tagLower === 'urgent' || tagLower === 'priority';
+      });
+      
+      if (hasImportantTags) {
+        existingTags.forEach(tag => {
+          const tagLower = tag.toLowerCase();
+          if (tagLower !== 'plan your day' && tagLower !== 'plan' &&
+              !tagsArray.some(existingTag => existingTag.toLowerCase() === tagLower)) {
+            tagsArray.push(tag);
+          }
+        });
+      } else {
+        const evaluationType = item.evaluationType;
+        if (evaluationType && evaluationType !== 'yesNo') {
+          switch (evaluationType) {
+            case 'timer':
+              tagsArray.push('Timer');
+              break;
+            case 'timerTracker':
+              tagsArray.push('Timer Tracker');
+              break;
+            case 'checklist':
+              tagsArray.push('Checklist');
+              break;
+            case 'numeric':
+              tagsArray.push('Numeric');
+              break;
+          }
+        }
+        
+        existingTags.forEach(tag => {
+          const tagLower = tag.toLowerCase();
+          if (tagLower !== 'plan your day' && 
+              tagLower !== 'plan' && 
+              tagLower !== 'timer' &&
+              tagLower !== 'timer tracker' &&
+              tagLower !== 'checklist' &&
+              tagLower !== 'numeric' &&
+              tagLower !== 'yes/no' &&
+              tagLower !== 'yesno' &&
+              tagLower !== 'important' && 
+              tagLower !== 'must' && 
+              tagLower !== 'urgent' && 
+              tagLower !== 'priority' &&
+              !tagsArray.some(existingTag => existingTag.toLowerCase() === tagLower)) {
+            tagsArray.push(tag);
+          }
+        });
+      }
+    } else {
+      const taskTypeText = getTaskTypeText();
+      if (taskTypeText && !existingTags.some(tag => 
+        tag.toLowerCase() === taskTypeText.toLowerCase())) {
+        tagsArray.push(taskTypeText);
+      }
+      
+      existingTags.forEach(tag => {
+        if (!tagsArray.some(existingTag => existingTag.toLowerCase() === tag.toLowerCase())) {
+          tagsArray.push(tag);
+        }
+      });
+    }
+    
+    if (tagsArray.length === 0) {
+      const taskTypeText = getTaskTypeText();
+      tagsArray.push(taskTypeText);
+    }
+    
+    return tagsArray;
+  };
+
+  const shouldShowFlag = () => {
+    if (!item.tags || item.tags.length === 0) return false;
+    
+    return item.tags.some(tag => {
+      const tagLower = tag.toLowerCase();
+      return tagLower === 'important' || tagLower === 'must' || tagLower === 'urgent' || tagLower === 'priority';
+    });
+  };
+
   const handleCheckboxPress = () => {
-    if (item.type === 'checklist') {
-      console.log(
-        'TaskCard - Navigating to TaskEvaluation with selectedDate:',
-        selectedDate,
-      );
+    const taskType = isPlan ? item.evaluationType : (item.evaluation_type || item.type);
+
+    if (taskType === 'checklist') {
       navigation.navigate('TaskEvaluation', {
         taskData: item,
-        taskId: item.id,
+        taskId: isPlan ? item.originalId : item.id,
         selectedDate: selectedDate,
+        isPlan: isPlan,
       });
       return;
     }
 
-    // UPDATED: Handle timer tasks - navigate to PomodoroTimerScreen if timer task
-    if (item.type === 'timer') {
-      console.log(
-        'TaskCard - Navigating to PomodoroTimerScreen with selectedDate:',
-        selectedDate,
-      );
+    if (taskType === 'timer') {
       navigation.navigate('PomoScreen', {
         task: item,
-        taskId: item.id,
+        taskId: isPlan ? item.originalId : item.id,
         selectedDate: selectedDate,
+        isPlan: isPlan,
+      });
+      return;
+    }
+
+    if (taskType === 'timerTracker') {
+      navigation.navigate('PomoTrackerScreen', {
+        task: item,
+        taskId: isPlan ? item.originalId : item.id,
+        selectedDate: selectedDate,
+        isPlan: isPlan,
+        isTimerTracker: true,
       });
       return;
     }
@@ -253,32 +705,53 @@ const TaskCard = ({
     onToggle();
   };
 
-  // Handle task card regular press - no action (removed delete functionality)
   const handleTaskPress = () => {
-    // You can add navigation or other functionality here if needed
-    // For now, this does nothing as delete is moved to long press
+    // No action on regular press
   };
 
-  // Handle long press for delete confirmation modal
   const handleLongPress = () => {
-    setShowDeleteModal(true);
+    setShowOptionsModal(true);
   };
 
-  // Handle delete confirmation from modal
+  const handleEditPress = () => {
+    setShowOptionsModal(false);
+    
+    // Navigate to appropriate edit screen based on evaluation type
+    if (isPlan) {
+      const evaluationType = item.evaluationType;
+      
+      // Check if it's a Timer Tracker plan
+      if (evaluationType === 'timerTracker') {
+        navigation.navigate('EditPlanTimerTrackerScreen', {
+          planData: item,
+          planId: item.originalId || item.id,
+          selectedDate: selectedDate,
+        });
+      } else {
+        // For other plan types (timer, checklist, yesNo, numeric)
+        navigation.navigate('EditPlanScreen', {
+          planData: item,
+          planId: item.originalId || item.id,
+          selectedDate: selectedDate,
+        });
+      }
+    }
+  };
+
   const handleDeleteConfirm = () => {
-    setShowDeleteModal(false);
+    setShowOptionsModal(false);
     if (onTaskDelete) {
       onTaskDelete(item.id);
     }
   };
 
-  // Handle delete cancellation
-  const handleDeleteCancel = () => {
-    setShowDeleteModal(false);
+  const handleOptionsCancel = () => {
+    setShowOptionsModal(false);
   };
 
   const renderCheckbox = () => {
-    // Check for completion first (highest priority)
+    const taskType = isPlan ? item.evaluationType : (item.evaluation_type || item.type);
+
     if (checkboxState === 4) {
       return (
         <View style={styles.completedContainer}>
@@ -289,18 +762,34 @@ const TaskCard = ({
       );
     }
 
-    // Check for in-progress state based on actual data
+    if (taskType === 'timerTracker') {
+      if (isTimerTrackerStopped()) {
+        return getStoppedIcon();
+      }
+      
+      if (isTaskInProgress()) {
+        return getInProgressIcon();
+      }
+      
+      if (isTimerTrackerStarted()) {
+        return <View style={styles.staticCircle}></View>;
+      }
+      
+      return (
+        <View style={styles.startButtonContainer}>
+          <Text style={styles.startButtonText}>Start</Text>
+        </View>
+      );
+    }
+
     if (isTaskInProgress()) {
-      console.log('TaskCard - Showing in-progress icon for task:', item.id);
       return getInProgressIcon();
     }
 
-    // For loading states (2, 3) that are not in-progress, show initial icon
     if (checkboxState === 2 || checkboxState === 3) {
       return getInitialIconInsideRadio();
     }
 
-    // For uncompleted state (1), show original type-specific icon
     return getInitialIconInsideRadio();
   };
 
@@ -310,37 +799,66 @@ const TaskCard = ({
         style={styles.taskContainer}
         onPress={handleTaskPress}
         onLongPress={handleLongPress}
-        delayLongPress={800} // Increased to 800ms for better UX
+        delayLongPress={800}
         activeOpacity={0.8}>
         <Image
           source={getImageSource(item.category)}
           style={styles.taskImage}
         />
         <View style={styles.taskInfo}>
-          <Text style={styles.taskTitle}>{item.title}</Text>
+          <View style={styles.titleContainer}>
+            <Text style={styles.taskTitle}>{item.title}</Text>
+            {isInBlockTimePeriod() && (
+              <View style={styles.blockTimeIndicator} />
+            )}
+            {isBlockTimeExpiredAndIncomplete() && (
+              <View style={styles.expiredTimeIndicator} />
+            )}
+          </View>
 
           <View style={styles.taskMeta}>
-            <View
-              style={[
-                styles.timeBox,
-                {backgroundColor: item.timeColor || '#0E4C92'},
-              ]}>
-              <Icon
-                name="access-time"
-                size={WP(2.1)}
-                color={getTimeIconColor()}
-                marginRight={WP(0.5)}
-              />
-              <Icon
-                name="hourglass-top"
-                size={WP(2.1)}
-                color={getTimeIconColor()}
-                marginRight={WP(0.3)}
-              />
-              <Text style={[styles.timeText, {color: getTimeTextColor()}]}>
-                {item.time}
-              </Text>
-            </View>
+            {item.time && (
+              <View
+                style={[
+                  styles.timeBox,
+                  {backgroundColor: item.timeColor || '#E4EBF3'},
+                ]}>
+                <Icon
+                  name="access-time"
+                  size={WP(2.1)}
+                  color={getTimeIconColor()}
+                  marginRight={WP(0.5)}
+                />
+                <Icon
+                  name="hourglass-top"
+                  size={WP(2.1)}
+                  color={getTimeIconColor()}
+                  marginRight={WP(0.3)}
+                />
+                <Text style={[styles.timeText, {color: getTimeTextColor()}]}>
+                  {item.time}
+                </Text>
+              </View>
+            )}
+
+            {isPlan && (
+              <View style={styles.planInfoContainer}>
+                {item.planType === 'hours' && item.targetHours && (
+                  <View style={styles.planInfoBox}>
+                    <Text style={styles.planInfoText}>
+                      Target: {item.targetHours}h
+                    </Text>
+                  </View>
+                )}
+                {item.planType === 'tasks' && item.targetTasks && (
+                  <View style={styles.planInfoBox}>
+                    <Text style={styles.planInfoText}>
+                      Target: {item.targetTasks} tasks
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             {item.progress && (
               <View style={styles.progressContainer}>
@@ -350,16 +868,18 @@ const TaskCard = ({
 
             <View style={styles.tagsContainer}>
               <View style={styles.combinedTagContainer}>
-                {item.tags &&
-                  item.tags.map((tag, index) => (
+                {(() => {
+                  const combinedTags = buildTagsArray();
+                  return combinedTags.map((tag, index) => (
                     <Text key={index} style={styles.tagText}>
                       {tag}
-                      {index < item.tags.length - 1 && (
+                      {index < combinedTags.length - 1 && (
                         <Text style={styles.separator}> | </Text>
                       )}
                     </Text>
-                  ))}
-                {item.hasFlag && (
+                  ));
+                })()}
+                {shouldShowFlag() && (
                   <View style={styles.flagContainer}>
                     <Icon name="flag" size={WP(3.2)} color={getFlagColor()} />
                   </View>
@@ -377,12 +897,12 @@ const TaskCard = ({
         </TouchableOpacity>
       </TouchableOpacity>
 
-      {/* Custom Delete Modal */}
-      <DeleteTaskModal
-        visible={showDeleteModal}
+      <TaskOptionsModal
+        visible={showOptionsModal}
         taskTitle={item.title}
-        onCancel={handleDeleteCancel}
-        onConfirm={handleDeleteConfirm}
+        onCancel={handleOptionsCancel}
+        onEdit={handleEditPress}
+        onDelete={handleDeleteConfirm}
       />
     </>
   );
@@ -408,16 +928,50 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: HP(0.4),
+    flexShrink: 1,
+  },
   taskTitle: {
     fontSize: FS(1.82),
     fontFamily: 'Roboto-SemiBold',
     color: '#434343',
-    marginBottom: HP(0.4),
     lineHeight: HP(2.5),
-    width: '100%',
+    flexShrink: 1,
   },
-  timeSection: {
-    marginBottom: HP(0.75),
+  blockTimeIndicator: {
+    width: WP(2.1),
+    height: WP(2.1),
+    borderRadius: WP(1.05),
+    backgroundColor: '#4CAF50',
+    marginLeft: WP(1.0),
+    marginTop: HP(0.3),
+    shadowColor: '#4CAF50',
+    shadowOffset: {
+      width: 0,
+      height: HP(0.1),
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: WP(0.5),
+    elevation: 2,
+  },
+  expiredTimeIndicator: {
+    width: WP(2.1),
+    height: WP(2.1),
+    borderRadius: WP(1.05),
+    backgroundColor: '#FF4444',
+    marginLeft: WP(1.0),
+    marginTop: HP(0.3),
+    shadowColor: '#FF4444',
+    shadowOffset: {
+      width: 0,
+      height: HP(0.1),
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: WP(0.5),
+    elevation: 2,
   },
   timeBox: {
     flexDirection: 'row',
@@ -438,6 +992,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     marginBottom: HP(0.9),
+  },
+  planInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  planInfoBox: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: WP(1.1),
+    paddingHorizontal: WP(1.5),
+    paddingVertical: HP(0.25),
+    marginRight: WP(0.8),
+  },
+  planInfoText: {
+    fontSize: FS(1.1),
+    color: '#1976D2',
+    fontFamily: 'OpenSans-SemiBold',
   },
   progressContainer: {
     backgroundColor: '#F6F6F6',
@@ -476,7 +1046,7 @@ const styles = StyleSheet.create({
     fontSize: FS(1.2),
   },
   flagContainer: {
-    marginLeft: 0,
+    marginLeft: WP(0.5),
   },
   bottomBorder: {
     position: 'absolute',
@@ -523,7 +1093,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // FIXED: In-progress state uses same background color as initial icons
   inProgressCircle: {
     width: WP(5.3),
     height: WP(5.3),
@@ -537,6 +1106,29 @@ const styles = StyleSheet.create({
     height: WP(3.5),
     resizeMode: 'contain',
     tintColor: '#6C6C6C',
+  },
+  startButtonContainer: {
+    width: WP(14),
+    height: WP(6),
+    backgroundColor: colors.Primary,
+    borderRadius: WP(2.8),
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: WP(1),
+  },
+  startButtonText: {
+    fontSize: FS(1.2),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  stoppedCircle: {
+    width: WP(5.3),
+    height: WP(5.3),
+    borderRadius: WP(2.65),
+    backgroundColor: '#FF444433',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

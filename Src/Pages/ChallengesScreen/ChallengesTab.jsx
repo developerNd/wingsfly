@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   Text,
   View,
@@ -15,6 +15,7 @@ import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Headers from '../../Components/Headers';
 import TaskSkeleton from '../../Components/TaskSkeleton';
+import TaskOptionsModal from '../../Components/TaskOptionsModal';
 import {colors, Icons} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {challengeService} from '../../services/api/challengeService';
@@ -24,6 +25,10 @@ const ChallengesScreen = () => {
   const [challenges, setChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // State for options modal
+  const [optionsModalVisible, setOptionsModalVisible] = useState(false);
+  const [selectedChallenge, setSelectedChallenge] = useState(null);
 
   const navigation = useNavigation();
   const {user} = useAuth();
@@ -70,35 +75,41 @@ const ChallengesScreen = () => {
     });
   };
 
-  // Handle challenge deletion
-  const handleDeleteChallenge = (challengeId, challengeName) => {
-    Alert.alert(
-      'Delete Challenge',
-      `Are you sure you want to delete "${challengeName}"?`,
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              await challengeService.deleteChallenge(challengeId);
-              setChallenges(prev => prev.filter(c => c.id !== challengeId));
-              Alert.alert('Success', 'Challenge deleted successfully!');
-            } catch (error) {
-              console.error('Error deleting challenge:', error);
-              Alert.alert(
-                'Error',
-                'Failed to delete challenge. Please try again.',
-              );
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ],
-    );
+  // Show options modal
+  const showOptionsModal = (challenge) => {
+    setSelectedChallenge(challenge);
+    setOptionsModalVisible(true);
+  };
+
+  // Hide options modal
+  const hideOptionsModal = () => {
+    setOptionsModalVisible(false);
+    setSelectedChallenge(null);
+  };
+
+  // Handle edit option
+  const handleEditChallenge = () => {
+    hideOptionsModal();
+    navigation.navigate('EditChallengeScreen', {
+      challengeId: selectedChallenge.id,
+    });
+  };
+
+  // Handle delete option - delete immediately without additional confirmation
+  const handleDeleteChallenge = async () => {
+    hideOptionsModal();
+    
+    try {
+      setLoading(true);
+      await challengeService.deleteChallenge(selectedChallenge.id);
+      setChallenges(prev => prev.filter(c => c.id !== selectedChallenge.id));
+      Alert.alert('Success', 'Challenge deleted successfully.');
+    } catch (error) {
+      console.error('Error deleting challenge:', error);
+      Alert.alert('Error', 'Failed to delete challenge. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Format date
@@ -111,7 +122,7 @@ const ChallengesScreen = () => {
     });
   };
 
-  // Render simple challenge card
+  // Render challenge card
   const renderChallengeCard = ({item}) => {
     return (
       <TouchableOpacity
@@ -127,18 +138,7 @@ const ChallengesScreen = () => {
             style={styles.moreButton}
             onPress={e => {
               e.stopPropagation();
-              Alert.alert(
-                'Challenge Options',
-                `What would you like to do with "${item.name}"?`,
-                [
-                  {text: 'Cancel', style: 'cancel'},
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => handleDeleteChallenge(item.id, item.name),
-                  },
-                ],
-              );
+              showOptionsModal(item);
             }}>
             <Icon name="more-vert" size={WP(5)} color="#666666" />
           </TouchableOpacity>
@@ -152,12 +152,12 @@ const ChallengesScreen = () => {
 
         <View style={styles.challengeDetails}>
           <View style={styles.detailItem}>
-            <Icon name="today" size={WP(4)} color="#666666" />
+            <Image source={Icons.Calendar} style={styles.iconImage} />
             <Text style={styles.detailText}>{item.number_of_days} days</Text>
           </View>
 
           <View style={styles.detailItem}>
-            <Icon name="event" size={WP(4)} color="#666666" />
+            <Image source={Icons.Calendar} style={styles.iconImage} />
             <Text style={styles.detailText}>{formatDate(item.start_date)}</Text>
           </View>
         </View>
@@ -220,6 +220,15 @@ const ChallengesScreen = () => {
           )}
         </ScrollView>
       )}
+
+      {/* Task Options Modal */}
+      <TaskOptionsModal
+        visible={optionsModalVisible}
+        taskTitle={selectedChallenge?.name || ''}
+        onCancel={hideOptionsModal}
+        onEdit={handleEditChallenge}
+        onDelete={handleDeleteChallenge}
+      />
     </View>
   );
 };
@@ -334,6 +343,12 @@ const styles = StyleSheet.create({
     fontSize: FS(1.6),
     fontFamily: 'OpenSans-Bold',
     color: colors.White,
+  },
+  iconImage: {
+    width: WP(5),
+    height: WP(5),
+    tintColor: '#4F4F4F',
+    resizeMode: 'contain',
   },
 });
 

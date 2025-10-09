@@ -12,6 +12,7 @@ import Headers from '../../Components/Headers';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {useAuth} from '../../contexts/AuthContext';
+import SessionService from '../../services/api/SessionService';
 
 const SettingsScreen = ({navigation}) => {
   const {signOut} = useAuth();
@@ -26,6 +27,40 @@ const SettingsScreen = ({navigation}) => {
 
   const handleAppUsagePress = () => {
     navigation.navigate('AppUsageScreen');
+  };
+
+  const handleAlarmPress = () => {
+    navigation.navigate('AlarmScreen');
+  };
+
+  const handleVoiceCommandsPress = () => {
+    navigation.navigate('VoiceCommandListScreen');
+  };
+
+  const handleIntentionPress = () => {
+    navigation.navigate('IntentionSettingsScreen');
+  };
+
+  const handleAppreciationPress = () => {
+    navigation.navigate('AppreciationSettingsScreen');
+  };
+
+  // Digital Detox
+  const handleDigitalDetoxPress = () => {
+    navigation.navigate('DigitalDetoxScreen');
+  };
+
+  const handleDetoxMediaSettingsPress = () => {
+    navigation.navigate('DetoxMediaSettingsScreen');
+  };
+
+  // NEW: Get Back
+  const handleGetBackPress = () => {
+    navigation.navigate('GetBackScreen');
+  };
+
+  const handleGetBackMediaSettingsPress = () => {
+    navigation.navigate('GetBackSettingsScreen');
   };
 
   const handleLogout = () => {
@@ -49,6 +84,14 @@ const SettingsScreen = ({navigation}) => {
 
   const performLogout = async () => {
     try {
+      console.log('=== TRACKING LOGOUT SESSION ===');
+      const logoutResult = await SessionService.trackLogout();
+      if (logoutResult.success) {
+        console.log('✅ Logout session tracked successfully');
+      } else {
+        console.error('❌ Failed to track logout session:', logoutResult.error);
+      }
+
       await signOut();
     } catch (error) {
       console.error('Logout error:', error);
@@ -110,6 +153,67 @@ const SettingsScreen = ({navigation}) => {
           </View>
         </View>
 
+        {/* Productivity Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Productivity</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem title="Alarm" onPress={handleAlarmPress} />
+          </View>
+        </View>
+
+        {/* Wellbeing Section - Digital Detox & Get Back */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Wellbeing</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem 
+              title="Digital Detox" 
+              onPress={handleDigitalDetoxPress} 
+            />
+            <View style={styles.separator} />
+            <SettingItem 
+              title="Detox Media Settings" 
+              onPress={handleDetoxMediaSettingsPress} 
+            />
+            <View style={styles.separator} />
+            <SettingItem 
+              title="Get Back" 
+              onPress={handleGetBackPress} 
+            />
+            <View style={styles.separator} />
+            <SettingItem 
+              title="Get Back Media Settings" 
+              onPress={handleGetBackMediaSettingsPress} 
+            />
+          </View>
+        </View>
+
+        {/* Voice Commands Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Voice Commands</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem
+              title="Voice Commands"
+              onPress={handleVoiceCommandsPress}
+            />
+          </View>
+        </View>
+
+        {/* Motivation Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Motivation</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem
+              title="Intention Command"
+              onPress={handleIntentionPress}
+            />
+            <View style={styles.separator} />
+            <SettingItem
+              title="Appreciation Message"
+              onPress={handleAppreciationPress}
+            />
+          </View>
+        </View>
+
         {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -122,6 +226,9 @@ const SettingsScreen = ({navigation}) => {
             />
           </View>
         </View>
+
+        {/* Bottom Spacing */}
+        <View style={{height: HP(4)}} />
       </ScrollView>
     </View>
   );
@@ -188,6 +295,11 @@ const styles = StyleSheet.create({
   },
   destructiveText: {
     color: colors.Black,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginHorizontal: WP(4),
   },
 });
 

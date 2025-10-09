@@ -9,9 +9,11 @@ import {
   ScrollView,
   Image,
   Alert,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import Headers from '../../../Components/Headers';
+import DatePickerModal from '../../../Components/DatePickerModal'; // Add this import
 import {HP, WP, FS} from '../../../utils/dimentions';
 import {colors, Icons} from '../../../Helper/Contants';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -37,6 +39,10 @@ const RecurringChecklistScreen = () => {
     useState('Custom');
   const [customItems, setCustomItems] = useState('1');
 
+  // Add Start Date states
+  const [startDate, setStartDate] = useState(new Date());
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -58,6 +64,43 @@ const RecurringChecklistScreen = () => {
 
   const hideToast = () => {
     setToastVisible(false);
+  };
+
+  // Add Start Date helper functions
+  const formatDisplayDate = date => {
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+
+    if (isToday) {
+      return 'Today';
+    }
+
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    const dayName = days[date.getDay()];
+    const monthName = months[date.getMonth()];
+    const day = date.getDate();
+
+    return `${dayName}, ${monthName} ${day}`;
+  };
+
+  const handleStartDateSelect = date => {
+    setStartDate(date);
+    setShowStartDatePicker(false);
   };
 
   const handleDeleteItem = id => {
@@ -178,8 +221,10 @@ const RecurringChecklistScreen = () => {
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
         
-        // Scheduling settings
-        startDate: null,
+        // Scheduling settings - Add Start Date
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
         
@@ -206,7 +251,7 @@ const RecurringChecklistScreen = () => {
         linkedGoalType: null,
         
         // Notes
-        note: '',
+        note: description.trim(),
         
         // Progress tracking
         progress: null,
@@ -244,213 +289,256 @@ const RecurringChecklistScreen = () => {
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
-      <View style={styles.headerWrapper}>
-        <Headers title="Define Your Task" onBackPress={() => navigation.goBack()}>
-          <TouchableOpacity onPress={handleNextPress}>
-            <Text style={styles.nextText}>Next</Text>
-          </TouchableOpacity>
-        </Headers>
-      </View>
+  // Add Start Date render function
+  const renderStartDateSection = () => {
+    return (
+      <View style={styles.optionContainer}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={() => setShowStartDatePicker(true)}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Set}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Start Date</Text>
+            </View>
+          </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.inputContainer}>
-          <Text
-            style={[
-              styles.inputLabel,
-              isHabitLabelActive
-                ? styles.inputLabelActive
-                : styles.inputLabelInactive,
-            ]}>
-            Task
-          </Text>
-          <TextInput
-            style={styles.textInput}
-            value={habit}
-            onChangeText={handleHabitChange}
-            onFocus={() => setHabitFocused(true)}
-            onBlur={handleHabitBlur}
-            placeholder={isHabitLabelActive ? '' : ''}
-            placeholderTextColor="transparent"
-          />
+          <View style={styles.optionRight}>
+            <View style={styles.dateContainer}>
+              <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  return (
+    <TouchableWithoutFeedback onPress={() => {}}>
+      <View style={styles.container}>
+        <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
+        <View style={styles.headerWrapper}>
+          <Headers title="Define Your Task" onBackPress={() => navigation.goBack()}>
+            <TouchableOpacity onPress={handleNextPress}>
+              <Text style={styles.nextText}>Next</Text>
+            </TouchableOpacity>
+          </Headers>
         </View>
 
-        <Text style={styles.exampleText}>e.g..Morning routine.</Text>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.inputContainer}>
+            <Text
+              style={[
+                styles.inputLabel,
+                isHabitLabelActive
+                  ? styles.inputLabelActive
+                  : styles.inputLabelInactive,
+              ]}>
+              Task
+            </Text>
+            <TextInput
+              style={styles.textInput}
+              value={habit}
+              onChangeText={handleHabitChange}
+              onFocus={() => setHabitFocused(true)}
+              onBlur={handleHabitBlur}
+              placeholder={isHabitLabelActive ? '' : ''}
+              placeholderTextColor="transparent"
+            />
+          </View>
 
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Checklist</Text>
+          <Text style={styles.exampleText}>e.g..Morning routine.</Text>
 
-          {checklistItems.map((item, index) => (
-            <View key={item.id} style={styles.checklistItem}>
-              <Text style={styles.checklistNumber}>{index + 1}.</Text>
-              {editingItemId === item.id ? (
-                <View style={styles.editingContainer}>
-                  <TextInput
-                    style={styles.editingInput}
-                    value={item.text}
-                    onChangeText={(text) => {
-                      setChecklistItems(checklistItems.map(i => 
-                        i.id === item.id ? { ...i, text } : i
-                      ));
-                    }}
-                    placeholder="Enter item text"
-                    autoFocus
-                    onBlur={() => handleSaveItem(item.id, item.text)}
-                    onSubmitEditing={() => handleSaveItem(item.id, item.text)}
-                  />
-                  <View style={styles.editActions}>
-                    <TouchableOpacity
-                      style={styles.saveButton}
-                      onPress={() => handleSaveItem(item.id, item.text)}>
-                      <MaterialIcons name="check" size={WP(4.5)} color={colors.Primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.cancelButton}
-                      onPress={() => handleCancelEdit(item.id)}>
-                      <MaterialIcons name="close" size={WP(4.5)} color="#666" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <>
-                  <TouchableOpacity 
-                    style={styles.checklistTextContainer}
-                    onPress={() => handleEditItem(item.id)}>
-                    <Text style={styles.checklistText}>{item.text || 'Tap to edit'}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteItem(item.id)}
-                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                    <Image
-                      source={Icons.Trash}
-                      style={styles.deleteIcon}
-                      resizeMode="contain"
+          {/* Add Start Date Section */}
+          {renderStartDateSection()}
+
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Checklist</Text>
+
+            {checklistItems.map((item, index) => (
+              <View key={item.id} style={styles.checklistItem}>
+                <Text style={styles.checklistNumber}>{index + 1}.</Text>
+                {editingItemId === item.id ? (
+                  <View style={styles.editingContainer}>
+                    <TextInput
+                      style={styles.editingInput}
+                      value={item.text}
+                      onChangeText={(text) => {
+                        setChecklistItems(checklistItems.map(i => 
+                          i.id === item.id ? { ...i, text } : i
+                        ));
+                      }}
+                      placeholder="Enter item text"
+                      autoFocus
+                      onBlur={() => handleSaveItem(item.id, item.text)}
+                      onSubmitEditing={() => handleSaveItem(item.id, item.text)}
                     />
-                  </TouchableOpacity>
-                </>
+                    <View style={styles.editActions}>
+                      <TouchableOpacity
+                        style={styles.saveButton}
+                        onPress={() => handleSaveItem(item.id, item.text)}>
+                        <MaterialIcons name="check" size={WP(4.5)} color={colors.Primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.cancelButton}
+                        onPress={() => handleCancelEdit(item.id)}>
+                        <MaterialIcons name="close" size={WP(4.5)} color="#666" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <>
+                    <TouchableOpacity 
+                      style={styles.checklistTextContainer}
+                      onPress={() => handleEditItem(item.id)}>
+                      <Text style={styles.checklistText}>{item.text || 'Tap to edit'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteItem(item.id)}
+                      hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                      <Image
+                        source={Icons.Trash}
+                        style={styles.deleteIcon}
+                        resizeMode="contain"
+                      />
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            ))}
+
+            <TouchableOpacity
+              style={styles.addItemButton}
+              onPress={handleAddItem}>
+              <Text style={styles.addItemText}>Add Item</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Success Condition</Text>
+
+            <View style={styles.successConditionContainer}>
+              <TouchableOpacity
+                style={styles.radioOption}
+                onPress={() => handleSuccessConditionChange('All Items')}>
+                <View
+                  style={[
+                    styles.radioCircle,
+                    selectedSuccessCondition === 'All Items' &&
+                      styles.radioCircleSelected,
+                  ]}>
+                  {selectedSuccessCondition === 'All Items' && (
+                    <View style={styles.radioCircleInner} />
+                  )}
+                </View>
+                <Text style={styles.radioText}>All Items</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.radioOption}
+                onPress={() => handleSuccessConditionChange('Custom')}>
+                <View
+                  style={[
+                    styles.radioCircle,
+                    selectedSuccessCondition === 'Custom' &&
+                      styles.radioCircleSelected,
+                  ]}>
+                  {selectedSuccessCondition === 'Custom' && (
+                    <View style={styles.radioCircleInner} />
+                  )}
+                </View>
+                <Text style={styles.radioText}>Custom</Text>
+              </TouchableOpacity>
+
+              {selectedSuccessCondition === 'Custom' && (
+                <View style={styles.customInputContainer}>
+                  <View style={styles.customInputWrapper}>
+                    <TextInput
+                      style={styles.customInput}
+                      value={customItems}
+                      onChangeText={handleCustomItemsChange}
+                      placeholder=""
+                      placeholderTextColor="transparent"
+                      keyboardType="numeric"
+                      maxLength={2}
+                      selectTextOnFocus={true}
+                      scrollEnabled={false}
+                    />
+                    <View style={styles.customInputBottomLine} />
+                  </View>
+                  <Text style={styles.itemsText}>Items</Text>
+                </View>
               )}
             </View>
-          ))}
-
-          <TouchableOpacity
-            style={styles.addItemButton}
-            onPress={handleAddItem}>
-            <Text style={styles.addItemText}>Add Item</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Success Condition</Text>
-
-          <View style={styles.successConditionContainer}>
-            <TouchableOpacity
-              style={styles.radioOption}
-              onPress={() => handleSuccessConditionChange('All Items')}>
-              <View
-                style={[
-                  styles.radioCircle,
-                  selectedSuccessCondition === 'All Items' &&
-                    styles.radioCircleSelected,
-                ]}>
-                {selectedSuccessCondition === 'All Items' && (
-                  <View style={styles.radioCircleInner} />
-                )}
-              </View>
-              <Text style={styles.radioText}>All Items</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.radioOption}
-              onPress={() => handleSuccessConditionChange('Custom')}>
-              <View
-                style={[
-                  styles.radioCircle,
-                  selectedSuccessCondition === 'Custom' &&
-                    styles.radioCircleSelected,
-                ]}>
-                {selectedSuccessCondition === 'Custom' && (
-                  <View style={styles.radioCircleInner} />
-                )}
-              </View>
-              <Text style={styles.radioText}>Custom</Text>
-            </TouchableOpacity>
-
-            {selectedSuccessCondition === 'Custom' && (
-              <View style={styles.customInputContainer}>
-                <View style={styles.customInputWrapper}>
-                  <TextInput
-                    style={styles.customInput}
-                    value={customItems}
-                    onChangeText={handleCustomItemsChange}
-                    placeholder=""
-                    placeholderTextColor="transparent"
-                    keyboardType="numeric"
-                    maxLength={2}
-                    selectTextOnFocus={true}
-                    scrollEnabled={false}
-                  />
-                  <View style={styles.customInputBottomLine} />
-                </View>
-                <Text style={styles.itemsText}>Items (S)</Text>
-              </View>
-            )}
           </View>
-        </View>
 
-        <View style={styles.inputContainer1}>
-          <Text
-            style={[
-              styles.inputLabel,
-              isDescriptionLabelActive
-                ? styles.inputLabelActive
-                : styles.inputLabelInactive,
-            ]}>
-            Note (optional)
-          </Text>
-          <TextInput
-            style={styles.descriptionInput}
-            value={description}
-            onChangeText={setDescription}
-            onFocus={() => setDescriptionFocused(true)}
-            onBlur={() => setDescriptionFocused(false)}
-            placeholder={isDescriptionLabelActive ? '' : ''}
-            placeholderTextColor="transparent"
-            multiline={true}
-          />
-        </View>
-
-        {/* Progress Indicator */}
-        <View style={styles.progressIndicator}>
-          <View style={styles.progressDotCompleted}>
-            <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
+          <View style={styles.inputContainer1}>
+            <Text
+              style={[
+                styles.inputLabel,
+                isDescriptionLabelActive
+                  ? styles.inputLabelActive
+                  : styles.inputLabelInactive,
+              ]}>
+              Note (optional)
+            </Text>
+            <TextInput
+              style={styles.descriptionInput}
+              value={description}
+              onChangeText={setDescription}
+              onFocus={() => setDescriptionFocused(true)}
+              onBlur={() => setDescriptionFocused(false)}
+              placeholder={isDescriptionLabelActive ? '' : ''}
+              placeholderTextColor="transparent"
+              multiline={true}
+            />
           </View>
-          <View style={styles.progressLine} />
-          <View style={styles.progressDotActive}>
-            <View style={styles.progressDotActiveInner}>
-              <Text style={styles.progressDotTextActive}>2</Text>
+
+          {/* Progress Indicator */}
+          <View style={styles.progressIndicator}>
+            <View style={styles.progressDotCompleted}>
+              <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
+            </View>
+            <View style={styles.progressLine} />
+            <View style={styles.progressDotActive}>
+              <View style={styles.progressDotActiveInner}>
+                <Text style={styles.progressDotTextActive}>2</Text>
+              </View>
+            </View>
+            <View style={styles.progressLine} />
+            <View style={styles.progressDotInactive}>
+              <Text style={styles.progressDotTextInactive}>3</Text>
             </View>
           </View>
-          <View style={styles.progressLine} />
-          <View style={styles.progressDotInactive}>
-            <Text style={styles.progressDotTextInactive}>3</Text>
-          </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
 
-      {/* Custom Toast */}
-      <CustomToast
-        visible={toastVisible}
-        message={toastMessage}
-        type={toastType}
-        duration={3000}
-        onHide={hideToast}
-        position="bottom"
-        showIcon={true}
-      />
-    </View>
+        {/* Date Picker Modal */}
+        <DatePickerModal
+          visible={showStartDatePicker}
+          onClose={() => setShowStartDatePicker(false)}
+          onDateSelect={handleStartDateSelect}
+          initialDate={startDate}
+          title="Select Start Date"
+        />
+
+        {/* Custom Toast */}
+        <CustomToast
+          visible={toastVisible}
+          message={toastMessage}
+          type={toastType}
+          duration={3000}
+          onHide={hideToast}
+          position="bottom"
+          showIcon={true}
+        />
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -522,7 +610,7 @@ const styles = StyleSheet.create({
   inputLabelActive: {
     top: HP(-1.25),
     left: WP(2.7),
-    fontSize: FS(1.7),
+    fontSize: FS(1.5),
     color: '#666666',
     fontFamily: 'OpenSans-Bold',
   },
@@ -549,6 +637,68 @@ const styles = StyleSheet.create({
     marginTop: HP(0.8),
     lineHeight: HP(2.25),
     textAlign: 'center',
+  },
+  // Add Start Date styles
+  optionContainer: {
+    backgroundColor: colors.White,
+    borderRadius: WP(2.133),
+    padding: WP(2.133),
+    marginBottom: HP(0.9),
+    elevation: 3,
+    shadowColor: colors.Shadow,
+    shadowOffset: {
+      width: 0,
+      height: HP(0.25),
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: WP(2.133),
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    minHeight: HP(6.6),
+    justifyContent: 'center',
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: WP(1),
+    marginLeft: WP(-0.5),
+  },
+  optionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  optionRight: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  optionIcon: {
+    width: WP(4.8),
+    height: WP(4.8),
+    marginRight: WP(2),
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: FS(1.8),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#646464',
+    paddingVertical: HP(0.75),
+  },
+  dateContainer: {
+    backgroundColor: '#EFEFEF',
+    paddingHorizontal: WP(5),
+    paddingVertical: HP(1),
+    borderRadius: WP(1.5),
+    marginRight: WP(-1.5),
+  },
+  dateText: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#5F5F5F',
   },
   sectionContainer: {
     marginBottom: HP(2.5),
@@ -594,20 +744,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: HP(6),
+    minHeight: HP(6.5),
   },
   checklistNumber: {
     fontSize: FS(1.6),
     fontFamily: 'OpenSans-SemiBold',
     color: '#575656',
     marginRight: WP(2),
-    marginLeft: WP(2.3),
+    marginLeft: WP(1),
+    width: WP(6),
   },
   checklistText: {
     fontSize: FS(1.6),
     fontFamily: 'OpenSans-SemiBold',
     color: '#575656',
     flex: 1,
+    marginTop: HP(0.5),
   },
   deleteButton: {
     padding: WP(2),
@@ -631,6 +783,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: WP(1),
     paddingHorizontal: WP(1),
+    marginRight: WP(2),
   },
   editingContainer: {
     flex: 1,
@@ -711,8 +864,8 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#575656',
     textAlign: 'center',
-    width: WP(7),
-    height: HP(4),
+    width: WP(8),
+    height: HP(3.5),
     backgroundColor: 'transparent',
     marginRight: WP(3),
     paddingHorizontal: 0,
@@ -721,12 +874,13 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   customInputBottomLine: {
-    width: WP(6),
-    height: HP(0.125),
+    width: WP(7),
+    height: HP(0.15),
     backgroundColor: '#565656',
-    marginTop: HP(-0.8),
+    marginTop: HP(-0.5),
     marginRight: WP(2.5),
-    marginBottom: HP(1),
+    marginBottom: HP(0.5),
+    alignSelf: 'center',
   },
   itemsText: {
     fontSize: FS(1.6),

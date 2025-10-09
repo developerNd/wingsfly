@@ -9,18 +9,17 @@ import { useAuth } from '../../contexts/AuthContext';
 const TaskCard = () => {
     const navigation = useNavigation();
     const route = useRoute();
-    const { user } = useAuth();
+    const { getSelectedGender } = useAuth();
 
-    // Get selectedGender from multiple sources with fallback
+    // Use context as primary source, route params as fallback
     const selectedGender = 
         route.params?.selectedGender || 
-        user?.user_metadata?.gender || 
-        'Male';
+        getSelectedGender();
 
     console.log('=== TaskCard Debug ===');
     console.log('Route params:', route.params);
     console.log('Selected gender:', selectedGender);
-    console.log('User metadata gender:', user?.user_metadata?.gender);
+    console.log('Context gender:', getSelectedGender());
     
     const getTaskImages = () => {
         console.log('Getting task images for gender:', selectedGender);
