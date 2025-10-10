@@ -88,6 +88,17 @@ android {
         
         // Enable multidex if app becomes large (recommended for PDF libraries)
         multiDexEnabled true
+
+        // <<< Add buildConfigField here inside defaultConfig !!!
+        def localProperties = new Properties()
+        def localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.withInputStream { stream ->
+                localProperties.load(stream)
+            }
+        }
+        def apiKey = localProperties.getProperty("ELEVENLABS_API_KEY")
+        buildConfigField "String", "ELEVENLABS_API_KEY", "\"${apiKey}\""
     }
     
     // Add packaging options to handle potential library conflicts

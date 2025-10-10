@@ -2,9 +2,10 @@
 import Sound from 'react-native-sound';
 import RNFetchBlob from 'rn-fetch-blob';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ELEVENLABS_API_KEY } from '@env';
 
 const VOICE_ID = "V79Doapn9P53cEABwysz";
-const API_KEY = "sk_a8d17c3417ec69810deaa8e76e3e423321a59f3577769982";
+const API_KEY = ELEVENLABS_API_KEY;
 const ELEVENLABS_API_URL = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
 
 // Dynamic motivational quotes with placeholders (ONLY these quotes - no additional ones)

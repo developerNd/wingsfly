@@ -18,7 +18,7 @@ public class VoiceCommandTTSService {
     
     private static final String TAG = "VoiceCommandTTS";
     private static final String VOICE_ID = "V79Doapn9P53cEABwysz";
-    private static final String API_KEY = "sk_a8d17c3417ec69810deaa8e76e3e423321a59f3577769982";
+    private static final String API_KEY = BuildConfig.ELEVENLABS_API_KEY;
     private static final String ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech/" + VOICE_ID;
     
     private Context context;
