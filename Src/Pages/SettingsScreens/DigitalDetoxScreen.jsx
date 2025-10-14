@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, useCallback} from 'react';
 import {
   Text,
   View,
@@ -9,7 +9,11 @@ import {
   Alert,
   PanResponder,
   Animated,
+  AppState,
+  NativeEventEmitter,
+  NativeModules,
 } from 'react-native';
+import {useFocusEffect} from '@react-navigation/native';
 import Headers from '../../Components/Headers';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
@@ -17,37 +21,245 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import DigitalDetoxBridge from '../../services/DigitalDetox/DigitalDetoxBridge';
 import detoxMediaStorageService from '../../services/DigitalDetox/detoxMediaStorageService';
 
+// ✅ NEW: Get native module for event listening
+const { DigitalDetoxModule } = NativeModules;
+
 const DigitalDetoxScreen = ({navigation}) => {
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [hasMedia, setHasMedia] = useState(false);
   const [mediaType, setMediaType] = useState(null);
+  const [isDetoxActive, setIsDetoxActive] = useState(false);
   const sliderWidth = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
+  const statusCheckInterval = useRef(null);
+  const appState = useRef(AppState.currentState);
+  const isMounted = useRef(true);
+  const isCheckingStatus = useRef(false);
+  const lastCheckTime = useRef(0);
+  
+  // ✅ NEW: Add event subscription ref
+  const eventSubscription = useRef(null);
 
-  const MIN_DURATION = 5;
+  const MIN_DURATION = 1;
   const MAX_DURATION = 1440;
   const THUMB_SIZE = WP(12);
+  const CHECK_INTERVAL = 5000;
+  const MIN_CHECK_DELAY = 2000;
 
-  useEffect(() => {
-    checkMediaStatus();
+  const checkDetoxStatus = useCallback(async () => {
+    if (isCheckingStatus.current) {
+      console.log('⏭️ Skipping check - already in progress');
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastCheckTime.current < MIN_CHECK_DELAY) {
+      console.log('⏭️ Skipping check - too soon (only ' + (now - lastCheckTime.current) + 'ms since last check)');
+      return;
+    }
+
+    if (!isMounted.current) {
+      console.log('⏭️ Skipping check - component unmounted');
+      return;
+    }
+    
+    try {
+      isCheckingStatus.current = true;
+      lastCheckTime.current = now;
+      
+      console.log('========================================');
+      console.log('🔍 Checking detox status...');
+      
+      const active = await Promise.race([
+        DigitalDetoxBridge.isDetoxActive(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        )
+      ]);
+      
+      if (isMounted.current) {
+        console.log('📊 Detox status result:', active);
+        console.log('🔄 Current UI state (before update):', isDetoxActive);
+        setIsDetoxActive(active);
+        console.log('✅ Updated UI state to:', active);
+        console.log('========================================');
+      }
+    } catch (error) {
+      if (error.message === 'Timeout') {
+        console.error('⏱️ Detox status check timed out');
+      } else {
+        console.error('❌ Error checking detox status:', error);
+      }
+      if (isMounted.current) {
+        setIsDetoxActive(false);
+      }
+    } finally {
+      isCheckingStatus.current = false;
+    }
+  }, [isDetoxActive]);
+
+  const checkMediaStatus = useCallback(async () => {
+    if (!isMounted.current) return;
+    
+    try {
+      const [hasConfiguredMedia, type] = await Promise.race([
+        Promise.all([
+          detoxMediaStorageService.hasDetoxMedia(),
+          detoxMediaStorageService.getMediaType()
+        ]),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        )
+      ]);
+      
+      if (isMounted.current) {
+        setHasMedia(hasConfiguredMedia);
+        setMediaType(type);
+      }
+    } catch (error) {
+      if (error.message !== 'Timeout') {
+        console.error('❌ Error checking media status:', error);
+      }
+    }
   }, []);
 
-  const checkMediaStatus = async () => {
+  // ✅ NEW: Setup detox completion listener
+  const setupDetoxCompletionListener = useCallback(() => {
     try {
-      const hasConfiguredMedia = await detoxMediaStorageService.hasDetoxMedia();
-      const type = await detoxMediaStorageService.getMediaType();
-      setHasMedia(hasConfiguredMedia);
-      setMediaType(type);
+      console.log('📢 Setting up detox completion listener');
+      
+      // Create event emitter
+      const eventEmitter = new NativeEventEmitter(DigitalDetoxModule);
+      
+      // Listen for detox completion
+      eventSubscription.current = eventEmitter.addListener(
+        'DETOX_COMPLETED',
+        () => {
+          console.log('📢 DETOX_COMPLETED event received!');
+          if (isMounted.current) {
+            setIsDetoxActive(false);
+            // Small delay to ensure UI updates smoothly
+            setTimeout(() => {
+              if (isMounted.current) {
+                Alert.alert(
+                  'Detox Complete',
+                  'Your digital detox session has ended. Great job staying focused!'
+                );
+              }
+            }, 500);
+          }
+        }
+      );
+      
+      console.log('✅ Detox completion listener setup complete');
     } catch (error) {
-      console.error('Error checking media status:', error);
+      console.error('Error setting up detox completion listener:', error);
     }
-  };
+  }, []);
+
+  // ✅ UPDATED: Initial mount with event listener setup
+  useEffect(() => {
+    console.log('📱 DigitalDetoxScreen mounted');
+    isMounted.current = true;
+    
+    // Setup detox completion listener
+    setupDetoxCompletionListener();
+    
+    // Single initial check
+    checkMediaStatus();
+    checkDetoxStatus();
+
+    return () => {
+      console.log('📱 DigitalDetoxScreen unmounting');
+      isMounted.current = false;
+      
+      // ✅ NEW: Clean up event listener
+      if (eventSubscription.current) {
+        eventSubscription.current.remove();
+        eventSubscription.current = null;
+        console.log('✅ Event listener cleaned up');
+      }
+      
+      if (statusCheckInterval.current) {
+        clearInterval(statusCheckInterval.current);
+        statusCheckInterval.current = null;
+      }
+    };
+  }, [setupDetoxCompletionListener, checkMediaStatus, checkDetoxStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🎯 Screen focused - setting up interval check');
+      
+      if (statusCheckInterval.current) {
+        clearInterval(statusCheckInterval.current);
+        statusCheckInterval.current = null;
+      }
+
+      checkDetoxStatus();
+      checkMediaStatus();
+
+      statusCheckInterval.current = setInterval(() => {
+        if (isMounted.current) {
+          checkDetoxStatus();
+        }
+      }, CHECK_INTERVAL);
+
+      return () => {
+        console.log('👋 Screen blurred - cleaning up interval');
+        if (statusCheckInterval.current) {
+          clearInterval(statusCheckInterval.current);
+          statusCheckInterval.current = null;
+        }
+        isCheckingStatus.current = false;
+      };
+    }, [checkDetoxStatus, checkMediaStatus])
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        console.log('📱 App came to foreground - checking status');
+        if (isMounted.current) {
+          setTimeout(() => {
+            if (isMounted.current) {
+              checkDetoxStatus();
+            }
+          }, 1000);
+        }
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [checkDetoxStatus]);
 
   const handleStartDetox = async () => {
     try {
+      if (isDetoxActive) {
+        Alert.alert(
+          'Detox Already Active',
+          'A digital detox session is already running. Please wait for it to complete or use emergency exit (press volume buttons 5 times).',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       const success = await DigitalDetoxBridge.startDetoxLock(durationMinutes);
       if (success) {
-        console.log('Digital Detox lock started successfully');
+        console.log('✅ Digital Detox lock started successfully');
+        setIsDetoxActive(true);
+        
+        setTimeout(() => {
+          if (isMounted.current) {
+            checkDetoxStatus();
+          }
+        }, 2000);
       } else {
         Alert.alert(
           'Error',
@@ -97,6 +309,9 @@ const DigitalDetoxScreen = ({navigation}) => {
     const logValue = logMin + (logMax - logMin) * normalizedValue;
     const minutes = Math.round(Math.exp(logValue));
     
+    if (minutes < 10) {
+      return Math.max(1, Math.round(minutes));
+    }
     if (minutes < 60) {
       return Math.round(minutes / 5) * 5;
     }
@@ -112,12 +327,16 @@ const DigitalDetoxScreen = ({navigation}) => {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => !isDetoxActive,
+      onMoveShouldSetPanResponder: () => !isDetoxActive,
       onPanResponderGrant: () => {
-        pan.setOffset(pan._value);
+        if (!isDetoxActive) {
+          pan.setOffset(pan._value);
+        }
       },
       onPanResponderMove: (evt, gestureState) => {
+        if (isDetoxActive) return;
+        
         const maxPosition = sliderWidth.current - THUMB_SIZE;
         const newValue = Math.max(
           0, 
@@ -130,7 +349,9 @@ const DigitalDetoxScreen = ({navigation}) => {
         setDurationMinutes(minutes);
       },
       onPanResponderRelease: () => {
-        pan.flattenOffset();
+        if (!isDetoxActive) {
+          pan.flattenOffset();
+        }
       },
     })
   ).current;
@@ -159,32 +380,40 @@ const DigitalDetoxScreen = ({navigation}) => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
         
-        {/* Hero Section with Nature Theme */}
+        {isDetoxActive && (
+          <View style={styles.activeDetoxBanner}>
+            <Icon name="lock" size={WP(5)} color={colors.White} />
+            <Text style={styles.activeDetoxText}>
+              Detox session active - running in background
+            </Text>
+          </View>
+        )}
+
         <View style={styles.heroSection}>
           <View style={styles.heroBackground}>
             <Text style={styles.heroEmoji}>🌸</Text>
             <Text style={styles.heroEmoji}>🦋</Text>
             <Text style={styles.heroEmoji}>🌻</Text>
           
-          <Text style={styles.heroTitle}>Begin your detox</Text>
-        </View>
+            <Text style={styles.heroTitle}>Begin your detox</Text>
+          </View>
         </View>
 
-        {/* Duration Settings Card */}
-        <View style={styles.detoxCard}>
+        <View style={[styles.detoxCard, isDetoxActive && styles.detoxCardDisabled]}>
           <Text style={styles.cardTitle}>Your detox</Text>
           
-          {/* Duration Display */}
           <View style={styles.durationDisplay}>
-            <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
+            <Text style={[styles.durationValue, isDetoxActive && styles.textDisabled]}>
+              {formatDuration(durationMinutes)}
+            </Text>
           </View>
 
-          {/* End Time Display */}
           <View style={styles.endTimeDisplay}>
-            <Text style={styles.endTimeLabel}>Phoneless till {getEndTime()}</Text>
+            <Text style={[styles.endTimeLabel, isDetoxActive && styles.textDisabled]}>
+              Phoneless till {getEndTime()}
+            </Text>
           </View>
 
-          {/* Custom Slider Control */}
           <View 
             style={styles.sliderContainer}
             onLayout={handleSliderLayout}
@@ -193,7 +422,8 @@ const DigitalDetoxScreen = ({navigation}) => {
               <View 
                 style={[
                   styles.sliderFill,
-                  {width: `${currentPercentage}%`}
+                  {width: `${currentPercentage}%`},
+                  isDetoxActive && styles.sliderFillDisabled
                 ]} 
               />
             </View>
@@ -204,7 +434,8 @@ const DigitalDetoxScreen = ({navigation}) => {
                   styles.thumbIcon,
                   {
                     transform: [{translateX: pan}]
-                  }
+                  },
+                  isDetoxActive && styles.thumbIconDisabled
                 ]}
                 {...panResponder.panHandlers}
               >
@@ -213,52 +444,53 @@ const DigitalDetoxScreen = ({navigation}) => {
             </View>
           </View>
 
-          {/* Time Range Labels */}
           <View style={styles.rangeLabels}>
-            <Text style={styles.rangeLabel}>5 min</Text>
-            <Text style={styles.rangeLabel}>24 hours</Text>
+            <Text style={[styles.rangeLabel, isDetoxActive && styles.textDisabled]}>5 min</Text>
+            <Text style={[styles.rangeLabel, isDetoxActive && styles.textDisabled]}>24 hours</Text>
           </View>
 
-          {/* Status Indicator */}
           <View style={styles.statusContainer}>
-            <Icon name="apps" size={WP(5)} color="#999" />
-            <Text style={styles.statusText}>Apps: Disabled</Text>
+            <Icon name="apps" size={WP(5)} color={isDetoxActive ? "#ccc" : "#999"} />
+            <Text style={[styles.statusText, isDetoxActive && styles.textDisabled]}>
+              Apps: {isDetoxActive ? 'Will be disabled' : 'Disabled'}
+            </Text>
           </View>
 
-          {/* Media Settings Button */}
           <TouchableOpacity
-            style={styles.mediaSettingsButton}
+            style={[styles.mediaSettingsButton, isDetoxActive && styles.buttonDisabled]}
             onPress={() => {
+              if (isDetoxActive) {
+                Alert.alert(
+                  'Detox Active',
+                  'Cannot change media settings while detox is active'
+                );
+                return;
+              }
               navigation.navigate('DetoxMediaSettingsScreen');
-              // Refresh media status when coming back
-              const unsubscribe = navigation.addListener('focus', () => {
-                checkMediaStatus();
-              });
-              return unsubscribe;
             }}
-            activeOpacity={0.7}>
+            activeOpacity={isDetoxActive ? 1 : 0.7}
+            disabled={isDetoxActive}>
             <View style={styles.mediaSettingsContent}>
               <View style={styles.mediaSettingsLeft}>
                 <Icon 
                   name={hasMedia ? (mediaType === 'video' ? 'videocam' : 'music-note') : 'add-circle-outline'} 
                   size={WP(6)} 
-                  color={hasMedia ? colors.Primary : '#999'} 
+                  color={isDetoxActive ? '#ccc' : (hasMedia ? colors.Primary : '#999')} 
                 />
                 <View style={styles.mediaSettingsTextContainer}>
-                  <Text style={styles.mediaSettingsTitle}>
+                  <Text style={[styles.mediaSettingsTitle, isDetoxActive && styles.textDisabled]}>
                     {hasMedia ? `${mediaType === 'video' ? 'Video' : 'Audio'} configured` : 'Add Media'}
                   </Text>
-                  <Text style={styles.mediaSettingsSubtitle}>
+                  <Text style={[styles.mediaSettingsSubtitle, isDetoxActive && styles.textDisabled]}>
                     {hasMedia ? 'Tap to change or remove' : 'Play video/audio during detox'}
                   </Text>
                 </View>
               </View>
-              <Icon name="chevron-right" size={WP(6)} color="#999" />
+              <Icon name="chevron-right" size={WP(6)} color={isDetoxActive ? '#ccc' : '#999'} />
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* Meditation Image Section */}
         <View style={styles.meditationSection}>
           <View style={styles.meditationImagePlaceholder}>
             <Text style={styles.meditationEmoji}>🧘</Text>
@@ -267,18 +499,19 @@ const DigitalDetoxScreen = ({navigation}) => {
           </View>
         </View>
 
-        {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* Start Button */}
       <View style={styles.bottomButtonContainer}>
         <TouchableOpacity
-          style={styles.startButton}
+          style={[styles.startButton, isDetoxActive && styles.startButtonDisabled]}
           onPress={handleStartDetox}
-          activeOpacity={0.8}>
+          activeOpacity={isDetoxActive ? 1 : 0.8}
+          disabled={isDetoxActive}>
           <Icon name="power-settings-new" size={WP(6)} color={colors.White} />
-          <Text style={styles.startButtonText}>Start</Text>
+          <Text style={styles.startButtonText}>
+            {isDetoxActive ? 'Detox Active' : 'Start'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -299,6 +532,22 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: WP(4),
+  },
+  activeDetoxBanner: {
+    backgroundColor: '#FF6B6B',
+    borderRadius: WP(3),
+    padding: WP(4),
+    marginTop: HP(2),
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 2,
+  },
+  activeDetoxText: {
+    fontSize: FS(1.5),
+    fontFamily: 'OpenSans-SemiBold',
+    color: colors.White,
+    marginLeft: WP(2),
+    flex: 1,
   },
   heroSection: {
     marginTop: HP(2),
@@ -343,6 +592,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
   },
+  detoxCardDisabled: {
+    opacity: 0.6,
+  },
   cardTitle: {
     fontSize: FS(2.2),
     fontFamily: 'OpenSans-Bold',
@@ -357,6 +609,9 @@ const styles = StyleSheet.create({
     fontSize: FS(3),
     fontFamily: 'Roboto-Bold',
     color: '#363636',
+  },
+  textDisabled: {
+    color: '#999',
   },
   endTimeDisplay: {
     marginBottom: HP(3),
@@ -385,6 +640,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.Primary,
     borderRadius: HP(3),
   },
+  sliderFillDisabled: {
+    backgroundColor: '#ccc',
+  },
   thumbContainer: {
     position: 'absolute',
     width: '100%',
@@ -408,6 +666,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     marginTop: HP(1.5),
+  },
+  thumbIconDisabled: {
+    backgroundColor: '#ccc',
   },
   rangeLabels: {
     flexDirection: 'row',
@@ -438,6 +699,9 @@ const styles = StyleSheet.create({
     marginTop: HP(1),
     borderWidth: 1,
     borderColor: '#E0E0E0',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   mediaSettingsContent: {
     flexDirection: 'row',
@@ -511,6 +775,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 3,
+  },
+  startButtonDisabled: {
+    backgroundColor: '#ccc',
   },
   startButtonText: {
     fontSize: FS(1.8),

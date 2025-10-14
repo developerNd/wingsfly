@@ -625,6 +625,27 @@
     android:exported="false"
     android:foregroundServiceType="dataSync" />
 
+    <receiver
+    android:name=".ServiceRestartReceiver"
+    android:enabled="true"
+    android:exported="false"
+    android:directBootAware="true"
+    android:priority="1000">
+    
+    <!-- Boot and system events -->
+    <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+    </intent-filter>
+    
+    <!-- Service restart trigger -->
+    <intent-filter android:priority="1000">
+        <action android:name="com.wingsfly.RESTART_DETOX_SERVICE" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</receiver>
+
 <!-- Alarm Receiver for service persistence -->
 <receiver 
     android:name=".UsageAlarmReceiver"

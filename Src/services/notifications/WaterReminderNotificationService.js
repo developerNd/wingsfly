@@ -56,6 +56,7 @@ class WaterReminderNotificationService {
         badge: true,
         sound: true,
         announcement: true,
+        criticalAlert: true, // For iOS critical alerts
       });
 
       if (settings.authorizationStatus >= 1) {
@@ -72,23 +73,44 @@ class WaterReminderNotificationService {
   };
 
   /**
-   * Create notification channel with custom sound
+   * Create notification channel with custom sound and fallback
    */
   createNotificationChannel = async () => {
     try {
-      const channelId = await notifee.createChannel({
-        id: CHANNEL_ID,
-        name: 'Water Reminder',
-        description: 'Hourly water drinking reminders',
-        importance: AndroidImportance.HIGH,
-        sound: 'noti', // Reference to res/raw/noti.mp3
-        vibration: true,
-        badge: true,
-        lights: true,
-        lightColor: '#4A90E2',
-      });
-
-      console.log('[WATER REMINDER NOTIF] Channel created:', channelId);
+      // Try to create channel with custom sound first
+      let channelId;
+      try {
+        channelId = await notifee.createChannel({
+          id: CHANNEL_ID,
+          name: 'Water Reminder',
+          description: 'Hourly water drinking reminders',
+          importance: AndroidImportance.HIGH,
+          sound: 'noti', // Custom sound reference to res/raw/noti.mp3
+          vibration: true,
+          vibrationPattern: [300, 500, 300, 500], // Custom vibration pattern
+          badge: true,
+          lights: true,
+          lightColor: '#4A90E2',
+          bypassDnd: false, // Don't bypass Do Not Disturb
+        });
+        console.log('[WATER REMINDER NOTIF] Channel created with custom sound:', channelId);
+      } catch (soundError) {
+        console.warn('[WATER REMINDER NOTIF] Custom sound failed, using default:', soundError);
+        // Fallback: Create channel with default sound
+        channelId = await notifee.createChannel({
+          id: CHANNEL_ID,
+          name: 'Water Reminder',
+          description: 'Hourly water drinking reminders',
+          importance: AndroidImportance.HIGH,
+          sound: 'default', // Use system default sound
+          vibration: true,
+          vibrationPattern: [300, 500, 300, 500],
+          badge: true,
+          lights: true,
+          lightColor: '#4A90E2',
+        });
+        console.log('[WATER REMINDER NOTIF] Channel created with default sound:', channelId);
+      }
     } catch (error) {
       console.error('[WATER REMINDER NOTIF] Error creating channel:', error);
     }
@@ -112,21 +134,31 @@ class WaterReminderNotificationService {
   };
 
   /**
-   * Get personalized greeting
+   * Get current hours (uses device's local timezone)
+   */
+  getISTHours = () => {
+    const now = new Date();
+    return now.getHours(); // Uses device's local timezone
+  };
+
+  /**
+   * Get personalized greeting based on current time
    */
   getGreeting = userName => {
     if (!userName) return '';
 
     const displayName = this.getDisplayName(userName);
-    const hour = new Date().getHours();
+    const hours = this.getISTHours();
 
     let greeting = '';
-    if (hour < 12) {
+    if (hours >= 5 && hours < 12) {
       greeting = 'Good morning';
-    } else if (hour < 17) {
+    } else if (hours >= 12 && hours < 17) {
       greeting = 'Good afternoon';
-    } else {
+    } else if (hours >= 17 && hours < 21) {
       greeting = 'Good evening';
+    } else {
+      greeting = 'Good night';
     }
 
     return `${greeting}, ${displayName}!`;
@@ -151,6 +183,28 @@ class WaterReminderNotificationService {
   };
 
   /**
+   * Get notification sound configuration with fallback
+   */
+  getNotificationSound = () => {
+    if (Platform.OS === 'android') {
+      // Android: Try custom sound, fallback to default
+      return {
+        sound: 'noti', // Will fallback to 'default' if custom sound not found
+      };
+    } else if (Platform.OS === 'ios') {
+      // iOS: Multiple sound format support
+      return {
+        sound: 'noti.wav', // Primary format
+        criticalSound: {
+          name: 'noti.wav',
+          volume: 1.0,
+        },
+      };
+    }
+    return {};
+  };
+
+  /**
    * Schedule hourly reminders from 7 AM to 7 PM
    */
   scheduleHourlyReminders = async (userName = null) => {
@@ -160,7 +214,6 @@ class WaterReminderNotificationService {
       }
 
       // Cancel all existing water reminder notifications
-      // Cancel all existing water reminder notifications (without disabling)
       for (let hour = 7; hour <= 19; hour++) {
         const notificationId = `${NOTIFICATION_ID}_${hour}`;
         await notifee.cancelNotification(notificationId);
@@ -193,41 +246,81 @@ class WaterReminderNotificationService {
           repeatFrequency: RepeatFrequency.DAILY,
         };
 
-        await notifee.createTriggerNotification(
-          {
-            id: notificationId,
-            title: '💧 Water Reminder',
-            body: body,
+        // Build notification config with sound fallback
+        const notificationConfig = {
+          id: notificationId,
+          title: '💧 Water Reminder',
+          body: body,
+          android: {
+            channelId: CHANNEL_ID,
+            importance: AndroidImportance.HIGH,
+            sound: 'noti', // Try custom sound first
+            pressAction: {
+              id: 'default',
+            },
+            style: {
+              type: AndroidStyle.BIGTEXT,
+              text: body,
+            },
+            color: '#4A90E2',
+            smallIcon: 'ic_launcher',
+            largeIcon: 'ic_launcher',
+            vibrationPattern: [300, 500, 300, 500],
+            lightUpScreen: true,
+            autoCancel: true,
+            showTimestamp: true,
+            category: 'reminder',
+          },
+          ios: {
+            sound: 'noti.wav', // Custom sound for iOS
+            criticalSound: {
+              name: 'noti.wav',
+              volume: 1.0,
+            },
+            foregroundPresentationOptions: {
+              alert: true,
+              badge: true,
+              sound: true,
+              banner: true,
+              list: true,
+            },
+            categoryId: 'water_reminder',
+            attachments: [],
+          },
+        };
+
+        try {
+          await notifee.createTriggerNotification(notificationConfig, trigger);
+          scheduledIds.push(notificationId);
+          console.log(
+            `[WATER REMINDER NOTIF] Scheduled for ${hour}:00 - ID: ${notificationId}`,
+          );
+        } catch (notifError) {
+          console.warn(
+            `[WATER REMINDER NOTIF] Error with custom sound, retrying with default for hour ${hour}:`,
+            notifError,
+          );
+          
+          // Fallback: Try with default sound
+          const fallbackConfig = {
+            ...notificationConfig,
             android: {
-              channelId: CHANNEL_ID,
-              importance: AndroidImportance.HIGH,
-              sound: 'noti',
-              pressAction: {
-                id: 'default',
-              },
-              style: {
-                type: AndroidStyle.BIGTEXT,
-                text: body,
-              },
-              color: '#4A90E2',
-              smallIcon: 'ic_launcher',
+              ...notificationConfig.android,
+              sound: 'default',
             },
             ios: {
-              sound: 'noti.wav',
-              foregroundPresentationOptions: {
-                alert: true,
-                badge: true,
-                sound: true,
-              },
+              ...notificationConfig.ios,
+              sound: 'default',
+              criticalSound: undefined,
             },
-          },
-          trigger,
-        );
-
-        scheduledIds.push(notificationId);
-        console.log(
-          `[WATER REMINDER NOTIF] Scheduled for ${hour}:00 - ID: ${notificationId}`,
-        );
+          };
+          
+          await notifee.createTriggerNotification(fallbackConfig, trigger);
+          scheduledIds.push(notificationId);
+          console.log(
+            `[WATER REMINDER NOTIF] Scheduled with default sound for ${hour}:00`,
+          );
+        }
       }
 
       this.scheduledNotifications = scheduledIds;
@@ -354,7 +447,7 @@ class WaterReminderNotificationService {
   };
 
   /**
-   * Test notification (shows immediately)
+   * Test notification (shows immediately) with sound fallback
    */
   testNotification = async (userName = null) => {
     try {
@@ -366,13 +459,13 @@ class WaterReminderNotificationService {
       const greeting = userName ? this.getGreeting(userName) : '';
       const body = greeting ? `${greeting} ${message}` : message;
 
-      await notifee.displayNotification({
+      const notificationConfig = {
         title: '💧 Water Reminder (Test)',
         body: body,
         android: {
           channelId: CHANNEL_ID,
           importance: AndroidImportance.HIGH,
-          sound: 'noti',
+          sound: 'noti', // Try custom sound
           pressAction: {
             id: 'default',
           },
@@ -382,18 +475,51 @@ class WaterReminderNotificationService {
           },
           color: '#4A90E2',
           smallIcon: 'ic_launcher',
+          largeIcon: 'ic_launcher',
+          vibrationPattern: [300, 500, 300, 500],
+          lightUpScreen: true,
+          showTimestamp: true,
         },
         ios: {
           sound: 'noti.wav',
+          criticalSound: {
+            name: 'noti.wav',
+            volume: 1.0,
+          },
           foregroundPresentationOptions: {
             alert: true,
             badge: true,
             sound: true,
+            banner: true,
+            list: true,
           },
         },
-      });
+      };
 
-      console.log('[WATER REMINDER NOTIF] Test notification displayed');
+      try {
+        await notifee.displayNotification(notificationConfig);
+        console.log('[WATER REMINDER NOTIF] Test notification displayed with custom sound');
+      } catch (soundError) {
+        console.warn('[WATER REMINDER NOTIF] Custom sound failed, using default:', soundError);
+        
+        // Fallback with default sound
+        const fallbackConfig = {
+          ...notificationConfig,
+          android: {
+            ...notificationConfig.android,
+            sound: 'default',
+          },
+          ios: {
+            ...notificationConfig.ios,
+            sound: 'default',
+            criticalSound: undefined,
+          },
+        };
+        
+        await notifee.displayNotification(fallbackConfig);
+        console.log('[WATER REMINDER NOTIF] Test notification displayed with default sound');
+      }
+
       return true;
     } catch (error) {
       console.error(

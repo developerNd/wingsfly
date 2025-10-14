@@ -1,58 +1,81 @@
 package com.wingsfly
 
-import android.Manifest
+import android.app.ActivityManager
 import android.app.AppOpsManager
-import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.content.IntentFilter
+import android.content.ServiceConnection
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import android.widget.Toast
-import android.app.ActivityManager
-import android.content.ComponentName
-import android.content.ServiceConnection
-import android.os.IBinder
-import android.os.Handler
-import android.os.Looper
-import kotlinx.coroutines.*
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
-import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableMap
+import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
+import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ReactActivity() {
 
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val PREFS_NAME = "DetoxPrefs"
+        private const val KEY_DETOX_ACTIVE = "detox_active"
+        private const val KEY_DETOX_END_TIME = "detox_end_time"
+
+        private const val KEY_APP_UNLOCKED_UNTIL = "app_unlocked_until"
+        
+        // ✅ NEW: Track if MainActivity is properly initialized
+        var isMainActivityVisible = false
+    }
+
     init {
-        Log.e("MainActivity", "===========================================")
-        Log.e("MainActivity", "MAINACTIVITY CONSTRUCTOR - UPDATED VERSION")
-        Log.e("MainActivity", "===========================================")
+        Log.e(TAG, "===========================================")
+        Log.e(TAG, "MAINACTIVITY CONSTRUCTOR - FIXED VERSION")
+        Log.e(TAG, "===========================================")
     }
     
-    private val TAG = "MainActivity"
     private val USAGE_ACCESS_REQUEST_CODE = 1001
     private val OVERLAY_PERMISSION_REQUEST_CODE = 1002
-    private val REQUEST_CODE_DEVICE_CREDENTIALS = 9002
     
     private var appLockService: AppLockService? = null
     private var serviceBound = false
     
-    // Store pending intent data
     private var pendingIntentData: Intent? = null
     private var hasProcessedIntent = false
     
-    // Flag to track if we're waiting for password authentication
-    private var waitingForPasswordAuth = false
-    private var authenticationAttempted = false
-    private var needsAuthentication = false
+    private lateinit var prefs: SharedPreferences
+    private var isDetoxUnlocked = false
+    
+    // ✅ FIXED: Better state tracking
+    private var isRelocking = false
+    private var hasScheduledRelock = false
+    private var isActivityInitialized = false
+    private val relockHandler = Handler(Looper.getMainLooper())
+    
+    private var userInteractionTime = 0L
+    private var isUserInteracting = false
+    
+    private val closeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            Log.d(TAG, "📪 Received close broadcast - finishing MainActivity")
+            finish()
+        }
+    }
     
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -75,38 +98,70 @@ class MainActivity : ReactActivity() {
         DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    super.onCreate(savedInstanceState)
 
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "MainActivity onCreate")
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "Intent: $intent")
-        Log.d(TAG, "Intent action: ${intent?.action}")
-        Log.d(TAG, "from_detox_end: ${intent?.getBooleanExtra("from_detox_end", false)}")
-        Log.d(TAG, "========================================")
-        
-        // Check if coming from detox end
-        if (intent?.getBooleanExtra("from_detox_end", false) == true) {
-            Log.d(TAG, "🔐 Coming from detox end - will show password in onResume")
-            // Just mark that we need authentication, don't launch yet
-            needsAuthentication = true
-            waitingForPasswordAuth = false
-            authenticationAttempted = false
-        } else {
-            Log.d(TAG, "Normal flow - no authentication needed")
-            needsAuthentication = false
-            
-            // Normal flow
-            ensureServiceIsRunning()
-            
-            // Store the intent for later processing
-            if (shouldProcessIntent(intent)) {
-                Log.d(TAG, "Storing intent for later processing")
-                pendingIntentData = intent
-                hasProcessedIntent = false
-            }
-        }
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "MainActivity onCreate - FIXED VERSION")
+    Log.d(TAG, "========================================")
+    
+    prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    
+    val closeFilter = IntentFilter("com.wingsfly.CLOSE_MAIN_ACTIVITY")
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        registerReceiver(closeReceiver, closeFilter, Context.RECEIVER_NOT_EXPORTED)
+    } else {
+        registerReceiver(closeReceiver, closeFilter)
     }
+    
+    val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+    val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+    val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
+    val detoxUnlockedExtra = intent?.getBooleanExtra("detox_unlocked", false) ?: false
+    
+    // ✅ CRITICAL: Check persistent unlock state
+    val unlockedUntil = prefs.getLong(KEY_APP_UNLOCKED_UNTIL, 0)
+    val isPersisentlyUnlocked = unlockedUntil > System.currentTimeMillis()
+    
+    Log.d(TAG, "🔍 Detox Status on Create:")
+    Log.d(TAG, "  - Detox active (prefs): $detoxActive")
+    Log.d(TAG, "  - Has time remaining: $hasTimeRemaining")
+    Log.d(TAG, "  - Intent unlock flag: $detoxUnlockedExtra")
+    Log.d(TAG, "  - Lock activity unlock flag: ${DigitalDetoxLockActivity.isAppUnlocked}")
+    Log.d(TAG, "  - Persistent unlock until: $unlockedUntil")
+    Log.d(TAG, "  - Is persistently unlocked: $isPersisentlyUnlocked")
+    
+    if (detoxActive && hasTimeRemaining) {
+        // ✅ FIX: Check persistent unlock state OR intent flags
+        if (!detoxUnlockedExtra && !DigitalDetoxLockActivity.isAppUnlocked && !isPersisentlyUnlocked) {
+            Log.w(TAG, "🚨 MainActivity opened during detox WITHOUT unlock - triggering relock")
+            hasScheduledRelock = true
+            relockHandler.postDelayed({
+                directRelockToDetoxActivity()
+                finish()
+            }, 100)
+            return
+        } else {
+            Log.d(TAG, "✅ App unlocked - allowing access")
+            isDetoxUnlocked = true
+            DigitalDetoxLockActivity.isAppUnlocked = true
+            DigitalDetoxLockActivity.isUnlockInProgress = false
+            DigitalDetoxLockActivity.isHiddenForAppUnlock = true
+            userInteractionTime = System.currentTimeMillis()
+        }
+    } else {
+        Log.d(TAG, "✅ No active detox - normal app flow")
+    }
+    
+    isActivityInitialized = true
+    
+    ensureServiceIsRunning()
+    
+    if (shouldProcessIntent(intent)) {
+        Log.d(TAG, "Storing intent for later processing")
+        pendingIntentData = intent
+        hasProcessedIntent = false
+    }
+}
     
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
@@ -114,75 +169,346 @@ class MainActivity : ReactActivity() {
         
         Log.d(TAG, "========================================")
         Log.d(TAG, "MainActivity onNewIntent")
-        Log.d(TAG, "from_detox_end: ${intent?.getBooleanExtra("from_detox_end", false)}")
         Log.d(TAG, "========================================")
         
-        // Check if coming from detox end
-        if (intent?.getBooleanExtra("from_detox_end", false) == true && !authenticationAttempted) {
-            Log.d(TAG, "🔐 Coming from detox end - will show password in onResume")
-            needsAuthentication = true
-            waitingForPasswordAuth = false
-            authenticationAttempted = false
-        } else {
-            // Store the intent for later processing
-            if (shouldProcessIntent(intent)) {
-                Log.d(TAG, "Storing new intent for processing")
-                pendingIntentData = intent
-                hasProcessedIntent = false
+        val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+        val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+        val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
+        
+        if (detoxActive && hasTimeRemaining) {
+            val newUnlockStatus = intent?.getBooleanExtra("detox_unlocked", false) ?: false
+            
+            Log.d(TAG, "📱 New intent during active detox - unlock: $newUnlockStatus")
+            
+            if (newUnlockStatus) {
+                isDetoxUnlocked = true
+                DigitalDetoxLockActivity.isAppUnlocked = true
+                DigitalDetoxLockActivity.isUnlockInProgress = false  // ✅ CLEAR unlock flag
+                userInteractionTime = System.currentTimeMillis()
+                hasScheduledRelock = false
+                relockHandler.removeCallbacksAndMessages(null)
+            } else if (!hasScheduledRelock) {
+                Log.w(TAG, "🚨 New intent without unlock - relock")
+                hasScheduledRelock = true
+                directRelockToDetoxActivity()
+                finish()
+                return
             }
+        }
+        
+        if (shouldProcessIntent(intent)) {
+            pendingIntentData = intent
+            hasProcessedIntent = false
         }
     }
     
-    private fun handleDetoxEndWithPassword() {
+   override fun onResume() {
+    super.onResume()
+    isUserInteracting = true
+    userInteractionTime = System.currentTimeMillis()
+    
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "MainActivity onResume")
+    Log.d(TAG, "Initialized: $isActivityInitialized")
+    Log.d(TAG, "Detox unlocked: $isDetoxUnlocked")
+    Log.d(TAG, "========================================")
+    
+    val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+    val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+    val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
+    
+    // ✅ CRITICAL: Check persistent unlock state
+    val unlockedUntil = prefs.getLong(KEY_APP_UNLOCKED_UNTIL, 0)
+    val isPersisentlyUnlocked = unlockedUntil > System.currentTimeMillis()
+    
+    Log.d(TAG, "   Persistent unlock until: $unlockedUntil")
+    Log.d(TAG, "   Is persistently unlocked: $isPersisentlyUnlocked")
+    
+    if (detoxActive && hasTimeRemaining) {
+        if (!isDetoxUnlocked && !hasScheduledRelock && !isPersisentlyUnlocked) {
+            Log.w(TAG, "🚨 Resumed during active detox WITHOUT unlock - relock")
+            hasScheduledRelock = true
+            directRelockToDetoxActivity()
+            finish()
+            return
+        } else if (isDetoxUnlocked || isPersisentlyUnlocked) {
+            Log.d(TAG, "✅ Resumed with valid unlock - DISABLING LOCK MONITORING")
+            
+            // Update unlock state
+            isDetoxUnlocked = true
+            
+            hasScheduledRelock = false
+            relockHandler.removeCallbacksAndMessages(null)
+            
+            DigitalDetoxLockActivity.isAppUnlocked = true
+            DigitalDetoxLockActivity.isHiddenForAppUnlock = true
+            
+            window.decorView.post {
+                window.decorView.visibility = android.view.View.VISIBLE
+                window.decorView.requestFocus()
+                window.decorView.bringToFront()
+                isMainActivityVisible = true
+                Log.d(TAG, "📱 MainActivity UI forced visible - monitoring disabled")
+            }
+        }
+    } else {
+        isMainActivityVisible = true
+    }
+    
+    ensureServiceIsRunning()
+    
+    if (!serviceBound) {
+        bindToService()
+    }
+    
+    if (shouldProcessIntent(intent) && !hasProcessedIntent) {
+        pendingIntentData = intent
+    }
+    
+    processPendingIntent()
+}
+    
+    override fun onPause() {
+        super.onPause()
+        isUserInteracting = false
+        
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "MainActivity onPause")
+        Log.d(TAG, "Is relocking: $isRelocking | Has scheduled: $hasScheduledRelock")
+        Log.d(TAG, "========================================")
+        
+        // ✅ FIX: Don't relock if already in progress
+        if (isRelocking || hasScheduledRelock) {
+            Log.d(TAG, "⏭️ Skip relock - already in progress")
+            return
+        }
+        
+        val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+        val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+        val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
+        val timeSinceInteraction = System.currentTimeMillis() - userInteractionTime
+        
+        // ✅ FIX: Only relock if user was actually using app for more than 2 seconds
+        if (detoxActive && hasTimeRemaining && isDetoxUnlocked && timeSinceInteraction > 2000) {
+            Log.d(TAG, "🚨 User leaving - scheduling relock")
+            scheduleRelockIfNeeded()
+        }
+    }
+    
+    override fun onStop() {
+        super.onStop()
+        
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "MainActivity onStop")
+        Log.d(TAG, "========================================")
+        
+        if (isRelocking || hasScheduledRelock) {
+            Log.d(TAG, "⏭️ Skip relock from onStop")
+            return
+        }
+        
+        val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+        val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+        val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
+        val timeSinceInteraction = System.currentTimeMillis() - userInteractionTime
+        
+        if (detoxActive && hasTimeRemaining && isDetoxUnlocked && timeSinceInteraction > 2000) {
+            Log.d(TAG, "⚠️ User left app during detox")
+            scheduleRelockIfNeeded()
+        }
+    }
+    
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "MainActivity onUserLeaveHint")
+        Log.d(TAG, "========================================")
+        
+        if (isRelocking || hasScheduledRelock) {
+            Log.d(TAG, "⏭️ Skip relock from userLeaveHint")
+            return
+        }
+        
+        val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+        val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+        val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
+        
+        if (detoxActive && hasTimeRemaining && isDetoxUnlocked) {
+            Log.d(TAG, "🚨 User leaving app during detox")
+            scheduleRelockIfNeeded()
+        }
+    }
+    
+    private fun scheduleRelockIfNeeded() {
+        if (hasScheduledRelock || isRelocking) {
+            Log.d(TAG, "⏭️ Relock already scheduled")
+            return
+        }
+        
+        hasScheduledRelock = true
+        
+        relockHandler.postDelayed({
+            if (!isFinishing && !isDestroyed) {
+                directRelockToDetoxActivity()
+            }
+        }, 500)
+    }
+    
+    private fun directRelockToDetoxActivity() {
+    if (isRelocking) {
+        Log.d(TAG, "⏭️ Already relocking")
+        return
+    }
+    
+    try {
+        isRelocking = true
+        
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "⚡ DIRECT RELOCK TO DETOX ACTIVITY")
+        Log.d(TAG, "========================================")
+        
+        // ✅ CRITICAL FIX: Set relock flag BEFORE clearing unlock state
+        prefs.edit().apply {
+            putBoolean("is_relocking", true)
+            putLong("relock_started_at", System.currentTimeMillis())
+        }.commit()
+        
+        Thread.sleep(50)
+        
+        // Clear unlock state
+        prefs.edit().remove(KEY_APP_UNLOCKED_UNTIL).commit()
+        
+        isDetoxUnlocked = false
+        DigitalDetoxLockActivity.isAppUnlocked = false
+        DigitalDetoxLockActivity.isUnlockInProgress = false
+        DigitalDetoxLockActivity.isHiddenForAppUnlock = false
+        isMainActivityVisible = false
+        
+        val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+        val remainingMillis = detoxEndTime - System.currentTimeMillis()
+        val remainingMinutes = (remainingMillis / 60000).toInt().coerceAtLeast(1)
+        
+        Log.d(TAG, "Remaining: ${remainingMillis}ms")
+        
+        // ✅ FIX: Don't kill the service - ensure it's running
+        ensureDetoxServiceRunning()
+        
+        // ✅ FIX: Send broadcast to pause monitoring during transition
+        val pauseIntent = Intent("com.wingsfly.PAUSE_MONITORING")
+        sendBroadcast(pauseIntent)
+        
+        // ✅ CRITICAL FIX: Use moveTaskToBack instead of finish()
+        // This minimizes the app WITHOUT killing it
+        relockHandler.postDelayed({
+            try {
+                // Start lock activity WITHOUT killing MainActivity
+                val intent = Intent(this, DigitalDetoxLockActivity::class.java)
+                intent.putExtra("duration_minutes", remainingMinutes)
+                intent.putExtra("from_relock", true)
+                
+                // ✅ CRITICAL: Use NEW_TASK + SINGLE_TOP (no CLEAR_TOP/CLEAR_TASK!)
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
+                    // REMOVED: FLAG_ACTIVITY_CLEAR_TOP - this kills the app!
+                    // REMOVED: FLAG_ACTIVITY_REORDER_TO_FRONT - can cause issues
+                )
+                
+                startActivity(intent)
+                
+                // Wait for lock screen to appear
+                relockHandler.postDelayed({
+                    // Send relock broadcast to show lock screen
+                    val relockIntent = Intent("com.wingsfly.RELOCK_DETOX")
+                    sendBroadcast(relockIntent)
+                    
+                    // ✅ NEW: Move MainActivity to background instead of finish()
+                    relockHandler.postDelayed({
+                        // Move task to back WITHOUT killing it
+                        moveTaskToBack(true)
+                        
+                        // Clear relock flags after background
+                        prefs.edit().apply {
+                            remove("is_relocking")
+                            remove("relock_started_at")
+                        }.commit()
+                        
+                        // Resume monitoring
+                        val resumeIntent = Intent("com.wingsfly.RESUME_MONITORING")
+                        sendBroadcast(resumeIntent)
+                        
+                        isRelocking = false
+                        hasScheduledRelock = false
+                        
+                        Log.d(TAG, "✅ Relock complete - MainActivity in background (NOT killed)")
+                    }, 500)
+                }, 300)
+                
+                Log.d(TAG, "✅ Direct relock initiated")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error starting lock: ${e.message}")
+                prefs.edit().apply {
+                    remove("is_relocking")
+                    remove("relock_started_at")
+                }.commit()
+                isRelocking = false
+                hasScheduledRelock = false
+            }
+        }, 200)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Error in direct relock: ${e.message}")
+        prefs.edit().apply {
+            remove("is_relocking")
+            remove("relock_started_at")
+        }.commit()
+        isRelocking = false
+        hasScheduledRelock = false
+    }
+}
+    
+    private fun ensureDetoxServiceRunning() {
         try {
-            // Prevent multiple authentication attempts
-            if (authenticationAttempted) {
-                Log.d(TAG, "⚠️ Authentication already attempted, skipping")
-                return
-            }
+            val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+            val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+            val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
             
-            authenticationAttempted = true
-            
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                // Check if device has a secure lock screen
-                if (keyguardManager.isKeyguardSecure) {
-                    Log.d(TAG, "📱 Device has secure lock - showing password screen")
+            if (detoxActive && hasTimeRemaining) {
+                if (!isDetoxServiceRunning()) {
+                    Log.d(TAG, "🔄 Restarting DetoxService")
                     
-                    // Mark that we're waiting for password
-                    waitingForPasswordAuth = true
+                    val serviceIntent = Intent(this, DigitalDetoxService::class.java)
+                    val remainingMinutes = ((detoxEndTime - System.currentTimeMillis()) / 60000).toInt()
+                    serviceIntent.putExtra("duration_minutes", remainingMinutes)
                     
-                    // Create intent to show device credentials (PASSWORD ONLY)
-                    val authIntent = keyguardManager.createConfirmDeviceCredentialIntent(
-                        "Authentication Required",
-                        "Enter your device password to access the app"
-                    )
-                    
-                    if (authIntent != null) {
-                        try {
-                            startActivityForResult(authIntent, REQUEST_CODE_DEVICE_CREDENTIALS)
-                            Log.d(TAG, "✅ Password screen launched")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error launching password screen: ${e.message}", e)
-                            handleAuthenticationFailure()
-                        }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(serviceIntent)
                     } else {
-                        Log.w(TAG, "⚠️ Could not create password screen intent")
-                        handleAuthenticationFailure()
+                        startService(serviceIntent)
                     }
-                } else {
-                    Log.w(TAG, "⚠️ Device has no secure lock - continuing normally")
-                    continueAfterPasswordAuth()
                 }
-            } else {
-                Log.w(TAG, "⚠️ Android version < Lollipop - continuing normally")
-                continueAfterPasswordAuth()
             }
-            
         } catch (e: Exception) {
-            Log.e(TAG, "Error showing password screen: ${e.message}", e)
-            handleAuthenticationFailure()
+            Log.e(TAG, "Error ensuring detox service: ${e.message}")
+        }
+    }
+    
+    private fun isDetoxServiceRunning(): Boolean {
+        try {
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val runningServices = activityManager.getRunningServices(Integer.MAX_VALUE)
+            
+            for (serviceInfo in runningServices) {
+                if (DigitalDetoxService::class.java.name == serviceInfo.service.className) {
+                    return true
+                }
+            }
+            return false
+        } catch (e: Exception) {
+            return false
         }
     }
     
@@ -190,72 +516,6 @@ class MainActivity : ReactActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         
         when (requestCode) {
-            REQUEST_CODE_DEVICE_CREDENTIALS -> {
-                Log.d(TAG, "========================================")
-                Log.d(TAG, "🔐 PASSWORD AUTHENTICATION RESULT")
-                Log.d(TAG, "Result code: $resultCode")
-                Log.d(TAG, "RESULT_OK = ${RESULT_OK}")
-                Log.d(TAG, "RESULT_CANCELED = ${RESULT_CANCELED}")
-                Log.d(TAG, "========================================")
-                
-                // Clear flags immediately
-                waitingForPasswordAuth = false
-                needsAuthentication = false
-                
-                // Immediately finish the authentication activity to close it
-                try {
-                    finishActivity(REQUEST_CODE_DEVICE_CREDENTIALS)
-                    Log.d(TAG, "🔓 Authentication activity finish requested")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error finishing auth activity: ${e.message}", e)
-                }
-                
-                when (resultCode) {
-                    RESULT_OK -> {
-                        // Password correct - continue to app
-                        Log.d(TAG, "✅ Authentication successful")
-                        
-                        // Dismiss any lingering authentication screens
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            dismissAuthenticationScreen()
-                            Toast.makeText(this, "Authentication successful", Toast.LENGTH_SHORT).show()
-                        }, 100)
-                        
-                        continueAfterPasswordAuth()
-                    }
-                    
-                    RESULT_CANCELED -> {
-                        // User cancelled - continue normally but log it
-                        Log.d(TAG, "⚠️ Authentication cancelled by user")
-                        
-                        // Dismiss authentication screen
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            dismissAuthenticationScreen()
-                            Toast.makeText(this, "Authentication cancelled", Toast.LENGTH_SHORT).show()
-                        }, 100)
-                        
-                        // Reset flags
-                        authenticationAttempted = false
-                        continueAfterPasswordAuth()
-                    }
-                    
-                    else -> {
-                        // Authentication failed - continue normally but log it
-                        Log.d(TAG, "⚠️ Authentication failed (code: $resultCode)")
-                        
-                        // Dismiss authentication screen
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            dismissAuthenticationScreen()
-                            Toast.makeText(this, "Authentication failed", Toast.LENGTH_SHORT).show()
-                        }, 100)
-                        
-                        // Reset flags
-                        authenticationAttempted = false
-                        continueAfterPasswordAuth()
-                    }
-                }
-            }
-            
             USAGE_ACCESS_REQUEST_CODE -> {
                 if (hasUsageAccessPermission()) {
                     Log.d(TAG, "Usage access permission granted")
@@ -288,169 +548,6 @@ class MainActivity : ReactActivity() {
         }
     }
     
-    private fun dismissAuthenticationScreen() {
-        try {
-            Log.d(TAG, "🔓 Attempting to dismiss authentication screen")
-            
-            // Method 1: Bring our activity to front
-            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            activityManager.moveTaskToFront(taskId, 0)
-            
-            // Method 2: Request focus
-            window.decorView.post {
-                window.decorView.requestFocus()
-                window.decorView.invalidate()
-            }
-            
-            // Method 3: For Android O and above, dismiss keyguard
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-                keyguardManager.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-                    override fun onDismissSucceeded() {
-                        Log.d(TAG, "✅ Keyguard dismissed successfully")
-                        // Ensure our activity is visible
-                        runOnUiThread {
-                            window.decorView.visibility = android.view.View.VISIBLE
-                            window.decorView.bringToFront()
-                            window.decorView.requestFocus()
-                        }
-                    }
-                    
-                    override fun onDismissError() {
-                        Log.e(TAG, "❌ Keyguard dismiss error")
-                    }
-                    
-                    override fun onDismissCancelled() {
-                        Log.d(TAG, "⚠️ Keyguard dismiss cancelled")
-                    }
-                })
-            }
-            
-            // Method 4: Clear any overlay flags
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
-                    window.decorView.visibility = android.view.View.VISIBLE
-                    window.decorView.bringToFront()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error in delayed dismiss: ${e.message}", e)
-                }
-            }, 200)
-            
-            Log.d(TAG, "✅ Authentication screen dismiss attempted")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error dismissing authentication screen: ${e.message}", e)
-        }
-    }
-    
-    private fun continueAfterPasswordAuth() {
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "✅ CONTINUING AFTER PASSWORD AUTH")
-        Log.d(TAG, "========================================")
-        
-        // Clear all authentication flags
-        needsAuthentication = false
-        waitingForPasswordAuth = false
-        
-        // Clear the detox end flag from intent
-        intent?.removeExtra("from_detox_end")
-        
-        // Ensure we're visible and focused
-        runOnUiThread {
-            window.decorView.visibility = android.view.View.VISIBLE
-            window.decorView.requestFocus()
-            window.decorView.bringToFront()
-        }
-        
-        // Continue with normal flow
-        ensureServiceIsRunning()
-        
-        // Process any pending intents
-        if (shouldProcessIntent(intent)) {
-            pendingIntentData = intent
-            hasProcessedIntent = false
-        }
-        
-        // Process pending intents with a delay to ensure React Native is ready
-        Handler(Looper.getMainLooper()).postDelayed({
-            processPendingIntent()
-        }, 1000)
-        
-        Log.d(TAG, "✅ Ready for normal app usage")
-    }
-    
-    private fun handleAuthenticationFailure() {
-        // Just continue normally
-        Log.d(TAG, "⚠️ Authentication failure - continuing to app")
-        waitingForPasswordAuth = false
-        authenticationAttempted = false
-        needsAuthentication = false
-        continueAfterPasswordAuth()
-    }
-    
-    override fun onResume() {
-        super.onResume()
-        
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "MainActivity onResume")
-        Log.d(TAG, "Needs authentication: $needsAuthentication")
-        Log.d(TAG, "Waiting for password: $waitingForPasswordAuth")
-        Log.d(TAG, "Authentication attempted: $authenticationAttempted")
-        Log.d(TAG, "========================================")
-        
-        // Handle authentication if needed and not already attempted
-        if (needsAuthentication && !authenticationAttempted && !waitingForPasswordAuth) {
-            Log.d(TAG, "🔐 Launching authentication from onResume")
-            handleDetoxEndWithPassword()
-            return // Exit early, don't do normal resume flow yet
-        }
-        
-        // Don't do anything if waiting for password authentication
-        if (waitingForPasswordAuth) {
-            Log.d(TAG, "⏸️ Waiting for password - skipping normal resume flow")
-            return
-        }
-        
-        // If we just finished authentication, make sure we're visible
-        if (!needsAuthentication && !waitingForPasswordAuth) {
-            Log.d(TAG, "✅ Ensuring activity is visible and focused")
-            window.decorView.post {
-                window.decorView.visibility = android.view.View.VISIBLE
-                window.decorView.requestFocus()
-                window.decorView.bringToFront()
-            }
-        }
-        
-        // Normal resume flow
-        Log.d(TAG, "▶️ Normal resume flow")
-        ensureServiceIsRunning()
-        
-        if (!serviceBound) {
-            bindToService()
-        }
-        
-        // Check current intent
-        if (shouldProcessIntent(intent) && !hasProcessedIntent) {
-            Log.d(TAG, "Found unprocessed intent on resume")
-            pendingIntentData = intent
-        }
-        
-        // Process pending intent
-        processPendingIntent()
-        
-        Log.d(TAG, "========================================")
-    }
-    
-    override fun onPause() {
-        super.onPause()
-        Log.d(TAG, "MainActivity onPause")
-    }
-    
-    override fun onStop() {
-        super.onStop()
-        Log.d(TAG, "MainActivity onStop")
-    }
-    
     private fun shouldProcessIntent(intent: Intent?): Boolean {
         return intent != null && (
             intent.action == "OPEN_POMO_TRACKER" || 
@@ -471,7 +568,6 @@ class MainActivity : ReactActivity() {
         
         Log.d(TAG, "Processing pending intent with action: $action")
         
-        // Wait for React Native to be ready
         Handler(Looper.getMainLooper()).postDelayed({
             try {
                 val reactContext = reactInstanceManager?.currentReactContext
@@ -513,10 +609,7 @@ class MainActivity : ReactActivity() {
             val startTime = intent.getStringExtra("startTime") ?: ""
             val category = intent.getStringExtra("category") ?: ""
 
-            if (planId == null || taskTitle == null) {
-                Log.e(TAG, "Missing required data")
-                return
-            }
+            if (planId == null || taskTitle == null) return
 
             val params: WritableMap = Arguments.createMap()
             params.putString("planId", planId)
@@ -548,10 +641,7 @@ class MainActivity : ReactActivity() {
             val evaluationType = intent.getStringExtra("evaluationType") ?: "timerTracker"
             val fromReschedule = intent.getBooleanExtra("fromReschedule", false)
 
-            if (planId == null) {
-                Log.e(TAG, "Missing planId")
-                return
-            }
+            if (planId == null) return
 
             val params: WritableMap = Arguments.createMap()
             params.putString("planId", planId)
@@ -586,10 +676,7 @@ class MainActivity : ReactActivity() {
             val evaluationType = intent.getStringExtra("evaluationType") ?: "yesNo"
             val fromReschedule = intent.getBooleanExtra("fromReschedule", false)
 
-            if (planId == null) {
-                Log.e(TAG, "Missing planId")
-                return
-            }
+            if (planId == null) return
 
             val params: WritableMap = Arguments.createMap()
             params.putString("planId", planId)
@@ -613,15 +700,74 @@ class MainActivity : ReactActivity() {
     }
     
     override fun onDestroy() {
-        super.onDestroy()
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "MainActivity onDestroy")
+    Log.d(TAG, "Is finishing: $isFinishing")
+    Log.d(TAG, "Is relocking: $isRelocking")
+    Log.d(TAG, "========================================")
+    
+    // ✅ If we're just being moved to background during relock, don't clean up
+    if (isRelocking && !isFinishing) {
+        Log.d(TAG, "⏭️ Being moved to background during relock - minimal cleanup")
+        isMainActivityVisible = false
         try {
             if (serviceBound) {
                 unbindService(serviceConnection)
                 serviceBound = false
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error unbinding service: ${e.message}", e)
+        } catch (e: Exception) { }
+        super.onDestroy()
+        return
+    }
+    
+    // Normal cleanup
+    isMainActivityVisible = false
+    
+    try {
+        if (serviceBound) {
+            unbindService(serviceConnection)
+            serviceBound = false
         }
+        
+        unregisterReceiver(closeReceiver)
+    } catch (e: Exception) {
+        Log.e(TAG, "Error in onDestroy: ${e.message}", e)
+    }
+    
+    relockHandler.removeCallbacksAndMessages(null)
+    isRelocking = false
+    hasScheduledRelock = false
+    isActivityInitialized = false
+    
+    super.onDestroy()
+}
+    
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        
+        if (hasFocus && isDetoxUnlocked) {
+            try {
+                val focusIntent = Intent("com.wingsfly.MAINACTIVITY_FOCUSED")
+                sendBroadcast(focusIntent)
+                Log.d(TAG, "📱 MainActivity gained focus - notified service")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending focus broadcast: ${e.message}")
+            }
+        }
+    }
+    
+    override fun onBackPressed() {
+        val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+        val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+        val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
+        
+        if (detoxActive && hasTimeRemaining && isDetoxUnlocked) {
+            Log.d(TAG, "🚨 Back pressed during detox - schedule relock")
+            scheduleRelockIfNeeded()
+            return
+        }
+        
+        super.onBackPressed()
     }
     
     private fun checkAndRequestPermissions() {

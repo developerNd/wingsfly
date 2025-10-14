@@ -1,14 +1,18 @@
 package com.wingsfly
 
+import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.os.Process
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import com.facebook.react.bridge.*
+import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class DigitalDetoxModule(private val reactContext: ReactApplicationContext) : 
     ReactContextBaseJavaModule(reactContext) {
@@ -16,13 +20,50 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
     companion object {
         private const val TAG = "DigitalDetox"
         const val MODULE_NAME = "DigitalDetoxModule"
+        
+        // Event emitter instance
+        private var eventEmitter: DeviceEventManagerModule.RCTDeviceEventEmitter? = null
+        
+        // Method to emit events from anywhere in the app
+        fun sendEvent(context: ReactApplicationContext, eventName: String, params: WritableMap?) {
+            try {
+                context
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    ?.emit(eventName, params)
+                Log.d(TAG, "✅ Event sent: $eventName")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending event: ${e.message}", e)
+            }
+        }
     }
     
     override fun getName(): String = MODULE_NAME
     
-    /**
-     * Check if silent mode (or vibrate mode) is enabled
-     */
+    // ✅ CRITICAL: Implement these methods for NativeEventEmitter support
+    @ReactMethod
+    fun addListener(eventName: String) {
+        Log.d(TAG, "📢 Listener added for: $eventName")
+        // Keep track of listener count if needed
+    }
+    
+    @ReactMethod
+    fun removeListeners(count: Int) {
+        Log.d(TAG, "📢 Removed $count listeners")
+        // Clean up listeners if needed
+    }
+    
+    // Helper method to send events to JavaScript
+    private fun sendEventToJS(eventName: String, params: WritableMap? = null) {
+        try {
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                ?.emit(eventName, params)
+            Log.d(TAG, "✅ Event emitted: $eventName")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error emitting event: ${e.message}", e)
+        }
+    }
+    
     @ReactMethod
     fun isSilentModeEnabled(promise: Promise) {
         try {
@@ -40,9 +81,6 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
         }
     }
     
-    /**
-     * Open sound settings for user to enable silent mode
-     */
     @ReactMethod
     fun openSoundSettings(promise: Promise) {
         try {
@@ -60,8 +98,10 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun startDetoxLock(durationInMinutes: Int, mediaFilePath: String?, mediaType: String?, promise: Promise) {
         try {
-            Log.d(TAG, "Starting Digital Detox lock for $durationInMinutes minutes")
+            Log.d(TAG, "========================================")
+            Log.d(TAG, "🚀 Starting Digital Detox lock for $durationInMinutes minutes")
             Log.d(TAG, "Media: type=$mediaType, path=$mediaFilePath")
+            Log.d(TAG, "========================================")
             
             val currentActivity = currentActivity
             if (currentActivity == null) {
@@ -75,7 +115,6 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
                     Log.e(TAG, "❌ Overlay permission NOT granted")
                     promise.reject("NO_OVERLAY_PERMISSION", "Please grant overlay permission first in Settings")
                     
-                    // Open settings to grant permission
                     try {
                         val intent = Intent(
                             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -113,9 +152,64 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
                 Log.w(TAG, "Duration limited to 3 hours for safety")
             }
             
-            // Start the service first
+            // ✅ CRITICAL FIX: Save to SharedPreferences FIRST, BEFORE starting anything
+            val prefs = reactContext.getSharedPreferences("DetoxPrefs", Context.MODE_PRIVATE)
+            val endTime = System.currentTimeMillis() + (safeDuration * 60 * 1000L)
+            
+            // ✅ CRITICAL: Use commit() for SYNCHRONOUS write (not apply() which is async)
+            val writeSuccess = prefs.edit().apply {
+                putLong("detox_end_time", endTime)
+                putBoolean("detox_active", true)
+            }.commit() // MUST use commit() not apply() - we need synchronous write!
+            
+            if (!writeSuccess) {
+                Log.e(TAG, "❌ Failed to write preferences!")
+                promise.reject("PREFS_WRITE_ERROR", "Failed to save detox state")
+                return
+            }
+            
+            Log.d(TAG, "✅ Saved detox state to SharedPreferences:")
+            Log.d(TAG, "   - detox_end_time: $endTime")
+            Log.d(TAG, "   - detox_active: true")
+            Log.d(TAG, "   - duration: $safeDuration minutes")
+            Log.d(TAG, "   - Write success: $writeSuccess")
+            
+            // ✅ VERIFY IMMEDIATELY - retry until we can read it back
+            var verified = false
+            var attempts = 0
+            while (!verified && attempts < 10) {
+                val verifyActive = prefs.getBoolean("detox_active", false)
+                val verifyEndTime = prefs.getLong("detox_end_time", 0)
+                
+                if (verifyActive && verifyEndTime == endTime) {
+                    verified = true
+                    Log.d(TAG, "✅ VERIFICATION SUCCESS on attempt ${attempts + 1}: active=$verifyActive, endTime=$verifyEndTime")
+                } else {
+                    attempts++
+                    Log.w(TAG, "⚠️ Verification attempt $attempts failed, retrying...")
+                    Thread.sleep(10) // Wait 10ms and retry
+                }
+            }
+            
+            if (!verified) {
+                Log.e(TAG, "❌ Could not verify prefs write after 10 attempts!")
+                promise.reject("PREFS_VERIFY_ERROR", "Could not verify preferences")
+                return
+            }
+            
+            // Set static flags
+            DigitalDetoxService.isServiceRunning = true
+            DigitalDetoxLockActivity.isLockActive = true
+            
+            Log.d(TAG, "✅ Set static flags: isServiceRunning=true, isLockActive=true")
+            
+            // ✅ NOW start the service - prefs are guaranteed to be written
             val serviceIntent = Intent(reactContext, DigitalDetoxService::class.java)
             serviceIntent.putExtra("duration_minutes", safeDuration)
+            serviceIntent.putExtra("media_file_path", mediaFilePath)
+            serviceIntent.putExtra("media_type", mediaType)
+            
+            Log.d(TAG, "🚀 Starting DigitalDetoxService...")
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 reactContext.startForegroundService(serviceIntent)
@@ -123,23 +217,38 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
                 reactContext.startService(serviceIntent)
             }
             
-            // Then start the activity with media information
-            val activityIntent = Intent(reactContext, DigitalDetoxLockActivity::class.java)
-            activityIntent.putExtra("duration_minutes", safeDuration)
-            activityIntent.putExtra("media_file_path", mediaFilePath)
-            activityIntent.putExtra("media_type", mediaType)
-            activityIntent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or 
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-            )
+            Log.d(TAG, "✅ Service start command sent")
             
-            reactContext.startActivity(activityIntent)
+            // Wait 200ms for service to fully start, then start lock activity
+            Handler(Looper.getMainLooper()).postDelayed({
+                Log.d(TAG, "🚀 Starting lock activity...")
+                
+                // Start the lock activity
+                val activityIntent = Intent(reactContext, DigitalDetoxLockActivity::class.java)
+                activityIntent.putExtra("duration_minutes", safeDuration)
+                activityIntent.putExtra("media_file_path", mediaFilePath)
+                activityIntent.putExtra("media_type", mediaType)
+                activityIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or 
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                )
+                
+                reactContext.startActivity(activityIntent)
+                
+                Log.d(TAG, "========================================")
+                Log.d(TAG, "✅ Digital Detox lock started successfully")
+                Log.d(TAG, "   Service should be running and monitoring")
+                Log.d(TAG, "   Lock screen should be visible")
+                Log.d(TAG, "========================================")
+                
+            }, 200)
             
-            Log.d(TAG, "✅ Digital Detox lock started successfully")
             promise.resolve(true)
+            
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting Digital Detox lock: ${e.message}", e)
+            Log.e(TAG, "========================================")
+            Log.e(TAG, "❌ Error starting Digital Detox lock: ${e.message}", e)
+            Log.e(TAG, "========================================")
             promise.reject("START_LOCK_ERROR", e.message)
         }
     }
@@ -166,10 +275,76 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun isDetoxActive(promise: Promise) {
         try {
-            promise.resolve(DigitalDetoxService.isServiceRunning)
+            val prefs = reactContext.getSharedPreferences("DetoxPrefs", Context.MODE_PRIVATE)
+            
+            // ✅ READ ALL VALUES WITH TIMESTAMP
+            val detoxActive = prefs.getBoolean("detox_active", false)
+            val endTime = prefs.getLong("detox_end_time", 0)
+            val currentTime = System.currentTimeMillis()
+            
+            Log.d(TAG, "========================================")
+            Log.d(TAG, "🔍 isDetoxActive CHECK:")
+            Log.d(TAG, "   detox_active (prefs): $detoxActive")
+            Log.d(TAG, "   endTime: $endTime")
+            Log.d(TAG, "   currentTime: $currentTime")
+            Log.d(TAG, "   Expired: ${currentTime >= endTime}")
+            
+            // ✅ CRITICAL FIX: If time has expired, force clear immediately
+            if (detoxActive && endTime > 0 && currentTime >= endTime) {
+                Log.w(TAG, "⏰ TIME EXPIRED - FORCE CLEARING PREFS")
+                
+                // Force clear all detox state synchronously
+                val cleared = prefs.edit().apply {
+                    remove("detox_end_time")
+                    remove("detox_active")
+                    remove("app_unlocked_until")
+                }.commit()
+                
+                Log.d(TAG, "✅ Cleared expired session (success: $cleared)")
+                
+                // Clear static flags
+                DigitalDetoxService.isServiceRunning = false
+                DigitalDetoxLockActivity.isLockActive = false
+                DigitalDetoxLockActivity.isAppUnlocked = false
+                
+                // ✅ EMIT EVENT TO JS
+                sendEventToJS("DETOX_COMPLETED", null)
+                
+                Log.d(TAG, "========================================")
+                promise.resolve(false) // NOT ACTIVE
+                return
+            }
+            
+            // ✅ Normal check: only active if has time remaining
+            val isActive = detoxActive && endTime > 0 && (currentTime < endTime)
+            
+            Log.d(TAG, "   FINAL RESULT: $isActive")
+            Log.d(TAG, "========================================")
+            
+            promise.resolve(isActive)
+            
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking detox status: ${e.message}", e)
+            Log.e(TAG, "❌ Error checking detox status: ${e.message}", e)
             promise.reject("CHECK_STATUS_ERROR", e.message)
+        }
+    }
+    
+    private fun isServiceRunning(context: Context, serviceClass: Class<*>): Boolean {
+        return try {
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val runningServices = activityManager.getRunningServices(Integer.MAX_VALUE)
+            
+            for (serviceInfo in runningServices) {
+                if (serviceClass.name == serviceInfo.service.className) {
+                    Log.d(TAG, "✅ Service ${serviceClass.simpleName} IS running")
+                    return true
+                }
+            }
+            Log.d(TAG, "❌ Service ${serviceClass.simpleName} NOT running")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking if service is running: ${e.message}", e)
+            false
         }
     }
     
@@ -184,7 +359,6 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
                 permissions.putBoolean("overlay", true)
             }
             
-            // Check usage stats permission
             val usageStatsGranted = try {
                 val appOps = reactContext.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
                 val mode = appOps.checkOpNoThrow(
@@ -199,7 +373,6 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
             
             permissions.putBoolean("usageStats", usageStatsGranted)
             
-            // Check silent mode
             val audioManager = reactContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val ringerMode = audioManager.ringerMode
             val isSilent = ringerMode == AudioManager.RINGER_MODE_SILENT || 
@@ -224,12 +397,12 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
                     )
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     reactContext.startActivity(intent)
-                    promise.resolve(false) // Not granted yet, opened settings
+                    promise.resolve(false)
                 } else {
-                    promise.resolve(true) // Already granted
+                    promise.resolve(true)
                 }
             } else {
-                promise.resolve(true) // Not needed on older Android
+                promise.resolve(true)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting overlay permission: ${e.message}", e)

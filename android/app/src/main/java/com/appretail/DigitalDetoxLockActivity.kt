@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.media.AudioAttributes
@@ -21,11 +22,7 @@ import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import android.os.Vibrator
 import android.provider.Settings
-import android.speech.tts.TextToSpeech
-import android.telecom.TelecomManager
-import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -50,14 +47,31 @@ import java.util.*
 class DigitalDetoxLockActivity : Activity() {
     
     companion object {
-        private const val TAG = "DetoxLockActivity"
+        private const val TAG = "DetoxLock"
         var isLockActive = false
+        var isAppUnlocked = false
         private const val EMERGENCY_EXIT_THRESHOLD = 5
         private const val EMERGENCY_EXIT_TIMEOUT = 2000L
+        
+        private const val PREFS_NAME = "DetoxPrefs"
+        private const val KEY_DETOX_END_TIME = "detox_end_time"
+        private const val KEY_DETOX_ACTIVE = "detox_active"
+        private const val KEY_SERVICE_PID = "service_pid"
+
+        private const val KEY_APP_UNLOCKED_UNTIL = "app_unlocked_until"
+        private const val UNLOCK_VALIDITY_DURATION = 10000L // 10 seconds
+        
+        // ✅ NEW: Track if we're in unlock flow
+        var isUnlockInProgress = false
+        var isHiddenForAppUnlock = false
+        var lastUnlockTime = 0L
+
+        private const val BOTTOM_GESTURE_BLOCK_HEIGHT = 200
     }
     
     private var durationMinutes: Int = 0
     private var remainingSeconds: Long = 0
+    private var detoxEndTime: Long = 0
     private var countDownTimer: CountDownTimer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var timeHandler: Handler? = null
@@ -65,34 +79,29 @@ class DigitalDetoxLockActivity : Activity() {
     private var relaunchHandler: Handler? = null
     private var relaunchRunnable: Runnable? = null
     private var statusBarBlockViews = mutableListOf<View>()
-    private var audioSuppressionHandler: Handler? = null
-    private var audioSuppressionRunnable: Runnable? = null
     
-    // Media playback properties
     private var mediaPlayer: MediaPlayer? = null
     private var videoView: VideoView? = null
     private var mediaFilePath: String? = null
     private var mediaType: String? = null
     private var mediaContainer: FrameLayout? = null
     private var audioFocusRequest: AudioFocusRequest? = null
-    
-    // Audio management
     private var audioManager: AudioManager? = null
-    private var vibrator: Vibrator? = null
-    private var telecomManager: TelecomManager? = null
-    private var originalRingerMode: Int = AudioManager.RINGER_MODE_NORMAL
-    private var originalRingtoneVolume: Int = 0
-    private var originalNotificationVolume: Int = 0
-    private var originalSystemVolume: Int = 0
-    private var originalAlarmVolume: Int = 0
-    private var originalMusicVolume: Int = 0
+
+    private var systemUIHandler: Handler? = null
+    private var systemUIRunnable: Runnable? = null
     
-    // Device Policy for Kiosk mode
     private var devicePolicyManager: DevicePolicyManager? = null
     private var isKioskModeActive = false
     
     private var emergencyExitPressCount = 0
     private var lastEmergencyPressTime = 0L
+
+    private var lastBringToFrontTime = 0L
+    private val BRING_TO_FRONT_THROTTLE = 5000L
+    
+    private var isHiddenForAppUnlock = false
+    private var isDestroying = false
     
     private lateinit var timerTextView: TextView
     private lateinit var motivationTextView: TextView
@@ -101,108 +110,101 @@ class DigitalDetoxLockActivity : Activity() {
     private lateinit var progressPercentageTextView: TextView
     private lateinit var rootLayout: ViewGroup
     private lateinit var openAppButton: Button
+    private lateinit var prefs: SharedPreferences
+
+    private var bottomBlockOverlay: View? = null
     
     private val stopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            Log.d(TAG, "Stop broadcast received")
             finishDetox()
+        }
+    }
+    
+    private val relockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            Log.d(TAG, "📥 Received relock broadcast")
+            if (isHiddenForAppUnlock) {
+                showLockScreen()
+            }
         }
     }
     
     private val homeKeyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            Log.d(TAG, "Home key detected")
-            Handler(Looper.getMainLooper()).postDelayed({
-                collapseStatusBar()
-                bringToFront()
-            }, 50)
-        }
-    }
-    
-    private val phoneStateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                TelephonyManager.ACTION_PHONE_STATE_CHANGED -> {
-                    val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-                    Log.d(TAG, "☎️ Phone state: $state")
-                    
-                    for (instant in 0..5) {
-                        forceCompleteAudioSuppression()
-                        killAllVibrations()
-                        nuclearVibrationKill()
-                    }
-                    
-                    for (i in 0..50) {
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            forceCompleteAudioSuppression()
-                            killAllVibrations()
-                            nuclearVibrationKill()
-                            collapseStatusBar()
-                            if (isLockActive) bringToFront()
-                        }, (i * 20).toLong())
-                    }
-                }
-                "android.intent.action.NEW_OUTGOING_CALL" -> {
-                    Log.d(TAG, "☎️ Outgoing call")
-                    for (instant in 0..5) {
-                        forceCompleteAudioSuppression()
-                        killAllVibrations()
-                        nuclearVibrationKill()
-                    }
+            if (isLockActive && !isHiddenForAppUnlock) {
+                Handler(Looper.getMainLooper()).postDelayed({
                     collapseStatusBar()
                     bringToFront()
-                }
+                }, 50)
             }
         }
     }
     
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "🔒 Digital Detox Lock Activity created")
-        Log.d(TAG, "========================================")
-        
-        durationMinutes = intent.getIntExtra("duration_minutes", 5)
-        remainingSeconds = durationMinutes * 60L
-        
-        Log.d(TAG, "📊 Session Info:")
-        Log.d(TAG, "  Duration: $durationMinutes minutes")
-        Log.d(TAG, "  Remaining: $remainingSeconds seconds")
-        Log.d(TAG, "========================================")
-        
-        disableTextToSpeech()
-        
-        setupKioskMode()
-        setupFullScreenLockMode()
-        setContentView(R.layout.activity_digital_detox_lock)
-        initializeViews()
-        
-        initializeMediaFromIntent()
-        
-        registerReceivers()
-        createMaximumStatusBarBlock()
-        disableFloatingWindows()
-        setupAggressiveAudioSuppression()
-        startCountdownTimer()
-        startTimeUpdates()
-        startAggressiveMonitoring()
-        startContinuousAudioSuppression()
-        
-        isLockActive = true
-        
-        Log.d(TAG, "✅ Lock mode active - Fresh session started")
+   override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    
+    prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "Digital Detox Lock Activity Created")
+    Log.d(TAG, "isFinishing: $isFinishing")
+    Log.d(TAG, "========================================")
+    
+    // ✅ Initialize flags FIRST
+    isDestroying = false
+    isHiddenForAppUnlock = false
+    isUnlockInProgress = false
+    
+    // Check persistent unlock state
+    val unlockedUntil = prefs.getLong(KEY_APP_UNLOCKED_UNTIL, 0)
+    val currentTime = System.currentTimeMillis()
+    val isCurrentlyUnlocked = unlockedUntil > currentTime
+    
+    if (isCurrentlyUnlocked) {
+        Log.d(TAG, "⚠️ App is unlocked - not showing lock screen")
+        finish()
+        return
     }
     
-    private fun disableTextToSpeech() {
-        try {
-            val ttsIntent = Intent(TextToSpeech.Engine.ACTION_CHECK_TTS_DATA)
-            ttsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            Log.d(TAG, "✅ TTS disabled")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error disabling TTS", e)
-        }
+    val savedEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
+    val isDetoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
+    
+    if (isDetoxActive && savedEndTime > System.currentTimeMillis()) {
+        detoxEndTime = savedEndTime
+        remainingSeconds = (detoxEndTime - System.currentTimeMillis()) / 1000
+        durationMinutes = (remainingSeconds / 60).toInt()
+        Log.d(TAG, "📱 Resuming detox: ${remainingSeconds}s remaining")
+    } else {
+        durationMinutes = intent.getIntExtra("duration_minutes", 5)
+        remainingSeconds = durationMinutes * 60L
+        detoxEndTime = System.currentTimeMillis() + (remainingSeconds * 1000)
+        Log.d(TAG, "🆕 New detox: ${durationMinutes}min")
     }
+    
+    // ✅ Only proceed if we have valid time remaining
+    if (remainingSeconds <= 0) {
+        Log.d(TAG, "⚠️ No time remaining - finishing immediately")
+        finish()
+        return
+    }
+    
+    setupKioskMode()
+    setupFullScreenLockMode()
+    setContentView(R.layout.activity_digital_detox_lock)
+    initializeViews()
+    initializeMediaFromIntent()
+    registerReceivers()
+    createMaximumStatusBarBlock()
+    disableFloatingWindows()
+    startCountdownTimer()
+    startTimeUpdates()
+    startAggressiveMonitoring()
+    
+    isLockActive = true
+    isAppUnlocked = false
+    
+    Log.d(TAG, "✅ Lock mode active")
+}
     
     private fun initializeViews() {
         timerTextView = findViewById(R.id.timerText)
@@ -215,186 +217,237 @@ class DigitalDetoxLockActivity : Activity() {
         val contentView = window.decorView.findViewById<ViewGroup>(android.R.id.content)
         rootLayout = contentView.getChildAt(0) as ViewGroup
         
-        Log.d(TAG, "Root layout type: ${rootLayout.javaClass.simpleName}")
-        
         setupOpenAppButton()
-        
         updateTimerDisplay()
         updateMotivationalMessage()
         updateCurrentTime()
         updateProgress()
         
-        progressBar.max = (durationMinutes * 60)
+        progressBar.max = durationMinutes * 60
     }
     
     private fun setupOpenAppButton() {
-        openAppButton.setOnClickListener {
-            Log.d(TAG, "========================================")
-            Log.d(TAG, "🔘 OPEN APP BUTTON CLICKED")
-            Log.d(TAG, "========================================")
-            
-            // Prevent multiple clicks
-            if (!openAppButton.isEnabled) {
-                Log.d(TAG, "Button already disabled, ignoring click")
-                return@setOnClickListener
-            }
-            
-            // Visual feedback
-            openAppButton.isEnabled = false
-            openAppButton.alpha = 0.5f
-            openAppButton.text = "Opening..."
-            
-            // Kill app and reopen fresh
-            killAndReopenApp()
+    openAppButton.setOnClickListener {
+        if (!openAppButton.isEnabled) return@setOnClickListener
+        
+        if (isUnlockInProgress) {
+            Log.d(TAG, "⏭️ Unlock already in progress")
+            return@setOnClickListener
         }
+        
+        openAppButton.isEnabled = false
+        openAppButton.alpha = 0.5f
+        openAppButton.text = "Opening..."
+        
+        unlockAndOpenApp()
     }
+}
     
-    private fun killAndReopenApp() {
-        try {
-            Log.d(TAG, "========================================")
-            Log.d(TAG, "🔘 OPEN APP - PREPARING TO EXIT")
-            Log.d(TAG, "========================================")
-            
-            // CRITICAL: Mark lock as inactive FIRST before doing anything else
-            isLockActive = false
-            
-            // CRITICAL: Exit kiosk mode IMMEDIATELY before cleaning up
-            exitKioskMode()
-            Log.d(TAG, "✅ Kiosk mode exited")
-            
-            // Stop the service completely
+    private fun unlockAndOpenApp() {
+    try {
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "🔓 UNLOCKING APP - LOCK STAYS IN BACKGROUND")
+        Log.d(TAG, "Remaining: ${remainingSeconds}s")
+        Log.d(TAG, "========================================")
+        
+        // ✅ CRITICAL FIX: Store unlock state in SharedPreferences FIRST
+        val unlockValidUntil = System.currentTimeMillis() + UNLOCK_VALIDITY_DURATION
+        prefs.edit().putLong(KEY_APP_UNLOCKED_UNTIL, unlockValidUntil).commit()
+        
+        Log.d(TAG, "✅ Stored unlock state until: $unlockValidUntil")
+        
+        isUnlockInProgress = true
+        lastUnlockTime = System.currentTimeMillis()
+        isAppUnlocked = true
+        isHiddenForAppUnlock = true
+        DigitalDetoxLockActivity.isAppUnlocked = true
+        
+        exitKioskMode()
+        hideLockScreen()
+        
+        Handler(Looper.getMainLooper()).postDelayed({
             try {
-                stopService(Intent(this, DigitalDetoxService::class.java))
-                
-                // Broadcast stop signal
-                val stopBroadcast = Intent("com.wingsfly.STOP_DIGITAL_DETOX")
-                sendBroadcast(stopBroadcast)
-                
-                // Reset service state
-                DigitalDetoxService.isServiceRunning = false
-                DigitalDetoxService.detoxDurationMinutes = 0
-                DigitalDetoxService.detoxStartTime = 0L
-                
-                Log.d(TAG, "✅ Service stopped and state reset")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error stopping service: ${e.message}", e)
-            }
-            
-            // Stop all timers and handlers immediately
-            countDownTimer?.cancel()
-            timeHandler?.removeCallbacksAndMessages(null)
-            relaunchHandler?.removeCallbacksAndMessages(null)
-            audioSuppressionHandler?.removeCallbacksAndMessages(null)
-            
-            Log.d(TAG, "✅ All timers and handlers stopped")
-            
-            // Restore audio
-            restoreAudio()
-            
-            // Stop media
-            stopMediaPlayback()
-            
-            // Release wake lock
-            try {
-                wakeLock?.let {
-                    if (it.isHeld) {
-                        it.release()
-                        Log.d(TAG, "✅ WakeLock released")
-                    }
+                // ✅ FIX: Don't use FLAG_ACTIVITY_CLEAR_TASK - it kills everything
+                val mainActivityIntent = Intent(this, MainActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT // Just bring to front
+                    )
+                    putExtra("detox_unlocked", true)
+                    putExtra("remaining_seconds", remainingSeconds)
                 }
+                
+                startActivity(mainActivityIntent)
+                
+                // ✅ Clear unlock flag after extended delay
+                Handler(Looper.getMainLooper()).postDelayed({
+                    isUnlockInProgress = false
+                    Log.d(TAG, "✅ Unlock flow complete - monitoring enabled")
+                }, 3000)
+                
+                Log.d(TAG, "✅ App unlocked - service monitoring for exit")
+                
             } catch (e: Exception) {
-                Log.e(TAG, "Error releasing wake lock: ${e.message}")
+                Log.e(TAG, "❌ Error starting MainActivity: ${e.message}")
+                isUnlockInProgress = false
+                
+                // Clear unlock state on error
+                prefs.edit().remove(KEY_APP_UNLOCKED_UNTIL).apply()
+                
+                showLockScreen()
             }
-            
-            // Remove status bar blocks
-            try {
-                val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                statusBarBlockViews.forEach { view ->
-                    try {
-                        windowManager.removeView(view)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error removing view: ${e.message}")
-                    }
-                }
-                statusBarBlockViews.clear()
-                Log.d(TAG, "✅ Status bar blocks removed")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error removing status bar blocks: ${e.message}")
+        }, 500)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Error unlocking app: ${e.message}")
+        isUnlockInProgress = false
+        
+        // Clear unlock state on error
+        prefs.edit().remove(KEY_APP_UNLOCKED_UNTIL).apply()
+        
+        Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+        showLockScreen()
+    }
+}
+
+private fun hideLockScreen() {
+    try {
+        Log.d(TAG, "🙈 Hiding lock screen UI")
+        
+        // ✅ STEP 1: Remove bottom blocker FIRST
+        removeBottomNavigationBlocker()
+        
+        // ✅ STEP 2: Stop all monitoring
+        relaunchHandler?.removeCallbacks(relaunchRunnable!!)
+        pauseMediaPlayback()
+        
+        // ✅ STEP 3: Remove status bar blocks
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        statusBarBlockViews.forEach { view ->
+            try { windowManager.removeView(view) } catch (e: Exception) { }
+        }
+        statusBarBlockViews.clear()
+        
+        // ✅ STEP 4: Clear window flags
+        window.clearFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        )
+        
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        )
+        
+        // ✅ STEP 5: Hide UI
+        window.decorView.visibility = View.INVISIBLE
+        
+        Log.d(TAG, "✅ Lock screen hidden - bottom blocker removed")
+    } catch (e: Exception) {
+        Log.e(TAG, "Error hiding lock screen: ${e.message}")
+    }
+}
+
+// 9. Recreate blocker when showing lock
+private fun showLockScreen() {
+    try {
+        Log.d(TAG, "🔒 SHOWING LOCK SCREEN")
+        
+        prefs.edit().remove(KEY_APP_UNLOCKED_UNTIL).commit()
+        
+        isHiddenForAppUnlock = false
+        isAppUnlocked = false
+        DigitalDetoxLockActivity.isAppUnlocked = false
+        isUnlockInProgress = false
+        
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        activityManager.appTasks.forEach { task ->
+            val className = task.taskInfo.topActivity?.className ?: ""
+            if (className.contains("MainActivity")) {
+                try {
+                    task.finishAndRemoveTask()
+                } catch (e: Exception) { }
             }
+        }
+        
+        Handler(Looper.getMainLooper()).postDelayed({
+            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
             
-            // Unregister receivers
-            try {
-                unregisterReceiver(stopReceiver)
-                unregisterReceiver(homeKeyReceiver)
-                unregisterReceiver(phoneStateReceiver)
-                Log.d(TAG, "✅ Receivers unregistered")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error unregistering receivers: ${e.message}")
-            }
+            setupKioskMode()
+            setupFullScreenLockMode() // This will recreate blocker
             
-            // CRITICAL: Clear all window flags before finishing
-            try {
-                window.clearFlags(
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                )
-                Log.d(TAG, "✅ Window flags cleared")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error clearing window flags: ${e.message}")
-            }
+            window.decorView.visibility = View.VISIBLE
+            window.decorView.alpha = 1.0f
             
-            Log.d(TAG, "========================================")
-            Log.d(TAG, "🚀 LAUNCHING MAINACTIVITY")
-            Log.d(TAG, "========================================")
-            
-            // Launch MainActivity with authentication request
-            val mainActivityIntent = Intent(this, MainActivity::class.java).apply {
-                // These flags ensure fresh start and clear this activity
+            val intent = Intent(this, DigitalDetoxLockActivity::class.java).apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION 
                 )
-                
-                // Add flag to indicate we're coming from detox end
-                putExtra("from_detox_end", true)
+                putExtra("duration_minutes", (remainingSeconds / 60).toInt())
+                mediaFilePath?.let { putExtra("media_file_path", it) }
+                mediaType?.let { putExtra("media_type", it) }
             }
             
-            // Start MainActivity
-            startActivity(mainActivityIntent)
-            Log.d(TAG, "✅ MainActivity started")
+            startActivity(intent)
             
-            // CRITICAL: Finish this activity IMMEDIATELY to remove it from screen
-            Log.d(TAG, "🏁 Finishing lock activity NOW")
-            finish()
+            Handler(Looper.getMainLooper()).postDelayed({
+                createMaximumStatusBarBlock()
+                resumeMediaPlayback()
+                startAggressiveMonitoring()
+                
+                openAppButton.isEnabled = true
+                openAppButton.alpha = 1.0f
+                openAppButton.text = "Open App"
+                
+                Log.d(TAG, "✅ Lock screen visible with blocker")
+            }, 200)
             
-            // Remove any animations
-            overridePendingTransition(0, 0)
+        }, 300)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error showing lock screen: ${e.message}")
+    }
+}
+
+    private fun bringToFrontAggressively() {
+        try {
+            collapseStatusBar()
             
-            Log.d(TAG, "✅ Lock activity finished - MainActivity should be visible")
-            Log.d(TAG, "========================================")
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            activityManager.appTasks.forEach { task ->
+                val taskInfo = task.taskInfo
+                val className = taskInfo.topActivity?.className ?: ""
+                
+                if (className.contains("MainActivity")) {
+                    try {
+                        task.finishAndRemoveTask()
+                    } catch (e: Exception) { }
+                }
+            }
+            
+            val intent = Intent(this, DigitalDetoxLockActivity::class.java)
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or 
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_NO_ANIMATION
+            )
+            intent.putExtra("duration_minutes", (remainingSeconds / 60).toInt())
+            intent.putExtra("media_file_path", mediaFilePath)
+            intent.putExtra("media_type", mediaType)
+            startActivity(intent)
             
         } catch (e: Exception) {
-            Log.e(TAG, "========================================")
-            Log.e(TAG, "❌ ERROR IN KILL AND REOPEN")
-            Log.e(TAG, "Error: ${e.message}")
-            e.printStackTrace()
-            Log.e(TAG, "========================================")
-            
-            Toast.makeText(this, "Error reopening app: ${e.message}", Toast.LENGTH_LONG).show()
-            
-            // Fallback: try to at least finish this activity
-            try {
-                isLockActive = false
-                exitKioskMode()
-                finish()
-            } catch (fallbackError: Exception) {
-                Log.e(TAG, "Fallback finish also failed", fallbackError)
-            }
+            Log.e(TAG, "Error in aggressive bring to front: ${e.message}")
         }
     }
     
@@ -402,46 +455,35 @@ class DigitalDetoxLockActivity : Activity() {
         mediaFilePath = intent.getStringExtra("media_file_path")
         mediaType = intent.getStringExtra("media_type")
         
-        Log.d(TAG, "📱 Media initialized: type=$mediaType, path=$mediaFilePath")
-        
         if (mediaFilePath != null && mediaType != null) {
             Handler(Looper.getMainLooper()).post {
                 setupMediaPlayer()
             }
-        } else {
-            Log.d(TAG, "No media configured for this detox session")
         }
     }
     
     private fun setupMediaPlayer() {
         try {
-            if (mediaFilePath == null || mediaType == null) {
-                Log.d(TAG, "No media configured")
-                return
-            }
+            if (mediaFilePath == null || mediaType == null) return
             
             val mediaFile = File(mediaFilePath!!)
             if (!mediaFile.exists()) {
-                Log.e(TAG, "❌ Media file does not exist: $mediaFilePath")
+                Log.e(TAG, "Media file not found")
                 return
             }
-            
-            Log.d(TAG, "📁 Media file exists, size: ${mediaFile.length()} bytes")
             
             when (mediaType) {
                 "audio" -> setupAudioPlayer()
                 "video" -> setupVideoPlayer()
-                else -> Log.w(TAG, "Unknown media type: $mediaType")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error setting up media player", e)
+            Log.e(TAG, "Media setup error: ${e.message}")
         }
     }
     
     private fun setupAudioPlayer() {
         try {
-            Log.d(TAG, "🎵 Setting up audio player...")
-            
+            audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             requestAudioFocusForMedia()
             
             mediaPlayer = MediaPlayer().apply {
@@ -456,61 +498,32 @@ class DigitalDetoxLockActivity : Activity() {
                 )
                 
                 setVolume(0.5f, 0.5f)
-                
-                setOnPreparedListener {
-                    Log.d(TAG, "✅ Audio prepared, starting playback")
-                    start()
-                }
-                
-                setOnErrorListener { mp, what, extra ->
-                    Log.e(TAG, "❌ MediaPlayer error: what=$what, extra=$extra")
-                    true
-                }
-                
-                setOnCompletionListener {
-                    Log.d(TAG, "Audio completed (looping)")
-                    if (isLockActive) {
-                        start()
-                    }
-                }
-                
+                setOnPreparedListener { start() }
+                setOnErrorListener { mp, what, extra -> true }
+                setOnCompletionListener { if (isLockActive) start() }
                 prepareAsync()
             }
-            
-            Log.d(TAG, "✅ Audio player setup complete")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error setting up audio player", e)
+            Log.e(TAG, "Audio error: ${e.message}")
         }
     }
     
     private fun setupVideoPlayer() {
         try {
-            Log.d(TAG, "🎥 Setting up video player...")
-            
-            if (mediaFilePath == null) {
-                Log.e(TAG, "❌ Media file path is null")
-                return
-            }
+            if (mediaFilePath == null) return
             
             val mediaFile = File(mediaFilePath!!)
-            if (!mediaFile.exists()) {
-                Log.e(TAG, "❌ Media file does not exist: $mediaFilePath")
-                return
-            }
+            if (!mediaFile.exists()) return
             
-            Log.d(TAG, "📁 Media file exists, size: ${mediaFile.length()} bytes")
-            
+            audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             requestAudioFocusForMedia()
             
             val lockIcon = findViewById<View>(R.id.lockIcon)
             lockIcon?.visibility = View.GONE
-            Log.d(TAG, "🎥 Lock icon hidden for video display")
             
             val screenWidth = resources.displayMetrics.widthPixels
             val containerWidth = screenWidth - dpToPx(40)
             val containerHeight = (containerWidth * 9) / 16
-            
-            Log.d(TAG, "🎥 Video container: width=$containerWidth, height=$containerHeight (16:9)")
             
             mediaContainer = FrameLayout(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
@@ -563,11 +576,9 @@ class DigitalDetoxLockActivity : Activity() {
                     if (headerSectionId != null && headerSectionId != View.NO_ID) {
                         addRule(RelativeLayout.BELOW, headerSectionId)
                         topMargin = dpToPx(32)
-                        Log.d(TAG, "🎥 Video positioned below header section")
                     } else {
                         addRule(RelativeLayout.ALIGN_PARENT_TOP)
                         topMargin = dpToPx(140)
-                        Log.d(TAG, "🎥 Video positioned from top (fallback)")
                     }
                     
                     setMargins(dpToPx(20), topMargin, dpToPx(20), 0)
@@ -581,8 +592,6 @@ class DigitalDetoxLockActivity : Activity() {
                 timerParams.addRule(RelativeLayout.CENTER_HORIZONTAL)
                 timerParams.topMargin = dpToPx(32)
                 timerSection.layoutParams = timerParams
-                
-                Log.d(TAG, "🎥 Timer section repositioned below video")
             } else {
                 val params = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -595,20 +604,11 @@ class DigitalDetoxLockActivity : Activity() {
                 parentLayout.addView(mediaContainer, 0, params)
             }
             
-            Log.d(TAG, "🎥 Video container added below header section")
-            
             videoView?.apply {
                 val videoUri = Uri.fromFile(mediaFile)
-                Log.d(TAG, "🎥 Setting video URI: $videoUri")
                 
                 setOnPreparedListener { mp ->
                     try {
-                        Log.d(TAG, "✅ Video prepared")
-                        
-                        val videoWidth = mp.videoWidth
-                        val videoHeight = mp.videoHeight
-                        Log.d(TAG, "🎥 Video dimensions: ${videoWidth}x${videoHeight}")
-                        
                         mp.isLooping = true
                         mp.setVolume(0.7f, 0.7f)
                         
@@ -622,27 +622,21 @@ class DigitalDetoxLockActivity : Activity() {
                         
                         mediaContainer?.visibility = View.VISIBLE
                         visibility = View.VISIBLE
-                        
                         start()
-                        Log.d(TAG, "✅ Video playback started")
                         
                         Handler(Looper.getMainLooper()).postDelayed({
-                            if (isPlaying) {
-                                Log.d(TAG, "✅ Video confirmed playing")
-                            } else {
-                                Log.e(TAG, "❌ Video not playing after start!")
+                            if (!isPlaying) {
                                 seekTo(0)
                                 start()
                             }
                         }, 1000)
                         
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ Error in onPrepared", e)
+                        Log.e(TAG, "Video prepare error: ${e.message}")
                     }
                 }
                 
                 setOnErrorListener { mp, what, extra ->
-                    Log.e(TAG, "❌ VideoView error: what=$what, extra=$extra")
                     mediaContainer?.visibility = View.GONE
                     findViewById<View>(R.id.lockIcon)?.visibility = View.VISIBLE
                     true
@@ -651,10 +645,8 @@ class DigitalDetoxLockActivity : Activity() {
                 setVideoURI(videoUri)
             }
             
-            Log.d(TAG, "✅ Video player setup complete")
-            
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Fatal error setting up video player", e)
+            Log.e(TAG, "Video error: ${e.message}")
             mediaContainer?.visibility = View.GONE
             findViewById<View>(R.id.lockIcon)?.visibility = View.VISIBLE
         }
@@ -675,32 +667,20 @@ class DigitalDetoxLockActivity : Activity() {
                             .build()
                     )
                     .setAcceptsDelayedFocusGain(true)
-                    .setOnAudioFocusChangeListener { focusChange ->
-                        when (focusChange) {
-                            AudioManager.AUDIOFOCUS_LOSS,
-                            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> resumeMediaPlayback()
-                            AudioManager.AUDIOFOCUS_GAIN -> resumeMediaPlayback()
-                        }
-                    }
+                    .setOnAudioFocusChangeListener { }
                     .build()
                 
                 audioManager?.requestAudioFocus(audioFocusRequest!!)
             } else {
                 @Suppress("DEPRECATION")
                 audioManager?.requestAudioFocus(
-                    { focusChange ->
-                        when (focusChange) {
-                            AudioManager.AUDIOFOCUS_LOSS,
-                            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> resumeMediaPlayback()
-                            AudioManager.AUDIOFOCUS_GAIN -> resumeMediaPlayback()
-                        }
-                    },
+                    null,
                     AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN
                 )
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error requesting audio focus", e)
+            Log.e(TAG, "Audio focus error: ${e.message}")
         }
     }
     
@@ -729,7 +709,7 @@ class DigitalDetoxLockActivity : Activity() {
                 audioManager?.abandonAudioFocus(null)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping media", e)
+            Log.e(TAG, "Stop media error: ${e.message}")
         }
     }
     
@@ -737,18 +717,14 @@ class DigitalDetoxLockActivity : Activity() {
         try {
             mediaPlayer?.let { if (it.isPlaying) it.pause() }
             videoView?.let { if (it.isPlaying) it.pause() }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error pausing media", e)
-        }
+        } catch (e: Exception) { }
     }
     
     private fun resumeMediaPlayback() {
         try {
             mediaPlayer?.let { if (!it.isPlaying) it.start() }
             videoView?.let { if (!it.isPlaying) it.start() }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error resuming media", e)
-        }
+        } catch (e: Exception) { }
     }
     
     private fun setupKioskMode() {
@@ -762,14 +738,14 @@ class DigitalDetoxLockActivity : Activity() {
                     if (activityManager.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_NONE) {
                         startLockTask()
                         isKioskModeActive = true
-                        Log.d(TAG, "✅ KIOSK MODE ACTIVATED")
+                        Log.d(TAG, "✅ Kiosk mode activated")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "⚠️ Lock Task Mode not available: ${e.message}")
+                    Log.w(TAG, "Kiosk mode not available: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Kiosk mode setup error", e)
+            Log.e(TAG, "Kiosk mode error: ${e.message}")
         }
     }
     
@@ -781,247 +757,232 @@ class DigitalDetoxLockActivity : Activity() {
                 Log.d(TAG, "✅ Kiosk mode exited")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exit kiosk mode error", e)
+            Log.e(TAG, "Exit kiosk error: ${e.message}")
         }
     }
     
-    private fun setupFullScreenLockMode() {
-        val window: Window = window
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            keyguardManager.requestDismissKeyguard(this, null)
+    private fun createBottomNavigationBlocker() {
+    try {
+        if (isFinishing || isDestroying || !isLockActive || isHiddenForAppUnlock) {
+            Log.d(TAG, "⏭️ Blocker creation blocked")
+            return
         }
         
-        val flags = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-        
-        window.addFlags(flags)
-        
-        try {
-            window.setType(WindowManager.LayoutParams.TYPE_APPLICATION)
-        } catch (e: Exception) {
-            Log.w(TAG, "Window type error: ${e.message}")
+        if (bottomBlockOverlay != null) {
+            Log.d(TAG, "Bottom blocker already exists")
+            return
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-            window.statusBarColor = 0xFF6366F1.toInt()
-            window.navigationBarColor = 0xFF6366F1.toInt()
-            
-            val uiFlags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                         View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                         View.SYSTEM_UI_FLAG_FULLSCREEN or
-                         View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                         
-            window.decorView.systemUiVisibility = uiFlags
-            
-            window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
-                if (isLockActive) {
-                    if ((visibility and View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            window.decorView.systemUiVisibility = uiFlags
-                        }, 100)
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "Overlay permission not granted")
+            return
+        }
+        
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        if (windowManager == null) {
+            Log.e(TAG, "WindowManager not available")
+            return
+        }
+        
+        Log.d(TAG, "Creating enhanced bottom gesture blocker (${BOTTOM_GESTURE_BLOCK_HEIGHT}px)")
+        
+        // Create MULTIPLE overlapping layers for better blocking
+        bottomBlockOverlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = true
+            isFocusable = false
+            isEnabled = true
+        }
+        
+        val layoutParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            BOTTOM_GESTURE_BLOCK_HEIGHT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            },
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        )
+        
+        layoutParams.gravity = Gravity.BOTTOM or Gravity.START
+        layoutParams.x = 0
+        layoutParams.y = 0
+        
+        // Aggressive touch interceptor
+        var lastBlockTime = 0L
+        bottomBlockOverlay?.setOnTouchListener { view, event ->
+            if (isLockActive && !isHiddenForAppUnlock && !isDestroying && !isFinishing) {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN,
+                    MotionEvent.ACTION_MOVE,
+                    MotionEvent.ACTION_UP -> {
+                        val now = System.currentTimeMillis()
+                        if (now - lastBlockTime > 300) {
+                            Log.d(TAG, "⛔ Bottom gesture blocked at y=${event.y}")
+                            lastBlockTime = now
+                        }
+                        view.performClick()
+                        return@setOnTouchListener true
                     }
-                    collapseStatusBar()
                 }
             }
+            false
         }
         
-        acquireWakeLock()
+        windowManager.addView(bottomBlockOverlay, layoutParams)
+        Log.d(TAG, "✅ Enhanced bottom gesture blocker created")
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error creating bottom blocker: ${e.message}")
+        e.printStackTrace()
+        bottomBlockOverlay = null
+    }
+}
+
+private fun removeBottomNavigationBlocker() {
+    try {
+        Log.d(TAG, "🧹 Attempting to remove bottom blocker")
+        
+        if (bottomBlockOverlay == null) {
+            Log.d(TAG, "No bottom blocker to remove")
+            return
+        }
+        
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        if (windowManager != null) {
+            try {
+                windowManager.removeView(bottomBlockOverlay)
+                Log.d(TAG, "✅ Bottom blocker removed from WindowManager")
+            } catch (e: IllegalArgumentException) {
+                Log.d(TAG, "Bottom blocker was already removed")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing bottom blocker: ${e.message}")
+            }
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Error in removeBottomNavigationBlocker: ${e.message}")
+    } finally {
+        bottomBlockOverlay = null
+        Log.d(TAG, "✅ Bottom blocker reference cleared")
+    }
+}
+
+
+private fun setupFullScreenLockMode() {
+    val window: Window = window
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        keyguardManager.requestDismissKeyguard(this, null)
     }
     
-    private fun setupAggressiveAudioSuppression() {
-        try {
-            audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+    val flags = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+    
+    window.addFlags(flags)
+    
+    // Initial system UI hiding
+    hideSystemUIMaximum()
+    
+    try {
+        window.setType(WindowManager.LayoutParams.TYPE_APPLICATION)
+    } catch (e: Exception) { }
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.statusBarColor = 0xFF6366F1.toInt()
+        window.navigationBarColor = Color.TRANSPARENT
+        
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            if (isLockActive && !isHiddenForAppUnlock && !isDestroying) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    hideSystemUIMaximum()
+                }, 100)
+                collapseStatusBar()
             }
-            
-            originalRingerMode = audioManager?.ringerMode ?: AudioManager.RINGER_MODE_NORMAL
-            originalRingtoneVolume = audioManager?.getStreamVolume(AudioManager.STREAM_RING) ?: 0
-            originalNotificationVolume = audioManager?.getStreamVolume(AudioManager.STREAM_NOTIFICATION) ?: 0
-            originalSystemVolume = audioManager?.getStreamVolume(AudioManager.STREAM_SYSTEM) ?: 0
-            originalAlarmVolume = audioManager?.getStreamVolume(AudioManager.STREAM_ALARM) ?: 0
-            originalMusicVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
-            
-            forceCompleteAudioSuppression()
-            killAllVibrations()
-            nuclearVibrationKill()
-            
-            Log.d(TAG, "✅ Aggressive audio suppression initialized")
-        } catch (e: Exception) {
-            Log.e(TAG, "Audio setup error", e)
         }
     }
     
-    private fun nuclearVibrationKill() {
-        try {
-            for (i in 0..20) {
-                vibrator?.cancel()
+    // ✅ Start continuous system UI hiding
+    startContinuousSystemUIHiding()
+    
+    // Create bottom blocker after delay
+    Handler(Looper.getMainLooper()).postDelayed({
+        if (isLockActive && !isHiddenForAppUnlock && !isDestroying && !isFinishing) {
+            Log.d(TAG, "🔒 Creating blocker - lock is active")
+            createBottomNavigationBlocker()
+        } else {
+            Log.d(TAG, "⏭️ Skipping blocker creation - cleanup in progress")
+        }
+    }, 500)
+    
+    acquireWakeLock()
+}
+
+private fun startContinuousSystemUIHiding() {
+    systemUIHandler?.removeCallbacks(systemUIRunnable!!)
+    
+    systemUIHandler = Handler(Looper.getMainLooper())
+    systemUIRunnable = object : Runnable {
+        override fun run() {
+            if (isLockActive && !isHiddenForAppUnlock && !isDestroying) {
+                hideSystemUIMaximum()
+                systemUIHandler?.postDelayed(this, 300) // Every 300ms
             }
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                try {
-                    val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
-                    vibratorManager?.cancel()
-                    vibratorManager?.vibratorIds?.forEach { id ->
-                        vibratorManager.getVibrator(id)?.cancel()
-                    }
-                } catch (e: Exception) { }
-            }
-            
-            try {
-                val cr = contentResolver
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.System.canWrite(this)) {
-                    Settings.System.putInt(cr, Settings.System.VIBRATE_WHEN_RINGING, 0)
-                    Settings.System.putInt(cr, Settings.System.HAPTIC_FEEDBACK_ENABLED, 0)
-                }
-            } catch (e: Exception) { }
-            
-            try {
-                audioManager?.ringerMode = AudioManager.RINGER_MODE_SILENT
-            } catch (e: Exception) { }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Nuclear vibration error", e)
         }
     }
-    
-    private fun killAllVibrations() {
-        try {
-            for (attempt in 0..10) {
-                vibrator?.cancel()
+    systemUIHandler?.post(systemUIRunnable!!)
+}
+
+private fun hideSystemUIMaximum() {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(
+                    android.view.WindowInsets.Type.statusBars() or 
+                    android.view.WindowInsets.Type.navigationBars() or
+                    android.view.WindowInsets.Type.systemBars()
+                )
+                controller.systemBarsBehavior = 
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
-            
+        } else {
             @Suppress("DEPRECATION")
-            audioManager?.setVibrateSetting(AudioManager.VIBRATE_TYPE_RINGER, AudioManager.VIBRATE_SETTING_OFF)
-            @Suppress("DEPRECATION")
-            audioManager?.setVibrateSetting(AudioManager.VIBRATE_TYPE_NOTIFICATION, AudioManager.VIBRATE_SETTING_OFF)
-            
-            try {
-                audioManager?.ringerMode = AudioManager.RINGER_MODE_SILENT
-                if (audioManager?.ringerMode == AudioManager.RINGER_MODE_VIBRATE) {
-                    audioManager?.ringerMode = AudioManager.RINGER_MODE_SILENT
-                }
-            } catch (e: Exception) { }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Kill vibrations error", e)
-        }
-    }
-    
-    private fun forceCompleteAudioSuppression() {
-        try {
-            audioManager?.mode = AudioManager.MODE_NORMAL
-            audioManager?.ringerMode = AudioManager.RINGER_MODE_SILENT
-            
-            val streams = arrayOf(
-                AudioManager.STREAM_RING,
-                AudioManager.STREAM_NOTIFICATION,
-                AudioManager.STREAM_SYSTEM,
-                AudioManager.STREAM_ALARM,
-                AudioManager.STREAM_DTMF,
-                AudioManager.STREAM_VOICE_CALL,
-                AudioManager.STREAM_ACCESSIBILITY
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LOW_PROFILE
             )
-            
-            streams.forEach { stream ->
-                try {
-                    if (stream == AudioManager.STREAM_MUSIC && (mediaPlayer != null || videoView != null)) {
-                        return@forEach
-                    }
-                    audioManager?.setStreamVolume(stream, 0, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE)
-                    audioManager?.adjustStreamVolume(stream, AudioManager.ADJUST_MUTE, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE)
-                } catch (e: Exception) { }
-            }
-            
-            killAllVibrations()
-            
-            try {
-                audioManager?.isSpeakerphoneOn = false
-                audioManager?.isBluetoothScoOn = false
-                audioManager?.isMicrophoneMute = true
-            } catch (e: Exception) { }
-            
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    telecomManager?.endCall()
-                }
-            } catch (e: Exception) { }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Audio suppression error", e)
         }
+    } catch (e: Exception) {
+        Log.e(TAG, "Error hiding system UI: ${e.message}")
     }
-    
-    private fun startContinuousAudioSuppression() {
-        audioSuppressionHandler = Handler(Looper.getMainLooper())
-        audioSuppressionRunnable = object : Runnable {
-            override fun run() {
-                if (isLockActive) {
-                    forceCompleteAudioSuppression()
-                    killAllVibrations()
-                    nuclearVibrationKill()
-                    audioSuppressionHandler?.postDelayed(this, 15)
-                }
-            }
-        }
-        audioSuppressionHandler?.post(audioSuppressionRunnable!!)
-    }
-    
-    private fun restoreAudio() {
-        try {
-            audioSuppressionHandler?.removeCallbacks(audioSuppressionRunnable!!)
-            audioManager?.mode = AudioManager.MODE_NORMAL
-            
-            val streams = arrayOf(
-                AudioManager.STREAM_RING,
-                AudioManager.STREAM_NOTIFICATION,
-                AudioManager.STREAM_SYSTEM,
-                AudioManager.STREAM_ALARM,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.STREAM_VOICE_CALL
-            )
-            
-            streams.forEach { stream ->
-                try {
-                    audioManager?.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, 0)
-                } catch (e: Exception) { }
-            }
-            
-            audioManager?.ringerMode = originalRingerMode
-            audioManager?.setStreamVolume(AudioManager.STREAM_RING, originalRingtoneVolume, 0)
-            audioManager?.setStreamVolume(AudioManager.STREAM_NOTIFICATION, originalNotificationVolume, 0)
-            audioManager?.setStreamVolume(AudioManager.STREAM_SYSTEM, originalSystemVolume, 0)
-            audioManager?.setStreamVolume(AudioManager.STREAM_ALARM, originalAlarmVolume, 0)
-            audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, originalMusicVolume, 0)
-            
-            audioManager?.isSpeakerphoneOn = false
-            audioManager?.isMicrophoneMute = false
-            
-            Log.d(TAG, "✅ Audio restored")
-        } catch (e: Exception) {
-            Log.e(TAG, "Audio restore error", e)
-        }
-    }
-    
+}
+
     private fun createMaximumStatusBarBlock() {
         try {
-            if (!Settings.canDrawOverlays(this)) {
-                Log.w(TAG, "⚠️ Overlay permission missing")
-                return
-            }
+            if (!Settings.canDrawOverlays(this)) return
             
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val statusBarHeight = getStatusBarHeight()
@@ -1066,14 +1027,10 @@ class DigitalDetoxLockActivity : Activity() {
                 try {
                     windowManager.addView(blockView, layoutParams)
                     statusBarBlockViews.add(blockView)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Layer $layer failed: ${e.message}")
-                }
+                } catch (e: Exception) { }
             }
             
-        } catch (e: Exception) {
-            Log.e(TAG, "Status bar block error", e)
-        }
+        } catch (e: Exception) { }
     }
     
     private fun getStatusBarHeight(): Int {
@@ -1101,12 +1058,14 @@ class DigitalDetoxLockActivity : Activity() {
     }
     
     private fun startAggressiveMonitoring() {
+        relaunchHandler?.removeCallbacks(relaunchRunnable!!)
+        
         relaunchHandler = Handler(Looper.getMainLooper())
         relaunchRunnable = object : Runnable {
             override fun run() {
-                if (!isFinishing && isLockActive) {
+                if (!isFinishing && isLockActive && !isHiddenForAppUnlock) {
                     checkAndBringToFront()
-                    relaunchHandler?.postDelayed(this, 100)
+                    relaunchHandler?.postDelayed(this, 3000)
                 }
             }
         }
@@ -1115,9 +1074,9 @@ class DigitalDetoxLockActivity : Activity() {
         val collapseHandler = Handler(Looper.getMainLooper())
         val collapseRunnable = object : Runnable {
             override fun run() {
-                if (isLockActive) {
+                if (isLockActive && !isHiddenForAppUnlock) {
                     collapseStatusBar()
-                    collapseHandler.postDelayed(this, 200)
+                    collapseHandler.postDelayed(this, 2000)
                 }
             }
         }
@@ -1140,7 +1099,6 @@ class DigitalDetoxLockActivity : Activity() {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or 
                                Intent.FLAG_ACTIVITY_CLEAR_TASK or
                                Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                intent.putExtra("duration_minutes", (remainingSeconds / 60).toInt())
                 intent.putExtra("media_file_path", mediaFilePath)
                 intent.putExtra("media_type", mediaType)
                 startActivity(intent)
@@ -1158,9 +1116,7 @@ class DigitalDetoxLockActivity : Activity() {
                 "DigitalDetox:LockScreen"
             )
             wakeLock?.acquire(durationMinutes * 60 * 1000L + 10000L)
-        } catch (e: Exception) {
-            Log.e(TAG, "WakeLock error", e)
-        }
+        } catch (e: Exception) { }
     }
     
     private fun registerReceivers() {
@@ -1171,33 +1127,35 @@ class DigitalDetoxLockActivity : Activity() {
             registerReceiver(stopReceiver, stopFilter)
         }
         
+        val relockFilter = IntentFilter("com.wingsfly.RELOCK_DETOX")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(relockReceiver, relockFilter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(relockReceiver, relockFilter)
+        }
+        
         val homeFilter = IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(homeKeyReceiver, homeFilter, RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(homeKeyReceiver, homeFilter)
         }
-        
-        val phoneFilter = IntentFilter().apply {
-            addAction(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
-            addAction("android.intent.action.NEW_OUTGOING_CALL")
-            priority = IntentFilter.SYSTEM_HIGH_PRIORITY
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(phoneStateReceiver, phoneFilter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(phoneStateReceiver, phoneFilter)
-        }
     }
     
     private fun checkAndBringToFront() {
         try {
+            val now = System.currentTimeMillis()
+            if (now - lastBringToFrontTime < BRING_TO_FRONT_THROTTLE) {
+                return
+            }
+            
             val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val tasks = activityManager.appTasks
             
             if (tasks.isNotEmpty()) {
                 val topActivity = tasks[0].taskInfo.topActivity
                 if (topActivity?.className != this::class.java.name) {
+                    lastBringToFrontTime = now
                     bringToFront()
                 }
             }
@@ -1208,15 +1166,22 @@ class DigitalDetoxLockActivity : Activity() {
         try {
             collapseStatusBar()
             
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val tasks = activityManager.appTasks
+            if (tasks.isNotEmpty()) {
+                val topActivity = tasks[0].taskInfo.topActivity
+                if (topActivity?.className == this::class.java.name) {
+                    return
+                }
+            }
+            
             val intent = Intent(this, DigitalDetoxLockActivity::class.java)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or 
-                           Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                           Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                           Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             intent.putExtra("duration_minutes", (remainingSeconds / 60).toInt())
             intent.putExtra("media_file_path", mediaFilePath)
             intent.putExtra("media_type", mediaType)
             startActivity(intent)
+            
         } catch (e: Exception) { }
     }
     
@@ -1235,6 +1200,11 @@ class DigitalDetoxLockActivity : Activity() {
             }
             
             override fun onFinish() {
+                prefs.edit().apply {
+                    remove(KEY_DETOX_END_TIME)
+                    putBoolean(KEY_DETOX_ACTIVE, false)
+                }.commit()
+                
                 finishDetox()
             }
         }
@@ -1307,7 +1277,7 @@ class DigitalDetoxLockActivity : Activity() {
         lastEmergencyPressTime = currentTime
         
         if (emergencyExitPressCount >= EMERGENCY_EXIT_THRESHOLD) {
-            Log.d(TAG, "Emergency exit triggered")
+            Log.d(TAG, "🚨 Emergency exit triggered")
             finishDetox()
         } else {
             val remaining = EMERGENCY_EXIT_THRESHOLD - emergencyExitPressCount
@@ -1316,98 +1286,154 @@ class DigitalDetoxLockActivity : Activity() {
     }
     
     private fun finishDetox() {
-        Log.d(TAG, "🏁 Finishing detox session (timer completed)")
-        
-        isLockActive = false
-        countDownTimer?.cancel()
-        timeHandler?.removeCallbacks(timeUpdateRunnable!!)
-        relaunchHandler?.removeCallbacks(relaunchRunnable!!)
-        audioSuppressionHandler?.removeCallbacks(audioSuppressionRunnable!!)
-        
-        stopMediaPlayback()
-        exitKioskMode()
-        restoreAudio()
-        
-        try {
-            wakeLock?.let {
-                if (it.isHeld) it.release()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing wake lock", e)
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "🏁 DETOX SESSION ENDING - FULL CLEANUP")
+    Log.d(TAG, "========================================")
+    
+    isDestroying = true
+    isLockActive = false
+    isAppUnlocked = false
+    isHiddenForAppUnlock = false
+    isUnlockInProgress = false
+    DigitalDetoxLockActivity.isAppUnlocked = false
+    
+    Log.d(TAG, "✅ Flags set - blocker creation now blocked")
+    
+    // Stop system UI handler
+    systemUIHandler?.removeCallbacks(systemUIRunnable!!)
+    
+    removeBottomNavigationBlocker()
+    countDownTimer?.cancel()
+    timeHandler?.removeCallbacks(timeUpdateRunnable!!)
+    relaunchHandler?.removeCallbacks(relaunchRunnable!!)
+    stopMediaPlayback()
+    exitKioskMode()
+    
+    try {
+        wakeLock?.let {
+            if (it.isHeld) it.release()
         }
-        
-        try {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            statusBarBlockViews.forEach { view ->
-                try {
-                    windowManager.removeView(view)
-                } catch (e: Exception) { }
-            }
-            statusBarBlockViews.clear()
-        } catch (e: Exception) { }
-        
-        try {
-            stopService(Intent(this, DigitalDetoxService::class.java))
-            DigitalDetoxService.isServiceRunning = false
-            DigitalDetoxService.detoxDurationMinutes = 0
-            DigitalDetoxService.detoxStartTime = 0L
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping service", e)
+    } catch (e: Exception) { }
+    
+    try {
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        statusBarBlockViews.forEach { view ->
+            try { windowManager.removeView(view) } catch (e: Exception) { }
         }
-        
-        finish()
-    }
+        statusBarBlockViews.clear()
+    } catch (e: Exception) { }
+    
+    try {
+        stopService(Intent(this, DigitalDetoxService::class.java))
+        DigitalDetoxService.isServiceRunning = false
+    } catch (e: Exception) { }
+    
+    prefs.edit().apply {
+        remove(KEY_DETOX_END_TIME)
+        remove(KEY_SERVICE_PID)
+        remove(KEY_APP_UNLOCKED_UNTIL)
+        putBoolean(KEY_DETOX_ACTIVE, false)
+    }.commit()
+    
+    try {
+        val completionIntent = Intent("com.wingsfly.DETOX_COMPLETED")
+        sendBroadcast(completionIntent)
+    } catch (e: Exception) { }
+    
+    Handler(Looper.getMainLooper()).postDelayed({
+        removeBottomNavigationBlocker()
+        Log.d(TAG, "✅ Final verification complete")
+    }, 100)
+    
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "✅ CLEANUP COMPLETE")
+    Log.d(TAG, "========================================")
+    
+    finish()
+}
     
     override fun onBackPressed() {
-        Log.d(TAG, "⛔ Back blocked")
+        if (!isHiddenForAppUnlock) {
+            // Block
+        } else {
+            super.onBackPressed()
+        }
     }
     
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        return when (keyCode) {
-            KeyEvent.KEYCODE_HOME,
-            KeyEvent.KEYCODE_BACK,
-            KeyEvent.KEYCODE_APP_SWITCH,
-            KeyEvent.KEYCODE_MENU -> true
-            KeyEvent.KEYCODE_VOLUME_DOWN,
-            KeyEvent.KEYCODE_VOLUME_UP -> {
-                handleEmergencyExit()
-                true
-            }
-            else -> super.onKeyDown(keyCode, event)
-        }
+    if (!isLockActive || isHiddenForAppUnlock || isDestroying) {
+        return super.onKeyDown(keyCode, event)
     }
     
-    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
-        ev?.let {
-            val screenHeight = resources.displayMetrics.heightPixels
-            
-            if (it.y < screenHeight * 0.25f) {
-                collapseStatusBar()
-                return true
-            }
+    return when (keyCode) {
+        KeyEvent.KEYCODE_HOME,
+        KeyEvent.KEYCODE_BACK,
+        KeyEvent.KEYCODE_APP_SWITCH,
+        KeyEvent.KEYCODE_MENU -> {
+            Log.d(TAG, "⛔ Navigation key blocked: $keyCode")
+            true
         }
+        KeyEvent.KEYCODE_VOLUME_DOWN,
+        KeyEvent.KEYCODE_VOLUME_UP -> {
+            handleEmergencyExit()
+            true
+        }
+        else -> super.onKeyDown(keyCode, event)
+    }
+}
+    
+   override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+    if (!isLockActive || isHiddenForAppUnlock || isDestroying) {
         return super.dispatchTouchEvent(ev)
     }
     
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus && isLockActive) {
+    ev?.let { event ->
+        val screenHeight = resources.displayMetrics.heightPixels
+        val screenWidth = resources.displayMetrics.widthPixels
+        
+        // 🔒 Block top 25% (status bar area)
+        if (event.y < screenHeight * 0.25f) {
             collapseStatusBar()
-            bringToFront()
+            return true
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && hasFocus && isLockActive) {
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                         View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                         View.SYSTEM_UI_FLAG_FULLSCREEN or
-                         View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        // 🔒 Block bottom 20% (navigation gesture area) - INCREASED
+        if (event.y > screenHeight * 0.80f) {
+            Log.d(TAG, "⛔ Bottom area touch blocked at y=${event.y}")
+            return true
+        }
+        
+        // 🔒 Block edges (prevents edge gestures)
+        if (event.x < 50 || event.x > screenWidth - 50) {
+            if (event.y > screenHeight * 0.3f) { // Not blocking top corners
+                Log.d(TAG, "⛔ Edge gesture blocked")
+                return true
+            }
         }
     }
     
+    return super.dispatchTouchEvent(ev)
+}
+    
+   override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    
+    if (!hasFocus && isLockActive && !isHiddenForAppUnlock) {
+        collapseStatusBar()
+        bringToFront()
+    }
+    
+    if (hasFocus && isLockActive && !isHiddenForAppUnlock) {
+        // Re-apply system UI hiding
+        hideSystemUIMaximum()
+    }
+}
+    
     override fun onPause() {
         super.onPause()
-        pauseMediaPlayback()
-        if (isLockActive) {
+        if (isHiddenForAppUnlock) {
+            pauseMediaPlayback()
+        } else {
             collapseStatusBar()
             bringToFront()
         }
@@ -1415,29 +1441,119 @@ class DigitalDetoxLockActivity : Activity() {
     
     override fun onResume() {
         super.onResume()
-        resumeMediaPlayback()
+        if (!isHiddenForAppUnlock) {
+            resumeMediaPlayback()
+        }
     }
     
     override fun onStop() {
-        super.onStop()
-        if (isLockActive) {
-            collapseStatusBar()
-            bringToFront()
-        }
+    super.onStop()
+    
+    // ✅ CRITICAL: Check if app is being removed/destroyed
+    if (isFinishing || isDestroyed) {
+        Log.d(TAG, "📱 App finishing/destroyed - ensuring cleanup")
+        removeBottomNavigationBlocker()
+        
+        // Also remove status bar blocks
+        try {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            statusBarBlockViews.forEach { view ->
+                try {
+                    windowManager?.removeView(view)
+                } catch (e: Exception) { }
+            }
+            statusBarBlockViews.clear()
+        } catch (e: Exception) { }
+    } else if (isLockActive && !isHiddenForAppUnlock) {
+        collapseStatusBar()
+        bringToFront()
     }
+}
     
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (isLockActive) {
+        if (isLockActive && !isHiddenForAppUnlock) {
             collapseStatusBar()
             bringToFront()
         }
     }
     
-    override fun onDestroy() {
+   override fun onDestroy() {
+    Log.d(TAG, "🔥 onDestroy called")
+    
+    // Stop system UI handler
+    systemUIHandler?.removeCallbacks(systemUIRunnable!!)
+    
+    removeBottomNavigationBlocker()
+    
+    if (!isDestroying && isHiddenForAppUnlock) {
+        Log.d(TAG, "⚠️ Activity destroyed while hidden - cleanup done")
         super.onDestroy()
-        if (isLockActive) {
-            Log.d(TAG, "onDestroy with active lock")
-        }
+        return
     }
+    
+    super.onDestroy()
+    
+    try {
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        if (windowManager != null && statusBarBlockViews.isNotEmpty()) {
+            statusBarBlockViews.forEach { view ->
+                try {
+                    windowManager.removeView(view)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing status bar block in onDestroy: ${e.message}")
+                }
+            }
+            statusBarBlockViews.clear()
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Error in onDestroy cleanup: ${e.message}")
+    }
+    
+    try {
+        unregisterReceiver(stopReceiver)
+        unregisterReceiver(relockReceiver)
+        unregisterReceiver(homeKeyReceiver)
+        Log.d(TAG, "✅ Receivers unregistered")
+    } catch (e: Exception) {
+        Log.e(TAG, "Error unregistering receivers: ${e.message}")
+    }
+    
+    Log.d(TAG, "✅ Lock activity destroyed - all overlays removed")
+}
+
+override fun finish() {
+    Log.d(TAG, "🏁 finish() called")
+    
+    // Ensure bottom blocker is removed before finishing
+    if (!isDestroying) {
+        removeBottomNavigationBlocker()
+    }
+    
+    super.finish()
+}
+
+    
+    override fun onNewIntent(intent: Intent?) {
+    super.onNewIntent(intent)
+    
+    // ✅ CRITICAL: Check persistent unlock state
+    val unlockedUntil = prefs.getLong(KEY_APP_UNLOCKED_UNTIL, 0)
+    val isCurrentlyUnlocked = unlockedUntil > System.currentTimeMillis()
+    
+    if (isCurrentlyUnlocked) {
+        Log.d(TAG, "⏭️ App unlocked - ignoring new intent")
+        finish()
+        return
+    }
+    
+    if (isUnlockInProgress) {
+        Log.d(TAG, "⏭️ Unlock in progress - ignoring new intent")
+        return
+    }
+    
+    if (!isHiddenForAppUnlock) {
+        Log.d(TAG, "onNewIntent - lock visible, processing")
+    }
+}
 }

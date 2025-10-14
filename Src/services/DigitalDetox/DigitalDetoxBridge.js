@@ -46,7 +46,8 @@ class DigitalDetoxBridge {
 
   /**
    * Start the digital detox lock with given duration
-   * First checks if silent mode is enabled, prompts user if not
+   * First checks if a detox is already active
+   * Then checks if silent mode is enabled, prompts user if not
    * @param {number} durationInMinutes - Lock duration in minutes
    * @returns {Promise<boolean>} Success status
    */
@@ -54,6 +55,17 @@ class DigitalDetoxBridge {
     try {
       if (!DigitalDetoxModule) {
         console.warn('DigitalDetoxModule not available - native implementation required');
+        return false;
+      }
+      
+      // CRITICAL: Check if detox is already active
+      const isActive = await this.isDetoxActive();
+      if (isActive) {
+        Alert.alert(
+          'Detox Already Active',
+          'A digital detox session is already in progress. Please wait for it to complete or use emergency exit (press volume buttons 5 times).',
+          [{ text: 'OK' }]
+        );
         return false;
       }
       
