@@ -37,6 +37,10 @@ import ChallengeScreen from '../Pages/PlanYourDay/Challenge/ChallengeScreen';
 import EditChallengeScreen from '../Pages/PlanYourDay/Challenge/EditChallengeScreen';
 import ChallengeDetailScreen from '../Pages/ChallengesScreen/ChallengeDetailScreen';
 
+import CreateChallengeScreen from '../Pages/PlanYourDay/ChallengeLock/CreateChallengeScreen';
+import LockChallengesScreen from '../Pages/LockChallengesScreen/LockChallengesScreen';
+import LockChallengeDetailScreen from '../Pages/LockChallengesScreen/LockChallengeDetailScreen';
+
 // Plan Your Day Task screens
 import PlanYourDayScreen from '../Pages/PlanYourDay/Plan/PlanYourDayScreen';
 import PlanScreen from '../Pages/PlanYourDay/Plan/PlanScreen';
@@ -76,6 +80,14 @@ import DetoxMediaSettingsScreen from '../Pages/SettingsScreens/DetoxMediaSetting
 import GetBackScreen from '../Pages/SettingsScreens/GetBackScreen';
 import GetBackSettingsScreen from '../Pages/SettingsScreens/GetBackSettingsScreen';
 import GetBackConfirmationScreen from '../Pages/SettingsScreens/GetBackConfirmationScreen';
+import UsageLimitVideoSettingsScreen from '../Pages/SettingsScreens/UsageLimitVideoSettingsScreen';
+import DateReminderSettingsScreen from '../Pages/SettingsScreens/DateReminderSettingsScreen';
+import YouTubeVideosScreen from '../Pages/SettingsScreens/YouTubeVideosScreen';
+import YouTubeIntegrationScreen from '../Pages/SettingsScreens/YouTubeIntegrationScreen';
+import YouTubeSettingsScreen from '../Pages/SettingsScreens/YouTubeSettingsScreen';
+import NightRoutineScreen from '../Pages/SettingsScreens/NightRoutineScreen';
+import FullScreenAudioPlay from '../Pages/SettingsScreens/FullScreenAudioPlay';
+import FullScreenVideoPlayer from '../Pages/SettingsScreens/FullScreenVideoPlayer';
 
 const Stack = createNativeStackNavigator();
 
@@ -113,7 +125,7 @@ function AppStack({route}) {
         initialRouteName={routes.TASKSLECTION_SCREEN}>
         {/* Wrap each screen with ScreenWithNotes */}
         <Stack.Screen name={routes.TASKSLECTION_SCREEN}>
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <Task {...props} initialParams={defaultParams} />
             </ScreenWithNotes>
@@ -122,39 +134,39 @@ function AppStack({route}) {
 
         {/* Long-term goal setup screens */}
         <Stack.Screen name="CategoryLongTerm">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <CategoryScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="GoalScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <AddGoalScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="SetGoalScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <SetLongTermGoal {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="MindMapScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <MindMapScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="LandingPage">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <LandingPage {...props} />
             </ScreenWithNotes>
@@ -163,17 +175,17 @@ function AppStack({route}) {
 
         {/* Main app navigation - BottomTab has its own NotesButton wrapping */}
         <Stack.Screen name="BottomTab" component={BottomTabNavigator} />
-        
+
         <Stack.Screen name="CategorySelection">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <CateogerySelection {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="EvaluateProgress">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <EvaluateProgress {...props} />
             </ScreenWithNotes>
@@ -182,63 +194,63 @@ function AppStack({route}) {
 
         {/* HABIT FLOW SCREENS */}
         <Stack.Screen name="TimerScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <TimerScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="FrequencyScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <FrequencyScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="SchedulePreference">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <SchedulePreference {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="LinkGoal">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <LinkGoal {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="ChecklistScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <ChecklistScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="NumericScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <NumericScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="YesorNoScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <YesorNoScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="TimerTrackerScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <TimerTrackerScreen {...props} />
             </ScreenWithNotes>
@@ -247,31 +259,31 @@ function AppStack({route}) {
 
         {/* RECURRING TASK FLOW SCREENS */}
         <Stack.Screen name="RecurringYesorNoScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <RecurringYesorNoScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="RecurringChecklistScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <RecurringChecklistScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="RecurringTimerScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <RecurringTimerScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="RecurringNumericScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <RecurringNumericScreen {...props} />
             </ScreenWithNotes>
@@ -280,15 +292,15 @@ function AppStack({route}) {
 
         {/*TASK FLOW SCREEN */}
         <Stack.Screen name="TaskScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <TaskScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="TaskChecklistScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <TaskChecklistScreen {...props} />
             </ScreenWithNotes>
@@ -297,7 +309,7 @@ function AppStack({route}) {
 
         {/* Challenge TASK FLOW SCREEN */}
         <Stack.Screen name="ChallengeScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <ChallengeScreen {...props} />
             </ScreenWithNotes>
@@ -305,64 +317,88 @@ function AppStack({route}) {
         </Stack.Screen>
 
         <Stack.Screen name="EditChallengeScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <EditChallengeScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="ChallengeDetailScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <ChallengeDetailScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
 
+        <Stack.Screen name="CreateChallengeScreen">
+          {props => (
+            <ScreenWithNotes>
+              <CreateChallengeScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="LockChallengesScreen">
+          {props => (
+            <ScreenWithNotes>
+              <LockChallengesScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="LockChallengeDetailScreen">
+          {props => (
+            <ScreenWithNotes>
+              <LockChallengeDetailScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
         {/* Plan Your Day TASK FLOW SCREEN */}
         <Stack.Screen name="PlanYourDayScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <PlanYourDayScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="PlanScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <PlanScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="PlanTimerTrackerScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <PlanTimerTrackerScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="PlanChecklistScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <PlanChecklistScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="EditPlanTimerTrackerScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <EditPlanTimerTrackerScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="EditPlanScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <EditPlanScreen {...props} />
             </ScreenWithNotes>
@@ -379,15 +415,15 @@ function AppStack({route}) {
             cardOverlayEnabled: true,
             animationTypeForReplace: 'push',
           }}>
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <TaskEvaluationScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="SortingScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <SortingScreen {...props} />
             </ScreenWithNotes>
@@ -396,15 +432,15 @@ function AppStack({route}) {
 
         {/* Pomodoro Timer & Settings Screen */}
         <Stack.Screen name="PomodoroSettings">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <PomodoroSettings {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="PomoTrackerScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <PomoTrackerScreen {...props} />
             </ScreenWithNotes>
@@ -412,63 +448,63 @@ function AppStack({route}) {
         </Stack.Screen>
 
         <Stack.Screen name="AppBlockerScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <AppBlockerScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="AppUsageScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <AppUsageScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="AlarmScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <AlarmScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="CreateAlarmScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <CreateAlarmScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="CreateVoiceCommandScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <CreateVoiceCommandScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="VoiceCommandListScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <VoiceCommandListScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="IntentionSettingsScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <IntentionSettingsScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="AppreciationSettingsScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <AppreciationSettingsScreen {...props} />
             </ScreenWithNotes>
@@ -476,7 +512,7 @@ function AppStack({route}) {
         </Stack.Screen>
 
         <Stack.Screen name="DigitalDetoxScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <DigitalDetoxScreen {...props} />
             </ScreenWithNotes>
@@ -484,7 +520,7 @@ function AppStack({route}) {
         </Stack.Screen>
 
         <Stack.Screen name="DetoxMediaSettingsScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <DetoxMediaSettingsScreen {...props} />
             </ScreenWithNotes>
@@ -492,7 +528,7 @@ function AppStack({route}) {
         </Stack.Screen>
 
         <Stack.Screen name="GetBackScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <GetBackScreen {...props} />
             </ScreenWithNotes>
@@ -500,7 +536,7 @@ function AppStack({route}) {
         </Stack.Screen>
 
         <Stack.Screen name="GetBackSettingsScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <GetBackSettingsScreen {...props} />
             </ScreenWithNotes>
@@ -508,30 +544,94 @@ function AppStack({route}) {
         </Stack.Screen>
 
         <Stack.Screen name="GetBackConfirmationScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <GetBackConfirmationScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
 
+        <Stack.Screen name="UsageLimitVideoSettingsScreen">
+          {props => (
+            <ScreenWithNotes>
+              <UsageLimitVideoSettingsScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="DateReminderSettingsScreen">
+          {props => (
+            <ScreenWithNotes>
+              <DateReminderSettingsScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="YouTubeVideosScreen">
+          {props => (
+            <ScreenWithNotes>
+              <YouTubeVideosScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="YouTubeIntegrationScreen">
+          {props => (
+            <ScreenWithNotes>
+              <YouTubeIntegrationScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="YouTubeSettingsScreen">
+          {props => (
+            <ScreenWithNotes>
+              <YouTubeSettingsScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="NightRoutineScreen">
+          {props => (
+            <ScreenWithNotes>
+              <NightRoutineScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="FullScreenAudioPlayer">
+          {props => (
+            <ScreenWithNotes>
+              <FullScreenAudioPlay {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="FullScreenVideoPlayer">
+          {props => (
+            <ScreenWithNotes>
+              <FullScreenVideoPlayer {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
         <Stack.Screen name="PomoScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <PomoScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
-        
+
         <Stack.Screen name="AchievementScreen">
-          {(props) => (
+          {props => (
             <ScreenWithNotes>
               <AchievementScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
       </Stack.Navigator>
-      
+
       {/* SINGLE NotesModal - Rendered ONCE at the top level */}
       <NotesModal />
     </>

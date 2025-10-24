@@ -31,10 +31,18 @@ const CateogerySelection = () => {
   const {type} = route.params || {};
 
   const handleCategoryPress = category => {
-    navigation.navigate('EvaluateProgress', {
-      type: type,
-      selectedCategory: category,
-    });
+    // Check if the type is 'Goal' (Challenge) and navigate to CreateChallengeScreen
+    if (type === 'Goal') {
+      navigation.navigate('CreateChallengeScreen', {
+        type: type,
+        selectedCategory: category,
+      });
+    } else {
+      navigation.navigate('EvaluateProgress', {
+        type: type,
+        selectedCategory: category,
+      });
+    }
   };
 
   return (

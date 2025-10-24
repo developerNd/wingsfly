@@ -54,6 +54,10 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('DetoxMediaSettingsScreen');
   };
 
+  const handleDateReminderPress = () => {
+    navigation.navigate('DateReminderSettingsScreen');
+  };
+
   // NEW: Get Back
   const handleGetBackPress = () => {
     navigation.navigate('GetBackScreen');
@@ -61,6 +65,29 @@ const SettingsScreen = ({navigation}) => {
 
   const handleGetBackMediaSettingsPress = () => {
     navigation.navigate('GetBackSettingsScreen');
+  };
+
+  const handleUsageLimitVideoPress = () => {
+    navigation.navigate('UsageLimitVideoSettingsScreen');
+  };
+
+  // NEW: YouTube Videos
+  const handleYouTubeVideosPress = () => {
+    navigation.navigate('YouTubeVideosScreen', {
+      lockMode: true, // Enable lock mode
+    });
+  };
+
+  const handleYouTubePress = () => {
+    navigation.navigate('YouTubeIntegrationScreen');
+  };
+
+  const handleYouTubeSettingsPress = () => {
+    navigation.navigate('YouTubeSettingsScreen');
+  };
+
+  const handleNightRoutinePress = () => {
+    navigation.navigate('NightRoutineScreen');
   };
 
   const handleLogout = () => {
@@ -161,28 +188,36 @@ const SettingsScreen = ({navigation}) => {
           </View>
         </View>
 
+        {/* Sleep & Routine Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sleep & Routine</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem
+              title="Night Routine"
+              onPress={handleNightRoutinePress}
+            />
+          </View>
+        </View>
+
         {/* Wellbeing Section - Digital Detox & Get Back */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Wellbeing</Text>
           <View style={styles.sectionContent}>
-            <SettingItem 
-              title="Digital Detox" 
-              onPress={handleDigitalDetoxPress} 
+            <SettingItem
+              title="Digital Detox"
+              onPress={handleDigitalDetoxPress}
             />
             <View style={styles.separator} />
-            <SettingItem 
-              title="Detox Media Settings" 
-              onPress={handleDetoxMediaSettingsPress} 
+            <SettingItem
+              title="Detox Media Settings"
+              onPress={handleDetoxMediaSettingsPress}
             />
             <View style={styles.separator} />
-            <SettingItem 
-              title="Get Back" 
-              onPress={handleGetBackPress} 
-            />
+            <SettingItem title="Get Back" onPress={handleGetBackPress} />
             <View style={styles.separator} />
-            <SettingItem 
-              title="Get Back Media Settings" 
-              onPress={handleGetBackMediaSettingsPress} 
+            <SettingItem
+              title="Get Back Media Settings"
+              onPress={handleGetBackMediaSettingsPress}
             />
           </View>
         </View>
@@ -210,6 +245,46 @@ const SettingsScreen = ({navigation}) => {
             <SettingItem
               title="Appreciation Message"
               onPress={handleAppreciationPress}
+            />
+          </View>
+        </View>
+
+        {/* Daily Reminders Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Daily Reminders</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem
+              title="Date Reminder"
+              onPress={handleDateReminderPress}
+            />
+          </View>
+        </View>
+
+        {/* NEW: YouTube Videos Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Videos</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem
+              title="Night Mode"
+              onPress={handleYouTubeVideosPress}
+            />
+            <View style={styles.separator} />
+            <SettingItem title="YouTube" onPress={handleYouTubePress} />
+
+            <View style={styles.separator} />
+            <SettingItem
+              title="YouTube Settings"
+              onPress={handleYouTubeSettingsPress}
+            />
+          </View>
+        </View>
+
+        {/* Usage Limit Video Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionContent}>
+            <SettingItem
+              title="Usage Limit Video"
+              onPress={handleUsageLimitVideoPress}
             />
           </View>
         </View>

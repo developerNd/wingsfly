@@ -9,7 +9,10 @@ import {
   Image,
   Alert,
   TouchableOpacity,
+  NativeModules,
+  NativeEventEmitter,
 } from 'react-native';
+import {Platform} from 'react-native';
 import Logo from '../../assets/Images/brand.svg';
 import PlusIcon from 'react-native-vector-icons/AntDesign';
 import Calender from '../../Components/Calender';
@@ -28,10 +31,13 @@ import {HP, WP, FS} from '../../utils/dimentions';
 import {taskService} from '../../services/api/taskService';
 import {taskCompletionsService} from '../../services/api/taskCompletionsService';
 import {planYourDayService} from '../../services/api/planYourDayService';
+import {lockChallengeService} from '../../services/api/lockChallengeService';
 import {useAuth} from '../../contexts/AuthContext';
 import {useSession} from '../../contexts/SessionContext';
 import {shouldTaskAppearOnDate} from '../../utils/taskDateHelper';
 import {getCompletionDateString} from '../../utils/dateUtils';
+
+const {ChallengeLockModule} = NativeModules;
 
 const Home = () => {
   const [checkboxStates, setCheckboxStates] = useState({});
@@ -45,9 +51,13 @@ const Home = () => {
   const [allTasks, setAllTasks] = useState([]);
   const [planYourDayEntries, setPlanYourDayEntries] = useState([]);
   const [allPlanYourDay, setAllPlanYourDay] = useState([]);
+  const [lockChallenges, setLockChallenges] = useState([]);
+  const [allLockChallenges, setAllLockChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toDateString());
   const [taskCompletions, setTaskCompletions] = useState({});
+  const [lockChallengeCompletions, setLockChallengeCompletions] = useState({});
+  const [allCompletionsMap, setAllCompletionsMap] = useState({});
 
   const navigation = useNavigation();
   const {user} = useAuth();
@@ -64,6 +74,121 @@ const Home = () => {
   const completionDateString = useMemo(() => {
     return getCompletionDateString(selectedDate);
   }, [selectedDate]);
+
+  useEffect(() => {
+    let completionListener;
+
+    if (Platform.OS === 'android' && ChallengeLockModule) {
+      const eventEmitter = new NativeEventEmitter(ChallengeLockModule);
+
+      completionListener = eventEmitter.addListener(
+        'onChallengeCompleted',
+        async event => {
+          console.log('📢 Challenge completion event received:', event);
+
+          const {
+            challengeId,
+            userId: eventUserId,
+            dayNumber,
+            completed,
+            videoCompleted,
+            hoursCompleted,
+          } = event;
+
+          if (completed && challengeId) {
+            try {
+              const completionUserId = eventUserId || user?.id;
+
+              if (!completionUserId) {
+                console.error('❌ No user ID available for completion');
+                return;
+              }
+
+              // ✅ CRITICAL: All three fields should now be present
+              console.log(
+                `✅ Marking Day ${dayNumber} complete for challenge ${challengeId}`,
+              );
+              console.log(`   User ID: ${completionUserId}`);
+              console.log(`   Hours completed: ${hoursCompleted}`);
+              console.log(`   Video completed: ${videoCompleted}`);
+              console.log(`   Day Number: ${dayNumber}`);
+
+              // ✅ Pass all three fields to the database method
+              await lockChallengeService.markDayComplete(
+                challengeId,
+                completionUserId,
+                dayNumber,
+                hoursCompleted || null, // ✅ Send actual hours, not null
+                videoCompleted || false, // ✅ Send actual video completion status
+              );
+
+              console.log(
+                `✅ Day ${dayNumber} marked complete successfully in database`,
+              );
+
+              // Check if all days are now complete
+              const stats =
+                await lockChallengeService.getLockChallengeCompletionStats(
+                  challengeId,
+                  completionUserId,
+                );
+
+              console.log(`📊 Challenge Progress:`, {
+                completedDays: stats.completedDays,
+                totalDays: stats.totalDays,
+                remainingDays: stats.remainingDays,
+                completionPercentage: stats.completionPercentage,
+                videoCompletionPercentage: stats.videoCompletionPercentage,
+                isFullyCompleted: stats.isCompleted,
+              });
+
+              if (stats.isCompleted) {
+                await lockChallengeService.updateLockChallengeStatus(
+                  challengeId,
+                  'completed',
+                );
+                console.log(`🎉 Challenge ${challengeId} fully completed!`);
+
+                Alert.alert(
+                  '🎉 Challenge Complete!',
+                  `Congratulations! You have completed all ${stats.totalDays} days of this challenge!`,
+                  [{text: 'Awesome!'}],
+                );
+              } else {
+                console.log(
+                  `📈 Progress: ${stats.completedDays}/${stats.totalDays} days completed (${stats.remainingDays} remaining)`,
+                );
+
+                Alert.alert(
+                  '✅ Day Complete!',
+                  `Day ${dayNumber} completed! ${stats.remainingDays} days remaining.`,
+                  [{text: 'Continue'}],
+                );
+              }
+
+              // Reload tasks to reflect completion
+              await loadTasks();
+            } catch (error) {
+              console.error('❌ Error handling challenge completion:', error);
+              Alert.alert(
+                'Error',
+                'Failed to save challenge completion. Please try again.',
+              );
+            }
+          }
+        },
+      );
+
+      console.log('✅ Challenge completion listener registered');
+    }
+
+    return () => {
+      if (completionListener) {
+        completionListener.remove();
+        console.log('🔄 Challenge completion listener removed');
+      }
+    };
+  }, [selectedDate, user]);
 
   useEffect(() => {
     if (user && shouldShowWelcome()) {
@@ -94,20 +219,37 @@ const Home = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    // Update checkbox states based on lock challenge completions
+    const newCheckboxStates = {};
+
+    Object.keys(lockChallengeCompletions).forEach(lockId => {
+      const completion = lockChallengeCompletions[lockId];
+      if (completion.isCompleted) {
+        newCheckboxStates[lockId] = 4; // Completed
+      } else {
+        newCheckboxStates[lockId] = 1; // Not completed
+      }
+    });
+
+    setCheckboxStates(prev => ({
+      ...prev,
+      ...newCheckboxStates,
+    }));
+  }, [lockChallengeCompletions]);
+
   const handleWelcomeClose = () => {
     setWelcomePopupVisible(false);
 
-    // After welcome closes, check if we should show month reminder
     if (shouldShowMonthReminder()) {
       console.log('Welcome closed - showing month reminder next');
       setTimeout(() => {
         setMonthReminderVisible(true);
         markMonthReminderShown();
-      }, 800); // Small delay for smooth transition
+      }, 800);
     }
   };
 
-  // NEW: Handle month reminder close
   const handleMonthReminderClose = () => {
     console.log('Month reminder closed');
     setMonthReminderVisible(false);
@@ -158,7 +300,8 @@ const Home = () => {
   };
 
   const progress = useMemo(() => {
-    const totalItems = tasks.length + planYourDayEntries.length;
+    const totalItems =
+      tasks.length + planYourDayEntries.length + lockChallenges.length;
     if (totalItems === 0) return 0;
 
     const completedTasks = tasks.filter(task => {
@@ -167,17 +310,32 @@ const Home = () => {
       return completion?.is_completed === true;
     });
 
-    // FIXED: Check completion for Plan Your Day items using the correct task ID mapping
     const completedPlans = planYourDayEntries.filter(plan => {
-      const planId = plan.id; // This should be the prefixed ID like "plan_uuid"
+      const planId = plan.id;
       const completion = taskCompletions[planId];
       return completion?.is_completed === true;
     });
 
-    const totalCompleted = completedTasks.length + completedPlans.length;
+    // Use daily completion status for lock challenges
+    const completedLockChallenges = lockChallenges.filter(challenge => {
+      const challengeId = challenge.id;
+      const completion = lockChallengeCompletions[challengeId];
+      return completion?.isCompleted === true;
+    });
+
+    const totalCompleted =
+      completedTasks.length +
+      completedPlans.length +
+      completedLockChallenges.length;
     const progressPercentage = Math.round((totalCompleted / totalItems) * 100);
     return Math.min(progressPercentage, 100);
-  }, [tasks, planYourDayEntries, taskCompletions]);
+  }, [
+    tasks,
+    planYourDayEntries,
+    lockChallenges,
+    taskCompletions,
+    lockChallengeCompletions,
+  ]);
 
   const loadTaskCompletions = async dateInput => {
     if (!user) return;
@@ -191,6 +349,7 @@ const Home = () => {
         dateInput,
       );
 
+      // Load regular task completions
       const completions =
         await taskCompletionsService.getTaskCompletionsForDate(
           user.id,
@@ -202,13 +361,11 @@ const Home = () => {
       const completionsMap = {};
 
       completions.forEach(completion => {
-        // Default mapping for tasks
         completionsMap[completion.task_id] = completion;
-
-        // Also create a prefixed mapping for plans
-        // This handles the case where a completion belongs to a plan
         const prefixedId = `plan_${completion.task_id}`;
         completionsMap[prefixedId] = completion;
+        const lockChallengeId = `lock_${completion.task_id}`;
+        completionsMap[lockChallengeId] = completion;
 
         console.log(
           `Completion loaded for ${completion.task_id}: completed=${completion.is_completed}`,
@@ -216,6 +373,9 @@ const Home = () => {
       });
 
       setTaskCompletions(completionsMap);
+
+      // Load lock challenge specific completions
+      await loadLockChallengeCompletions(dateInput);
 
       const newCheckboxStates = {};
 
@@ -229,22 +389,166 @@ const Home = () => {
         }
       });
 
-      // Set checkbox states for Plan Your Day items using prefixed IDs
+      // Set checkbox states for plans
       planYourDayEntries.forEach(plan => {
-        const planId = plan.id; // This should already be prefixed like "plan_uuid"
+        const planId = plan.id;
         const completion = completionsMap[planId];
         if (completion?.is_completed === true) {
           newCheckboxStates[planId] = 4;
-          console.log(`Plan ${planId} marked as completed in checkbox states`);
         } else {
           newCheckboxStates[planId] = 1;
-          console.log(`Plan ${planId} marked as incomplete in checkbox states`);
         }
+      });
+
+      // Set checkbox states for lock challenges based on daily completion
+      lockChallenges.forEach(challenge => {
+        const challengeId = challenge.id;
+        // This will be updated after loadLockChallengeCompletions
+        newCheckboxStates[challengeId] = 1; // Default to incomplete
       });
 
       setCheckboxStates(newCheckboxStates);
     } catch (error) {
       console.error('Error loading task completions:', error);
+    }
+  };
+
+  // Update the loadLockChallenges function
+  const loadLockChallenges = async () => {
+    if (!user) {
+      return;
+    }
+
+    try {
+      const challengesData = await lockChallengeService.getLockChallenges(
+        user.id,
+      );
+
+      const transformedChallenges = challengesData.map(challenge => {
+        let timeDisplay = null;
+        if (challenge.time_slot_1) {
+          if (
+            typeof challenge.time_slot_1 === 'object' &&
+            challenge.time_slot_1.startTime
+          ) {
+            timeDisplay =
+              typeof challenge.time_slot_1.startTime === 'string'
+                ? challenge.time_slot_1.startTime
+                : String(challenge.time_slot_1.startTime);
+          } else if (typeof challenge.time_slot_1 === 'string') {
+            timeDisplay = challenge.time_slot_1;
+          }
+        }
+
+        return {
+          id: `lock_${challenge.id}`,
+          originalId: challenge.id,
+          title: challenge.name,
+          description: `Lock Challenge - ${challenge.category}`,
+          category: challenge.category,
+          taskType: 'Lock Challenge',
+          evaluationType: 'lockChallenge',
+          time: timeDisplay,
+          timeColor: null,
+          tags: ['Lock Challenge'],
+          image: null,
+          hasFlag: false,
+          priority: null,
+          type: 'lockChallenge',
+          status: challenge.status,
+          timeSlot1: challenge.time_slot_1,
+          timeSlot2: challenge.time_slot_2,
+          localVideoPath: challenge.local_video_path,
+          videoFileName: challenge.video_file_name,
+          youtubeLink: challenge.youtube_link,
+          startDate: challenge.start_date,
+          endDate: challenge.end_date,
+          durationDays: challenge.duration_days,
+          hoursPerDay: challenge.hours_per_day,
+          created_at: challenge.created_at,
+          isLockChallenge: true,
+        };
+      });
+
+      setAllLockChallenges(transformedChallenges);
+      // REMOVED: await loadLockChallengeStatuses(); - This was causing conflicts
+    } catch (error) {
+      console.error('Error loading Lock Challenges:', error);
+      Alert.alert('Error', 'Failed to load Lock Challenges. Please try again.');
+    }
+  };
+
+  // Add new function to load lock challenge daily completions
+  const loadLockChallengeCompletions = async dateInput => {
+    if (!user) return;
+
+    try {
+      const completionDate = getCompletionDateString(dateInput);
+      console.log(
+        'Loading lock challenge completions for date:',
+        completionDate,
+      );
+
+      // Get all lock challenges
+      const challenges = await lockChallengeService.getLockChallenges(user.id);
+      const challengeIds = challenges.map(c => c.id);
+
+      if (challengeIds.length === 0) return;
+
+      // Get completed days for all challenges
+      const completedDaysMap =
+        await lockChallengeService.getCompletedDaysForChallenges(
+          challengeIds,
+          user.id,
+        );
+
+      // Calculate which day number the selected date represents for each challenge
+      const completionsMap = {};
+
+      challenges.forEach(challenge => {
+        const lockId = `lock_${challenge.id}`;
+
+        // Calculate day number based on start date
+        if (challenge.start_date) {
+          const startDate = new Date(challenge.start_date);
+          const selectedDateObj = new Date(dateInput);
+
+          // Normalize dates to midnight
+          startDate.setHours(0, 0, 0, 0);
+          selectedDateObj.setHours(0, 0, 0, 0);
+
+          const daysDiff = Math.floor(
+            (selectedDateObj - startDate) / (1000 * 60 * 60 * 24),
+          );
+          const dayNumber = daysDiff + 1; // Day 1, 2, 3, etc.
+
+          console.log(
+            `Challenge ${challenge.name}: Day ${dayNumber} for date ${completionDate}`,
+          );
+
+          // Check if this day is completed
+          const challengeCompletions = completedDaysMap[challenge.id] || {};
+          const isDayCompleted =
+            challengeCompletions[dayNumber]?.completed || false;
+          const videoCompleted =
+            challengeCompletions[dayNumber]?.videoCompleted || false;
+
+          completionsMap[lockId] = {
+            dayNumber,
+            isCompleted: isDayCompleted,
+            videoCompleted: videoCompleted,
+            completionData: challengeCompletions[dayNumber],
+          };
+
+          console.log(
+            `Lock Challenge ${lockId} Day ${dayNumber}: completed=${isDayCompleted}`,
+          );
+        }
+      });
+
+      setLockChallengeCompletions(completionsMap);
+    } catch (error) {
+      console.error('Error loading lock challenge completions:', error);
     }
   };
 
@@ -307,6 +611,7 @@ const Home = () => {
         linkedGoalId: plan.linked_goal_id,
         linkedGoalTitle: plan.linked_goal_title,
         linkedGoalType: plan.linked_goal_type,
+        isPendingTask: plan.is_pending_task || false,
         note: plan.note,
         created_at: plan.created_at,
         isPlan: true,
@@ -334,6 +639,7 @@ const Home = () => {
       const [tasksData] = await Promise.all([
         taskService.getTasks(user.id),
         loadPlanYourDay(),
+        loadLockChallenges(),
       ]);
 
       const transformedTasks = tasksData.map(task => ({
@@ -422,6 +728,17 @@ const Home = () => {
 
         setAllPlanYourDay(prev => prev.filter(plan => plan.id !== taskId));
         setPlanYourDayEntries(prev => prev.filter(plan => plan.id !== taskId));
+      } else if (taskId.startsWith('lock_')) {
+        const originalId = taskId.replace('lock_', '');
+
+        await lockChallengeService.deleteLockChallenge(originalId);
+
+        setAllLockChallenges(prev =>
+          prev.filter(challenge => challenge.id !== taskId),
+        );
+        setLockChallenges(prev =>
+          prev.filter(challenge => challenge.id !== taskId),
+        );
       } else {
         await taskService.deleteTask(taskId);
 
@@ -484,6 +801,11 @@ const Home = () => {
         loadTasks();
         navigation.setParams({newPlanCreated: undefined});
       }
+
+      if (route?.params?.newLockChallengeCreated) {
+        loadTasks();
+        navigation.setParams({newLockChallengeCreated: undefined});
+      }
     });
 
     return unsubscribe;
@@ -500,12 +822,191 @@ const Home = () => {
     return planStartDate === checkDate;
   };
 
+  const shouldLockChallengeAppearOnDate = (challenge, dateString) => {
+    if (!challenge.startDate || !challenge.endDate) {
+      return false; // Don't show if dates are missing
+    }
+
+    const challengeStart = new Date(challenge.startDate);
+    const challengeEnd = new Date(challenge.endDate);
+    const checkDate = new Date(dateString);
+
+    // Normalize all dates to midnight
+    challengeStart.setHours(0, 0, 0, 0);
+    challengeEnd.setHours(0, 0, 0, 0);
+    checkDate.setHours(0, 0, 0, 0);
+
+    // Check if the selected date is within the challenge period
+    const isWithinPeriod =
+      checkDate >= challengeStart && checkDate <= challengeEnd;
+
+    console.log(`Challenge ${challenge.title}:`, {
+      startDate: challenge.startDate,
+      endDate: challenge.endDate,
+      checkDate: dateString,
+      isWithinPeriod,
+    });
+
+    return isWithinPeriod;
+  };
+
   const shouldRegularTaskAppearOnDate = (task, dateString) => {
-    if (!task.startDate) {
+    if (!task.startDate) return true;
+
+    const checkDate = new Date(dateString);
+    const startDate = new Date(task.startDate);
+
+    checkDate.setHours(0, 0, 0, 0);
+    startDate.setHours(0, 0, 0, 0);
+
+    // First check: Does it appear based on frequency?
+    const appearsOnDate = shouldTaskAppearOnDate(task, dateString);
+
+    const isTaskType = task.taskType === 'Task';
+
+    console.log(`📝 Task "${task.title}" (${task.id}):`, {
+      taskType: task.taskType,
+      startDate: task.startDate,
+      checkDate: dateString,
+      isPendingTask: task.isPendingTask,
+      appearsOnDate,
+    });
+
+    // ✅ ONLY apply pending logic to "Task" type
+    if (task.isPendingTask && isTaskType) {
+      // Before start date - don't show
+      if (checkDate < startDate) {
+        console.log(`  → Task: Before start date, don't show`);
+        return false;
+      }
+
+      // ✅ CHECK ALL COMPLETIONS (not just current date)
+      const allCompletions = allCompletionsMap[task.id];
+
+      console.log(
+        `  → allCompletionsMap has ${
+          Object.keys(allCompletionsMap).length
+        } tasks`,
+      );
+      console.log(`  → This task completions:`, allCompletions?.length || 0);
+
+      if (
+        !allCompletions ||
+        !Array.isArray(allCompletions) ||
+        allCompletions.length === 0
+      ) {
+        // No completions found - show as pending
+        console.log(`  → Task: No completions found, SHOW (pending)`);
+        return true;
+      }
+
+      // Find if completed on ANY date
+      const completedRecord = allCompletions.find(c => c.is_completed === true);
+
+      if (completedRecord) {
+        const completionDate = new Date(completedRecord.completion_date);
+        completionDate.setHours(0, 0, 0, 0);
+
+        console.log(
+          `  → Task completed on: ${completedRecord.completion_date}`,
+        );
+
+        // If completed BEFORE the check date, hide it
+        if (completionDate < checkDate) {
+          console.log(`  → Task: Completed before ${dateString}, don't show`);
+          return false;
+        }
+
+        // If completed ON the check date, show it (so user sees it as completed)
+        if (completionDate.toDateString() === checkDate.toDateString()) {
+          console.log(`  → Task: Completed on ${dateString}, SHOW (completed)`);
+          return true;
+        }
+      }
+
+      // If on or after start date and not completed before this date
+      console.log(`  → Task: Not completed before this date, SHOW (pending)`);
       return true;
     }
 
-    return shouldTaskAppearOnDate(task, dateString);
+    // ✅ For Habit and Recurring tasks - use original frequency logic only
+    console.log(`  → ${task.taskType}: Use frequency logic = ${appearsOnDate}`);
+    return appearsOnDate;
+  };
+
+  const loadAllCompletionsForPendingCheck = async () => {
+    console.log('🔍 loadAllCompletionsForPendingCheck CALLED');
+    console.log('   User:', user?.id);
+    console.log('   All tasks count:', allTasks.length);
+
+    if (!user) {
+      console.log('❌ No user, exiting');
+      return;
+    }
+
+    // ✅ Prevent concurrent calls
+    if (loadAllCompletionsForPendingCheck.loading) {
+      console.log('⏳ Already loading completions, skipping...');
+      return;
+    }
+
+    try {
+      loadAllCompletionsForPendingCheck.loading = true;
+
+      console.log('🔍 Loading all completions for pending task check...');
+
+      // Wait for tasks to be loaded
+      if (allTasks.length === 0) {
+        console.log('⏳ No tasks loaded yet, skipping...');
+        loadAllCompletionsForPendingCheck.loading = false;
+        return;
+      }
+
+      const allTaskIds = allTasks.map(t => t.id);
+      console.log('📋 Loading completions for task IDs:', allTaskIds);
+
+      const completionsMap = {};
+
+      // Load ALL completions in parallel
+      const taskPromises = allTaskIds.map(async taskId => {
+        try {
+          const completions =
+            await taskCompletionsService.getAllTaskCompletions(taskId, user.id);
+          console.log(
+            `   Task ${taskId}: ${completions?.length || 0} completions`,
+          );
+          return {
+            taskId,
+            completions: Array.isArray(completions) ? completions : [],
+          };
+        } catch (error) {
+          console.error(
+            `❌ Error loading completions for task ${taskId}:`,
+            error,
+          );
+          return {taskId, completions: []};
+        }
+      });
+
+      // Wait for ALL to complete
+      const taskResults = await Promise.all(taskPromises);
+
+      // Map results
+      taskResults.forEach(({taskId, completions}) => {
+        completionsMap[taskId] = completions;
+      });
+
+      console.log(
+        '✅ Setting allCompletionsMap with',
+        Object.keys(completionsMap).length,
+        'tasks',
+      );
+      setAllCompletionsMap(completionsMap);
+    } catch (error) {
+      console.error('❌ Error loading all completions:', error);
+    } finally {
+      loadAllCompletionsForPendingCheck.loading = false;
+    }
   };
 
   const filteredTasks = useMemo(() => {
@@ -517,11 +1018,20 @@ const Home = () => {
       return shouldPlanAppearOnDate(plan, selectedDate);
     });
 
-    const combinedItems = [...filteredRegularTasks, ...filteredPlans];
+    const filteredLockChallenges = allLockChallenges.filter(challenge => {
+      return shouldLockChallengeAppearOnDate(challenge, selectedDate);
+    });
+
+    const combinedItems = [
+      ...filteredRegularTasks,
+      ...filteredPlans,
+      ...filteredLockChallenges,
+    ];
 
     console.log('Filtering items for date:', selectedDate);
     console.log('Regular tasks:', filteredRegularTasks.length);
     console.log('Plan Your Day entries:', filteredPlans.length);
+    console.log('Lock Challenges:', filteredLockChallenges.length);
     console.log('Total items:', combinedItems.length);
 
     const sortedItems = combinedItems.sort((a, b) => {
@@ -552,23 +1062,87 @@ const Home = () => {
     console.log('Filtered and sorted items count:', sortedItems.length);
 
     return sortedItems;
-  }, [allTasks, allPlanYourDay, selectedDate]);
+  }, [
+    allTasks,
+    allPlanYourDay,
+    allLockChallenges,
+    selectedDate,
+    allCompletionsMap,
+  ]); // ✅ ADD allCompletionsMap // ✅ ADD taskCompletions as dependency
 
+  // ✅ 3. UPDATE: Separate useEffect for setting filtered items
   useEffect(() => {
-    const regularTasks = filteredTasks.filter(item => !item.isPlan);
+    const regularTasks = filteredTasks.filter(
+      item => !item.isPlan && !item.isLockChallenge,
+    );
     const plans = filteredTasks.filter(item => item.isPlan);
+    const challenges = filteredTasks.filter(item => item.isLockChallenge);
 
     setTasks(regularTasks);
     setPlanYourDayEntries(plans);
+    setLockChallenges(challenges);
+  }, [filteredTasks]);
 
-    if (filteredTasks.length >= 0) {
-      loadTaskCompletions(selectedDate);
-    }
-  }, [filteredTasks, selectedDate]);
-
+  // ✅ 4. SIMPLIFIED: Load completions when date changes
   useEffect(() => {
-    loadTasks();
+    const loadCompletionsForDate = async () => {
+      if (!user) return;
+
+      console.log('📅 Date changed, loading completions for:', selectedDate);
+
+      // Load current date completions
+      await loadTaskCompletions(selectedDate);
+    };
+
+    loadCompletionsForDate();
+  }, [selectedDate, user]); // ✅ REMOVE allCompletionsMap dependency
+
+  // ✅ 5. KEEP: Initial load on mount
+  useEffect(() => {
+    const initializeData = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      console.log('🚀 Initial app load - loading all data');
+
+      setLoading(true);
+
+      // Load tasks, plans, and challenges
+      await loadTasks();
+
+      console.log('✅ Tasks loaded, count:', allTasks.length);
+
+      // Wait longer for state to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      console.log('📊 After wait, allTasks.length:', allTasks.length);
+
+      // Load completions for current date
+      await loadTaskCompletions(selectedDate);
+
+      // ✅ Load ALL completions for pending check
+      console.log('🔄 Calling loadAllCompletionsForPendingCheck...');
+      await loadAllCompletionsForPendingCheck();
+
+      setLoading(false);
+    };
+
+    initializeData();
   }, [user]);
+
+  // ✅ NEW: Load all completions when allTasks changes
+  useEffect(() => {
+    const loadCompletionsWhenTasksReady = async () => {
+      if (!user || allTasks.length === 0) return;
+
+      console.log('🔄 Tasks changed, loading all completions...');
+      await loadAllCompletionsForPendingCheck();
+    };
+
+    loadCompletionsWhenTasksReady();
+  }, [allTasks, user]); // ✅ Trigger when allTasks changes
 
   const handleDateSelect = dateString => {
     console.log(
@@ -644,7 +1218,7 @@ const Home = () => {
       image: Icons.Goal,
       navigation: () => {
         setModalVisible(false);
-        navigation.navigate('ChallengeScreen', {type: 'Goal'});
+        navigation.navigate('CategorySelection', {type: 'Goal'});
       },
     },
     {
@@ -667,12 +1241,12 @@ const Home = () => {
     console.log('Processing task for achievement screen:', {
       title: task.title,
       isPlan: task.isPlan,
+      isLockChallenge: task.isLockChallenge,
       blockTimeData: task.blockTimeData,
       durationData: task.durationData,
       timerDuration: task.timerDuration,
     });
 
-    // For Plan Your Day items, check duration data directly
     if (task.isPlan && task.durationData) {
       try {
         const durationData =
@@ -683,7 +1257,7 @@ const Home = () => {
         console.log('Using Plan Your Day duration data:', durationData);
 
         if (durationData.totalMinutes) {
-          totalCompletedTime = durationData.totalMinutes * 60; // Convert to seconds
+          totalCompletedTime = durationData.totalMinutes * 60;
         } else if (
           durationData.hours !== undefined ||
           durationData.minutes !== undefined
@@ -701,9 +1275,7 @@ const Home = () => {
       } catch (error) {
         console.error('Error parsing Plan Your Day duration data:', error);
       }
-    }
-    // For Plan Your Day items, also check block time data if available
-    else if (task.isPlan && task.blockTimeData) {
+    } else if (task.isPlan && task.blockTimeData) {
       try {
         const blockTimeData =
           typeof task.blockTimeData === 'string'
@@ -720,9 +1292,12 @@ const Home = () => {
       } catch (error) {
         console.error('Error parsing Plan Your Day block time data:', error);
       }
-    }
-    // For regular tasks, check block time if enabled
-    else if (!task.isPlan && task.blockTimeEnabled && task.blockTimeData) {
+    } else if (
+      !task.isPlan &&
+      !task.isLockChallenge &&
+      task.blockTimeEnabled &&
+      task.blockTimeData
+    ) {
       try {
         const blockTimeData =
           typeof task.blockTimeData === 'string'
@@ -739,9 +1314,7 @@ const Home = () => {
       } catch (error) {
         console.error('Error parsing task block time data:', error);
       }
-    }
-    // For regular tasks, check timer duration
-    else if (!task.isPlan && task.timerDuration) {
+    } else if (!task.isPlan && !task.isLockChallenge && task.timerDuration) {
       try {
         let durationInMinutes = 0;
 
@@ -763,7 +1336,7 @@ const Home = () => {
           durationInMinutes = task.timerDuration;
         }
 
-        totalCompletedTime = durationInMinutes * 60; // Convert to seconds
+        totalCompletedTime = durationInMinutes * 60;
         console.log(
           `Task timer duration: ${durationInMinutes} minutes (${totalCompletedTime} seconds)`,
         );
@@ -806,7 +1379,6 @@ const Home = () => {
     navigation.navigate('AchievementScreen', achievementData);
   };
 
-  // Helper function to calculate time duration from start and end times
   const calculateTimeDuration = (startTime, endTime) => {
     const parseTimeString = timeStr => {
       if (!timeStr || typeof timeStr !== 'string') {
@@ -848,7 +1420,6 @@ const Home = () => {
 
       let duration;
       if (endSeconds < startSeconds) {
-        // Time spans midnight
         duration = endSeconds + 24 * 3600 - startSeconds;
       } else {
         duration = endSeconds - startSeconds;
@@ -985,6 +1556,89 @@ const Home = () => {
     }
   };
 
+  const handleLockChallengeCompletion = async (
+    challengeId,
+    isCompleted = true,
+  ) => {
+    try {
+      const challenge = allLockChallenges.find(c => c.id === challengeId);
+      if (!challenge) {
+        console.error('Lock Challenge not found:', challengeId);
+        return;
+      }
+
+      const originalId = challenge.originalId;
+      const completionDate = getCompletionDateString(selectedDate);
+
+      // Get the day number for this date
+      const dayCompletion = lockChallengeCompletions[challengeId];
+      if (!dayCompletion) {
+        console.error(
+          'Day completion info not found for challenge:',
+          challengeId,
+        );
+        return;
+      }
+
+      const dayNumber = dayCompletion.dayNumber;
+      console.log(
+        `Marking Lock Challenge ${originalId} Day ${dayNumber} as ${
+          isCompleted ? 'completed' : 'not completed'
+        }`,
+      );
+
+      if (isCompleted) {
+        // Mark the specific day as complete
+        await lockChallengeService.markDayComplete(
+          originalId,
+          user.id,
+          dayNumber,
+          challenge.hoursPerDay || null,
+          false, // videoCompleted - will be updated separately
+        );
+      } else {
+        // Unmark the specific day
+        await lockChallengeService.unmarkDayComplete(
+          originalId,
+          user.id,
+          dayNumber,
+        );
+      }
+
+      // Reload completions
+      await loadLockChallengeCompletions(selectedDate);
+
+      if (isCompleted) {
+        setCheckboxStates(prev => ({
+          ...prev,
+          [challengeId]: 4,
+        }));
+
+        setTimeout(() => navigateToAchievementScreen(challenge), 300);
+      } else {
+        setCheckboxStates(prev => ({
+          ...prev,
+          [challengeId]: 1,
+        }));
+      }
+
+      console.log(
+        `Lock Challenge ${challengeId} Day ${dayNumber} marked as ${
+          isCompleted ? 'completed' : 'not completed'
+        }`,
+      );
+    } catch (error) {
+      console.error('Error updating Lock Challenge completion:', error);
+      Alert.alert(
+        'Error',
+        'Failed to update lock challenge. Please try again.',
+      );
+
+      // Reload to get correct state
+      await loadLockChallengeCompletions(selectedDate);
+    }
+  };
+
   const toggleCheckbox = async id => {
     console.log(
       'toggleCheckbox called with id:',
@@ -994,6 +1648,29 @@ const Home = () => {
       'type:',
       typeof selectedDate,
     );
+
+    if (id.startsWith('lock_')) {
+      const challenge = allLockChallenges.find(c => c.id === id);
+      if (!challenge) return;
+
+      console.log(
+        'Toggling Lock Challenge item:',
+        challenge.title,
+        'Current day completion:',
+        lockChallengeCompletions[id]?.isCompleted || false,
+      );
+
+      // Toggle the completion for today's specific day
+      const dayCompletion = lockChallengeCompletions[id];
+      if (dayCompletion) {
+        const isCurrentlyCompleted = dayCompletion.isCompleted;
+        await handleLockChallengeCompletion(id, !isCurrentlyCompleted);
+      } else {
+        // If no completion data, default to marking as complete
+        await handleLockChallengeCompletion(id, true);
+      }
+      return;
+    }
 
     if (id.startsWith('plan_')) {
       const plan = allPlanYourDay.find(p => p.id === id);
@@ -1172,10 +1849,14 @@ const Home = () => {
   const markTaskCompleted = async (taskId, specificCompletionDate = null) => {
     let item = null;
     let isPlan = false;
+    let isLockChallenge = false;
 
     if (taskId.startsWith('plan_')) {
       item = allPlanYourDay.find(p => p.id === taskId);
       isPlan = true;
+    } else if (taskId.startsWith('lock_')) {
+      item = allLockChallenges.find(c => c.id === taskId);
+      isLockChallenge = true;
     } else {
       item =
         allTasks.find(t => t.id === taskId) || tasks.find(t => t.id === taskId);
@@ -1191,6 +1872,14 @@ const Home = () => {
     try {
       if (isPlan) {
         await handlePlanYourDayCompletion(taskId, true);
+        setTimeout(async () => {
+          await loadTaskCompletions(selectedDate);
+        }, 500);
+        return;
+      }
+
+      if (isLockChallenge) {
+        await handleLockChallengeCompletion(taskId, true);
         setTimeout(async () => {
           await loadTaskCompletions(selectedDate);
         }, 500);
@@ -1370,14 +2059,26 @@ const Home = () => {
 
   const renderTask = ({item, index}) => {
     const isPlan = item.isPlan || false;
+    const isLockChallenge = item.isLockChallenge || false;
 
     let displayCheckboxState = 1;
-    const completion = taskCompletions[item.id];
 
-    if (completion?.is_completed === true) {
-      displayCheckboxState = 4;
-    } else if (checkboxStates[item.id]) {
-      displayCheckboxState = checkboxStates[item.id];
+    if (isLockChallenge) {
+      // Use daily completion status ONLY
+      const dayCompletion = lockChallengeCompletions[item.id];
+      if (dayCompletion?.isCompleted) {
+        displayCheckboxState = 4; // Completed today
+      } else {
+        displayCheckboxState = 1; // Not completed today
+      }
+    } else {
+      // For regular tasks and plans, use task completions
+      const completion = taskCompletions[item.id];
+      if (completion?.is_completed === true) {
+        displayCheckboxState = 4;
+      } else if (checkboxStates[item.id]) {
+        displayCheckboxState = checkboxStates[item.id];
+      }
     }
 
     const totalItems = filteredTasks.length;
@@ -1392,7 +2093,10 @@ const Home = () => {
           onTaskDelete={deleteTask}
           selectedDate={selectedDate}
           taskCompletions={taskCompletions}
+          lockChallengeCompletions={lockChallengeCompletions}
           isPlan={isPlan}
+          isLockChallenge={isLockChallenge}
+          userId={user?.id}
         />
       </View>
     );
@@ -1533,7 +2237,6 @@ const Home = () => {
         userName={user?.name || user?.email || user?.display_name}
       />
 
-      {/* NEW: Month Reminder Modal */}
       <MonthReminderModal
         visible={isMonthReminderVisible}
         onClose={handleMonthReminderClose}

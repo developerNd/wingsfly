@@ -1,6 +1,6 @@
 import React, {useEffect, useState, useRef} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
-import {AppState, DeviceEventEmitter} from 'react-native';
+import {AppState, DeviceEventEmitter, Alert} from 'react-native';
 import {AuthProvider, useAuth} from './Src/contexts/AuthContext';
 import {SessionProvider, useSession} from './Src/contexts/SessionContext';
 import {MusicProvider, useMusic} from './Src/contexts/MusicContext';
@@ -20,6 +20,7 @@ import {useSessionTracking} from './Src/hooks/useSessionTracking';
 import {challengeService} from './Src/services/api/challengeService';
 import SleepTrackerModal from './Src/Components/SleepTrackerModal';
 import {sleepTrackerService} from './Src/services/api/SleepTrackerService';
+import NightModeScheduler from './Src/services/NightModeScheduler';
 
 // Music Manager Component
 const MusicManager = () => {
@@ -834,6 +835,153 @@ const IntentionBroadcastListener = ({navigationRef}) => {
   return null;
 };
 
+/**
+ * Night Mode Scheduler Manager Component - FINAL WORKING VERSION
+ * This properly waits for React Navigation to be fully initialized
+ */
+
+const NightModeSchedulerManager = ({navigationRef}) => {
+  const {user} = useAuth();
+  const [isNavReady, setIsNavReady] = useState(false);
+  const pendingNavigation = useRef(null);
+  const hasInitialized = useRef(false);
+
+  // Track navigation readiness using proper React Navigation method
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      // Use the proper isReady() method from React Navigation
+      if (navigationRef?.current?.isReady?.()) {
+        if (!isNavReady) {
+          console.log(
+            '✅ [NightModeSchedulerManager] Navigation is NOW ready (via isReady())',
+          );
+          setIsNavReady(true);
+        }
+      }
+    }, 100); // Check every 100ms
+
+    return () => clearInterval(checkInterval);
+  }, [navigationRef, isNavReady]);
+
+  // Execute pending navigation when ready
+  useEffect(() => {
+    if (isNavReady && pendingNavigation.current) {
+      console.log(
+        '🚀 [NightModeSchedulerManager] Executing pending navigation',
+      );
+      const {screen, params} = pendingNavigation.current;
+
+      setTimeout(() => {
+        try {
+          navigationRef.current.navigate(screen, params);
+          console.log(
+            '✅ [NightModeSchedulerManager] Navigation executed successfully',
+          );
+          pendingNavigation.current = null;
+        } catch (error) {
+          console.error(
+            '❌ [NightModeSchedulerManager] Navigation error:',
+            error,
+          );
+        }
+      }, 300);
+    }
+  }, [isNavReady, navigationRef]);
+
+  // Initialize Night Mode Scheduler
+  useEffect(() => {
+    const initializeScheduler = async () => {
+      if (hasInitialized.current || !user?.id || !isNavReady) {
+        return;
+      }
+
+      try {
+        console.log('🌙 [NightModeSchedulerManager] Initializing scheduler');
+        await NightModeScheduler.initialize(user.id, navigationRef);
+        hasInitialized.current = true;
+        console.log('✅ [NightModeSchedulerManager] Scheduler initialized');
+      } catch (error) {
+        console.error('❌ [NightModeSchedulerManager] Init error:', error);
+      }
+    };
+
+    setTimeout(initializeScheduler, 2000);
+  }, [user?.id, isNavReady, navigationRef]);
+
+  // Listen for Night Mode triggers
+  useEffect(() => {
+    const handleTrigger = data => {
+      console.log(
+        '🌙 [NightModeSchedulerManager] TRIGGER_NIGHT_MODE received:',
+        data,
+      );
+
+      const bedHour = data.bed_hour || 22;
+      const bedMinute = data.bed_minute || 0;
+      const appWasKilled = data.app_was_killed || false;
+
+      console.log(
+        `🌙 Bed: ${bedHour}:${String(bedMinute).padStart(
+          2,
+          '0',
+        )}, Was killed: ${appWasKilled}`,
+      );
+
+      const navParams = {
+        autoStart: true,
+        fromNightModeScheduler: true,
+        fromKilledState: appWasKilled,
+        bedHour,
+        bedMinute,
+      };
+
+      // Check if navigation is TRULY ready using isReady()
+      if (navigationRef?.current?.isReady?.()) {
+        console.log(
+          '🚀 [NightModeSchedulerManager] Nav ready - navigating NOW',
+        );
+
+        try {
+          navigationRef.current.navigate('YouTubeVideosScreen', navParams);
+          console.log('✅ [NightModeSchedulerManager] Navigation SUCCESS');
+        } catch (error) {
+          console.error(
+            '❌ [NightModeSchedulerManager] Navigation FAILED:',
+            error.message,
+          );
+          // Store for retry
+          pendingNavigation.current = {
+            screen: 'YouTubeVideosScreen',
+            params: navParams,
+          };
+        }
+      } else {
+        console.warn(
+          '⚠️ [NightModeSchedulerManager] Nav NOT ready - storing pending',
+        );
+        pendingNavigation.current = {
+          screen: 'YouTubeVideosScreen',
+          params: navParams,
+        };
+      }
+    };
+
+    const subscription = DeviceEventEmitter.addListener(
+      'TRIGGER_NIGHT_MODE',
+      handleTrigger,
+    );
+
+    console.log('✅ [NightModeSchedulerManager] Listener registered');
+
+    return () => {
+      subscription.remove();
+      console.log('🌙 [NightModeSchedulerManager] Listener removed');
+    };
+  }, [navigationRef]);
+
+  return null;
+};
+
 // Main App Content
 const AppContent = () => {
   const {user} = useAuth();
@@ -1007,6 +1155,7 @@ const AppContent = () => {
         <MonthReminderNotificationManager />
         <WaterReminderManager />
         <SessionTrackingManager />
+        <NightModeSchedulerManager navigationRef={navigationRef} />
       </SessionProvider>
     </NavigationContainer>
   );

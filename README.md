@@ -138,6 +138,58 @@ Smart daily planning with unique voice-guided experience.
 
 ---
 
+#### **F. Lock Challenge**
+Gamified intensive digital wellness challenges with video-based motivation and scheduled time slots.
+
+**Quick Setup:**
+- Challenge name and category selection
+- Video integration (local upload or YouTube link)
+- Duration configuration (1-365 days)
+- Hours per day commitment (0.5-24 hours)
+- Primary and backup time slot scheduling
+- Automatic start and end date calculation
+
+**Features:**
+- Dedicated "Lock Challenges" tab in navigation
+- Quick add button for challenge creation
+- Pull-to-refresh for real-time updates
+- Status indicators: pending, in-progress, completed, missed
+- Challenge cards display:
+  - Name and status badge
+  - Duration and hours per day
+  - Start and end dates
+  - Category tag
+- Day-by-day calendar grid (4-column layout) with color-coded day status:
+  - Gray: Pending/incomplete
+  - Blue: Completed
+  - Red: Expired (past date, not completed)
+- Completion tracking:
+  - Mark individual days as complete
+  - Track hours invested per day
+  - Record video completion status
+  - Automatic expiration for past dates
+  - Completion statistics (total days, percentage, hours)
+  - Video completion rate calculation
+- Data Persistence:
+  - Supabase backend synchronization
+  - Real-time multi-device sync
+  - Historical data preservation
+  - Offline caching support
+- Native Integration:
+  - `ChallengeNativeScheduler` module
+  - Time slot notification scheduling
+  - Background task scheduling
+  - Persistent cross-restart scheduling
+- Validation:
+  - Challenge name required (max 70 characters)
+  - Video required (upload or YouTube)
+  - YouTube URL format validation
+  - Time slot ordering (backup after primary)
+  - Duration range: 1-365 days
+  - Hours per day: 0.5-24 hours
+
+---
+
 ### **2. Evaluation Type Completion Flows**
 
 #### **Yes/No Completion**
@@ -619,6 +671,52 @@ Smart daily planning with unique voice-guided experience.
 - Select voice message for alarm reminders
 - Set multiple reminders per task
 - Recurring reminder options
+
+---
+
+## 📅 Date Reminder - Daily Date Notifications
+
+**Full-Screen Date Reminders:**  
+
+- Two scheduled notifications per day (morning and evening)
+- Customizable timing for each reminder
+- 12-hour format (AM/PM) time display
+- Immersive full-screen overlay design
+- Optional custom image background
+- Dismissible manually or auto-closes after 30 seconds
+- Works in foreground and background
+- Persists across app restarts
+
+**Image Integration:**  
+
+- Optional personal image per reminder
+- Image upload from gallery or files
+- Image preview during setup
+- Supported formats: JPG, PNG
+- Auto-optimized (1024x1024, 0.8 quality)
+- Change or remove images anytime
+
+**Auto-Dismiss Functionality:**  
+
+- Configurable 30-second auto-close timer
+- Manual dismiss option always available
+- Prevents notification fatigue
+- User-controlled toggle on/off
+
+**Notification Behavior:**  
+
+- Native system-level scheduling
+- Precise time-based delivery
+- Active in system notification area
+- Reliable cross-device consistency
+- Settings persist after app restart
+
+**Backend Integration:**  
+
+- Native `DateReminderModule` management
+- Real-time configuration updates
+- Settings auto-save on changes
+- Seamless notification delivery
 
 ---
 

@@ -41,6 +41,12 @@ class MainApplication : Application(), ReactApplication {
               add(GetBackPackage())
               // Add the AlarmPackage for native alarms
               add(AlarmPackage())
+              add(ChallengeLockPackage())
+              add(ChallengeSchedulerPackage())
+              add(UsageLimitVideoPackage())
+              add(DateReminderModulePackage())
+              add(YouTubeNightModePackage())
+              add(NightModeSchedulerPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"
@@ -60,6 +66,15 @@ class MainApplication : Application(), ReactApplication {
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
       load()
+    }
+    
+    // ✅ NEW: Schedule daily date reminders (7 AM and 7 PM)
+    try {
+        Log.d("DateReminder", "Scheduling daily date reminders")
+        DateReminderScheduler.scheduleDailyReminders(this)
+        Log.d("DateReminder", "Date reminders scheduled successfully")
+    } catch (e: Exception) {
+        Log.e("DateReminder", "Error scheduling date reminders: ${e.message}", e)
     }
     
     // Start our app lock service with better error handling

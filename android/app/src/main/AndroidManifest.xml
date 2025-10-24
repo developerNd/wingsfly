@@ -109,7 +109,76 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Intent filter for Night Mode trigger -->
+<intent-filter>
+    <action android:name="TRIGGER_NIGHT_MODE" />
+    <category android:name="android.intent.category.DEFAULT" />
+</intent-filter>
+
         </activity>
+
+        <!-- Night Mode Alarm Receiver - Handles both alarms AND boot events -->
+<receiver
+    android:name=".NightModeAlarmReceiver"
+    android:enabled="true"
+    android:exported="true"
+    android:directBootAware="true"
+    android:priority="1000">
+    
+    <!-- Boot events to reschedule after device restart -->
+    <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+    </intent-filter>
+    
+    <!-- Night Mode alarm trigger -->
+    <intent-filter android:priority="1000">
+        <action android:name="com.wingsfly.NIGHT_MODE_ALARM" />
+    </intent-filter>
+</receiver>
+
+        <activity
+    android:name=".DateReminderActivity"
+    android:excludeFromRecents="true"
+    android:launchMode="singleTask"
+    android:screenOrientation="portrait"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+    android:exported="false" />
+
+<!-- Date Reminder Receiver -->
+<receiver
+    android:name=".DateReminderReceiver"
+    android:enabled="true"
+    android:exported="false" />
+
+        <activity
+    android:name=".UsageLimitVideoLockActivity"
+    android:exported="false"
+    android:launchMode="singleTop"
+    android:excludeFromRecents="true"
+    android:theme="@style/Theme.AppCompat.NoActionBar"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+    android:name=".ChallengeLockActivity"
+    android:exported="false"
+    android:launchMode="singleTask"
+    android:excludeFromRecents="true"
+    android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|screenSize|keyboardHidden|keyboard"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:taskAffinity="com.wingsfly.challenge"
+    android:stateNotNeeded="true"
+    android:clearTaskOnLaunch="false"
+    android:finishOnTaskLaunch="false"
+    android:noHistory="false" />
 
         <activity
     android:name=".DigitalDetoxLockActivity"
@@ -401,6 +470,28 @@
         <action android:name="android.intent.action.TIME_SET" />
         <action android:name="android.intent.action.TIMEZONE_CHANGED" />
         <action android:name="android.intent.action.DATE_CHANGED" />
+    </intent-filter>
+</receiver>
+
+<!-- Challenge Alarm Receiver - Triggers challenge at scheduled times -->
+<receiver
+    android:name=".ChallengeAlarmReceiver"
+    android:enabled="true"
+    android:exported="false"
+    android:directBootAware="true">
+    
+    <!-- Boot events to reschedule after device restart -->
+    <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+    
+    <!-- Challenge trigger actions -->
+    <intent-filter>
+        <action android:name="com.wingsfly.CHALLENGE_TRIGGER" />
+        <category android:name="android.intent.category.DEFAULT" />
     </intent-filter>
 </receiver>
 

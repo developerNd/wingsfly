@@ -4,9 +4,10 @@ export const taskCompletionsService = {
   // Create or update a task completion for a specific date
   async upsertTaskCompletion(taskId, userId, completionDate, completionData) {
     try {
-      const dateString = completionDate instanceof Date 
-        ? completionDate.toISOString().split('T')[0] 
-        : completionDate;
+      const dateString =
+        completionDate instanceof Date
+          ? completionDate.toISOString().split('T')[0]
+          : completionDate;
 
       // Determine if it's a plan or task
       const isplan = taskId.toString().startsWith('plan_');
@@ -21,13 +22,13 @@ export const taskCompletionsService = {
         updated_at: new Date().toISOString(),
       };
 
-      const upsertData = { ...baseData, ...completionData };
+      const upsertData = {...baseData, ...completionData};
 
       const {data, error} = await supabase
         .from('task_completions')
-        .upsert([upsertData], { 
+        .upsert([upsertData], {
           onConflict: 'task_id,completion_date,user_id',
-          returning: 'representation' 
+          returning: 'representation',
         })
         .select();
 
@@ -46,9 +47,10 @@ export const taskCompletionsService = {
   // Get task completion for a specific date
   async getTaskCompletion(taskId, userId, completionDate) {
     try {
-      const dateString = completionDate instanceof Date 
-        ? completionDate.toISOString().split('T')[0] 
-        : completionDate;
+      const dateString =
+        completionDate instanceof Date
+          ? completionDate.toISOString().split('T')[0]
+          : completionDate;
 
       const isplan = taskId.toString().startsWith('plan_');
       const actualId = isplan ? taskId.replace('plan_', '') : taskId;
@@ -76,9 +78,10 @@ export const taskCompletionsService = {
   // Get all task completions for a specific date
   async getTaskCompletionsForDate(userId, completionDate) {
     try {
-      const dateString = completionDate instanceof Date 
-        ? completionDate.toISOString().split('T')[0] 
-        : completionDate;
+      const dateString =
+        completionDate instanceof Date
+          ? completionDate.toISOString().split('T')[0]
+          : completionDate;
 
       const {data, error} = await supabase
         .from('task_completions')
@@ -101,12 +104,12 @@ export const taskCompletionsService = {
   // Get task completions for a date range
   async getTaskCompletionsForDateRange(userId, startDate, endDate) {
     try {
-      const startDateString = startDate instanceof Date 
-        ? startDate.toISOString().split('T')[0] 
-        : startDate;
-      const endDateString = endDate instanceof Date 
-        ? endDate.toISOString().split('T')[0] 
-        : endDate;
+      const startDateString =
+        startDate instanceof Date
+          ? startDate.toISOString().split('T')[0]
+          : startDate;
+      const endDateString =
+        endDate instanceof Date ? endDate.toISOString().split('T')[0] : endDate;
 
       const {data, error} = await supabase
         .from('task_completions')
@@ -114,7 +117,7 @@ export const taskCompletionsService = {
         .eq('user_id', userId)
         .gte('completion_date', startDateString)
         .lte('completion_date', endDateString)
-        .order('completion_date', { ascending: true });
+        .order('completion_date', {ascending: true});
 
       if (error) {
         console.error('Error fetching task completions for date range:', error);
@@ -131,9 +134,10 @@ export const taskCompletionsService = {
   // Delete task completion for a specific date
   async deleteTaskCompletion(taskId, userId, completionDate) {
     try {
-      const dateString = completionDate instanceof Date 
-        ? completionDate.toISOString().split('T')[0] 
-        : completionDate;
+      const dateString =
+        completionDate instanceof Date
+          ? completionDate.toISOString().split('T')[0]
+          : completionDate;
 
       const isplan = taskId.toString().startsWith('plan_');
       const actualId = isplan ? taskId.replace('plan_', '') : taskId;
@@ -170,7 +174,13 @@ export const taskCompletionsService = {
   },
 
   // Timer task completion
-  async upsertTimerCompletion(taskId, userId, completionDate, timerValue, isCompleted) {
+  async upsertTimerCompletion(
+    taskId,
+    userId,
+    completionDate,
+    timerValue,
+    isCompleted,
+  ) {
     return this.upsertTaskCompletion(taskId, userId, completionDate, {
       is_completed: isCompleted,
       timer_value: timerValue,
@@ -182,7 +192,14 @@ export const taskCompletionsService = {
   },
 
   // Checklist task completion
-  async upsertChecklistCompletion(taskId, userId, completionDate, checklistItems, completedCount, isCompleted) {
+  async upsertChecklistCompletion(
+    taskId,
+    userId,
+    completionDate,
+    checklistItems,
+    completedCount,
+    isCompleted,
+  ) {
     return this.upsertTaskCompletion(taskId, userId, completionDate, {
       is_completed: isCompleted,
       checklist_items: checklistItems,
@@ -194,7 +211,14 @@ export const taskCompletionsService = {
   },
 
   // Numeric task completion
-  async upsertNumericCompletion(taskId, userId, completionDate, numericValue, numericUnit, isCompleted) {
+  async upsertNumericCompletion(
+    taskId,
+    userId,
+    completionDate,
+    numericValue,
+    numericUnit,
+    isCompleted,
+  ) {
     return this.upsertTaskCompletion(taskId, userId, completionDate, {
       is_completed: isCompleted,
       numeric_value: numericValue,
@@ -205,8 +229,38 @@ export const taskCompletionsService = {
     });
   },
 
+  // In taskCompletionsService.js
+  async getAllTaskCompletions(taskId, userId) {
+    try {
+      const isplan = taskId.toString().startsWith('plan_');
+      const actualId = isplan ? taskId.replace('plan_', '') : taskId;
+
+      const {data, error} = await supabase
+        .from('task_completions')
+        .select('*')
+        .eq('task_id', actualId)
+        .eq('user_id', userId)
+        .order('completion_date', {ascending: false});
+
+      if (error) {
+        console.error('Error fetching all task completions:', error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getAllTaskCompletions:', error);
+      throw error;
+    }
+  },
+
   // Get task completion statistics
-  async getTaskCompletionStats(userId, taskId, startDate = null, endDate = null) {
+  async getTaskCompletionStats(
+    userId,
+    taskId,
+    startDate = null,
+    endDate = null,
+  ) {
     try {
       const isplan = taskId.toString().startsWith('plan_');
       const actualId = isplan ? taskId.replace('plan_', '') : taskId;
@@ -218,20 +272,24 @@ export const taskCompletionsService = {
         .eq('task_id', actualId);
 
       if (startDate) {
-        const startDateString = startDate instanceof Date 
-          ? startDate.toISOString().split('T')[0] 
-          : startDate;
+        const startDateString =
+          startDate instanceof Date
+            ? startDate.toISOString().split('T')[0]
+            : startDate;
         query = query.gte('completion_date', startDateString);
       }
 
       if (endDate) {
-        const endDateString = endDate instanceof Date 
-          ? endDate.toISOString().split('T')[0] 
-          : endDate;
+        const endDateString =
+          endDate instanceof Date
+            ? endDate.toISOString().split('T')[0]
+            : endDate;
         query = query.lte('completion_date', endDateString);
       }
 
-      const {data, error} = await query.order('completion_date', { ascending: true });
+      const {data, error} = await query.order('completion_date', {
+        ascending: true,
+      });
 
       if (error) {
         console.error('Error fetching task completion stats:', error);
@@ -240,14 +298,14 @@ export const taskCompletionsService = {
 
       const completions = data || [];
       const totalDays = completions.length;
-      const completedDays = completions.filter(completion => 
-        completion.is_completed === true
+      const completedDays = completions.filter(
+        completion => completion.is_completed === true,
       ).length;
 
       // Calculate current streak
       let currentStreak = 0;
-      const sortedCompletions = completions.sort((a, b) => 
-        new Date(b.completion_date) - new Date(a.completion_date)
+      const sortedCompletions = completions.sort(
+        (a, b) => new Date(b.completion_date) - new Date(a.completion_date),
       );
 
       for (const completion of sortedCompletions) {
@@ -274,10 +332,12 @@ export const taskCompletionsService = {
       return {
         totalDays,
         completedDays,
-        completionRate: totalDays > 0 ? ((completedDays / totalDays) * 100).toFixed(1) : 0,
+        completionRate:
+          totalDays > 0 ? ((completedDays / totalDays) * 100).toFixed(1) : 0,
         currentStreak,
         longestStreak,
-        lastCompletedDate: completions.find(c => c.is_completed)?.completion_date || null,
+        lastCompletedDate:
+          completions.find(c => c.is_completed)?.completion_date || null,
       };
     } catch (error) {
       console.error('Error in getTaskCompletionStats:', error);

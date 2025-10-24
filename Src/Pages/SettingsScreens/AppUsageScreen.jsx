@@ -24,7 +24,7 @@ const AppUsageScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [hasPermission, setHasPermission] = useState(false);
-  const [showSystemApps, setShowSystemApps] = useState(false);
+  const [showSystemApps, setShowSystemApps] = useState(true);
   const [currentPeriod, setCurrentPeriod] = useState('daily'); // daily, weekly
 
   const {AppUsageModule} = NativeModules;

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- Video Container - 16:9 aspect ratio, centered -->
+    <FrameLayout
+        android:id="@+id/videoContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@android:color/transparent" />
+
+    <!-- Overlay Content (on top of video) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:elevation="10dp"
+        android:clickable="false"
+        android:focusable="false">
+
+        <!-- Title -->
+        <TextView
+            android:id="@+id/usageVideoTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Usage Limit Reached"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginTop="32dp"
+            android:layout_marginBottom="24dp"
+            android:paddingHorizontal="24dp"
+            android:clickable="false"
+            android:focusable="false" />
+
+        <!-- Spacer to push progress bar to bottom -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Progress Bar -->
+        <ProgressBar
+            android:id="@+id/videoProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:layout_marginBottom="16dp"
+            android:layout_marginHorizontal="32dp"
+            android:progressTint="#FFFFFF"
+            android:progressBackgroundTint="#444444"
+            android:indeterminate="false"
+            android:max="100"
+            android:clickable="false"
+            android:focusable="false" />
+
+        <!-- Info Text -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Watch this video to understand the importance of balance"
+            android:textSize="14sp"
+            android:textColor="#CCCCCC"
+            android:gravity="center"
+            android:layout_marginBottom="24dp"
+            android:paddingHorizontal="32dp"
+            android:clickable="false"
+            android:focusable="false" />
+
+    </LinearLayout>
+
+</FrameLayout>

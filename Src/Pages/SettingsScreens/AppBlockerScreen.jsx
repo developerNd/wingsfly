@@ -128,6 +128,16 @@ const InstalledApps = (() => {
   }
 })();
 
+// Try to get AppUsageModule for usage stats
+const AppUsageModule = (() => {
+  try {
+    return NativeModules.AppUsageModule || null;
+  } catch (error) {
+    console.warn('AppUsageModule not available:', error);
+    return null;
+  }
+})();
+
 const LoadingAnimation = () => {
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
@@ -261,10 +271,10 @@ const AppBlockerScreen = () => {
             const updated = updatedApps.find(u => u.packageName === app.packageName);
             return updated || app;
           });
-          allSortedAppsRef.current = updatedSortedApps;
+          allSortedAppsRef.current = sortAppsByUsage(updatedSortedApps);
 
           if (appsCache) {
-            appsCache = {...appsCache, apps: updatedApps, sortedApps: updatedSortedApps};
+            appsCache = {...appsCache, apps: updatedApps, sortedApps: allSortedAppsRef.current};
           }
         }
       } catch (error) {
@@ -286,6 +296,40 @@ const AppBlockerScreen = () => {
       setFilteredApps(filtered);
     }
   }, [searchQuery, apps]);
+
+  // Sort apps: Distractive apps by usage first, then normal apps by usage
+  const sortAppsByUsage = (appsList) => {
+    const distractiveApps = [];
+    const normalApps = [];
+
+    // Separate distractive and normal apps
+    appsList.forEach(app => {
+      if (app.isDistractive) {
+        distractiveApps.push(app);
+      } else {
+        normalApps.push(app);
+      }
+    });
+
+    // Sort distractive apps by usage (highest first)
+    distractiveApps.sort((a, b) => {
+      const usageA = a.usageToday || 0;
+      const usageB = b.usageToday || 0;
+      if (usageB !== usageA) return usageB - usageA;
+      return a.name.localeCompare(b.name);
+    });
+
+    // Sort normal apps by usage (highest first)
+    normalApps.sort((a, b) => {
+      const usageA = a.usageToday || 0;
+      const usageB = b.usageToday || 0;
+      if (usageB !== usageA) return usageB - usageA;
+      return a.name.localeCompare(b.name);
+    });
+
+    // Return distractive apps first, then normal apps
+    return [...distractiveApps, ...normalApps];
+  };
 
   // Handle long press with proper delete options
   const handleAppLongPress = (app) => {
@@ -351,7 +395,6 @@ const AppBlockerScreen = () => {
     try {
       setLoading(true);
       
-      // Delete from Supabase first
       if (user?.id) {
         try {
           await appBlockerService.deleteAllAppSchedules(user.id, app.packageName);
@@ -361,7 +404,6 @@ const AppBlockerScreen = () => {
         }
       }
       
-      // Update local state
       const updatedApp = {
         ...app,
         schedules: [],
@@ -371,8 +413,6 @@ const AppBlockerScreen = () => {
       };
       
       await handleAppUpdate(updatedApp);
-      
-      // Clear native schedules
       await InstalledApps.setAppSchedule(app.packageName, []);
       
       Alert.alert('Success', `Schedules deleted for ${app.name}`);
@@ -389,7 +429,6 @@ const AppBlockerScreen = () => {
     try {
       setLoading(true);
       
-      // Delete from Supabase first
       if (user?.id) {
         try {
           await appBlockerService.removeAppUsageLimit(user.id, app.packageName);
@@ -399,7 +438,6 @@ const AppBlockerScreen = () => {
         }
       }
       
-      // Re-evaluate blocking status after removing limit
       const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(app.packageName);
       
       const updatedApp = {
@@ -410,8 +448,6 @@ const AppBlockerScreen = () => {
       };
       
       await handleAppUpdate(updatedApp);
-      
-      // Remove native usage limit
       await InstalledApps.removeAppUsageLimit(app.packageName);
       
       Alert.alert('Success', `Usage limit deleted for ${app.name}`);
@@ -424,7 +460,6 @@ const AppBlockerScreen = () => {
     }
   };
 
-  // Silent Supabase sync functions
   const silentLoadAppDataFromSupabase = async () => {
     if (!user?.id || syncing) return;
 
@@ -466,10 +501,10 @@ const AppBlockerScreen = () => {
       const updated = updatedApps.find(u => u.packageName === app.packageName);
       return updated || app;
     });
-    allSortedAppsRef.current = updatedSortedApps;
+    allSortedAppsRef.current = sortAppsByUsage(updatedSortedApps);
 
     if (appsCache) {
-      appsCache = {...appsCache, apps: updatedApps, sortedApps: updatedSortedApps};
+      appsCache = {...appsCache, apps: updatedApps, sortedApps: allSortedAppsRef.current};
     }
   };
 
@@ -581,13 +616,13 @@ const AppBlockerScreen = () => {
       const updatedSortedApps = allSortedAppsRef.current.map(a =>
         a.packageName === finalUpdatedApp.packageName ? finalUpdatedApp : a,
       );
-      allSortedAppsRef.current = updatedSortedApps;
+      allSortedAppsRef.current = sortAppsByUsage(updatedSortedApps);
 
       if (appsCache) {
         appsCache = {
           ...appsCache,
           apps: updatedApps,
-          sortedApps: updatedSortedApps,
+          sortedApps: allSortedAppsRef.current,
         };
       }
 
@@ -670,6 +705,25 @@ const AppBlockerScreen = () => {
         }));
       }
 
+      // Try to get detailed usage stats from AppUsageModule if available
+      let detailedUsageMap = {};
+      if (AppUsageModule) {
+        try {
+          const dailyStats = await AppUsageModule.getDailyUsageStats();
+          if (dailyStats && Array.isArray(dailyStats)) {
+            detailedUsageMap = dailyStats.reduce((acc, stat) => {
+              if (stat.totalTimeInForeground > 10000) { // More than 10 seconds
+                acc[stat.packageName] = stat.totalTimeInForeground;
+              }
+              return acc;
+            }, {});
+            console.log(`Loaded detailed usage for ${Object.keys(detailedUsageMap).length} apps`);
+          }
+        } catch (err) {
+          console.warn('Could not load detailed usage stats:', err);
+        }
+      }
+
       const allUsageData = await InstalledApps.getAllAppsUsageToday();
 
       const usageLimitPromises = appsList.map(async app => {
@@ -679,7 +733,8 @@ const AppBlockerScreen = () => {
             InstalledApps.isAppLimitReached(app.packageName),
           ]);
 
-          const usageToday = allUsageData[app.packageName] || 0;
+          // Prefer detailed usage from AppUsageModule, fallback to InstalledApps
+          const usageToday = detailedUsageMap[app.packageName] || allUsageData[app.packageName] || 0;
 
           return {
             ...app,
@@ -790,11 +845,8 @@ const AppBlockerScreen = () => {
       const appsWithSchedules = await Promise.all(appsWithSchedulesPromises);
       const appsWithUsageData = await loadUsageDataForAllApps(appsWithSchedules);
 
-      const sortedApps = appsWithUsageData.sort((a, b) => {
-        if (a.isDistractive && !b.isDistractive) return -1;
-        if (!a.isDistractive && b.isDistractive) return 1;
-        return a.name.localeCompare(b.name);
-      });
+      // Sort apps: Distractive apps by usage first, then normal apps by usage
+      const sortedApps = sortAppsByUsage(appsWithUsageData);
 
       const firstPageApps = sortedApps.slice(0, PAGE_SIZE);
 
@@ -1028,7 +1080,7 @@ const AppBlockerScreen = () => {
       ) : (
         <>
           <Text style={styles.sectionHeader}>
-            Distractive apps are highlighted and shown first
+            Distractive apps shown first, sorted by usage time
           </Text>
           <FlatList
             data={filteredApps}
@@ -1140,7 +1192,7 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 12,
+    marginLeft: 8,
     backgroundColor: '#2E7D32',
     borderRadius: 8,
     elevation: 2,

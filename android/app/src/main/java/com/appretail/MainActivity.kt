@@ -28,6 +28,8 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.view.KeyEvent
+import com.wingsfly.YouTubeNightModeModule
 
 class MainActivity : ReactActivity() {
 
@@ -97,6 +99,62 @@ class MainActivity : ReactActivity() {
     override fun createReactActivityDelegate(): ReactActivityDelegate =
         DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
+        private fun handleNightModeIntent(intent: Intent?) {
+    if (intent?.action == "TRIGGER_NIGHT_MODE") {
+        val triggerNightMode = intent.getBooleanExtra("trigger_night_mode", false)
+        val fromAlarm = intent.getBooleanExtra("from_alarm", false)
+        val appWasKilled = intent.getBooleanExtra("app_was_killed", false)
+        
+        if (triggerNightMode) {
+            val bedHour = intent.getIntExtra("bed_hour", 0)
+            val bedMinute = intent.getIntExtra("bed_minute", 0)
+
+            Log.d(TAG, "========================================")
+            Log.d(TAG, "🌙 NIGHT MODE TRIGGER DETECTED")
+            Log.d(TAG, "From Alarm: $fromAlarm")
+            Log.d(TAG, "App Was Killed: $appWasKilled")
+            Log.d(TAG, "Bed Time: $bedHour:${String.format("%02d", bedMinute)}")
+            Log.d(TAG, "========================================")
+
+            // Store trigger data in SharedPreferences for React Native to read
+            val nightModePrefs = getSharedPreferences("NightModeTrigger", Context.MODE_PRIVATE)
+            nightModePrefs.edit().apply {
+                putBoolean("should_trigger", true)
+                putBoolean("from_alarm", fromAlarm)
+                putBoolean("app_was_killed", appWasKilled)
+                putInt("bed_hour", bedHour)
+                putInt("bed_minute", bedMinute)
+                putLong("trigger_time", System.currentTimeMillis())
+                apply()
+            }
+
+            Log.d(TAG, "✅ Night Mode trigger data stored for React Native")
+
+            // Also send event immediately if React Native is ready
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    val params = Arguments.createMap().apply {
+                        putInt("bed_hour", bedHour)
+                        putInt("bed_minute", bedMinute)
+                        putBoolean("from_alarm", fromAlarm)
+                        putBoolean("app_was_killed", appWasKilled)
+                        putString("message", "It's time to wind down for bed!")
+                    }
+
+                    reactInstanceManager
+                        ?.currentReactContext
+                        ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                        ?.emit("TRIGGER_NIGHT_MODE", params)
+                    
+                    Log.d(TAG, "✅ Night Mode event sent to React Native")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Error sending Night Mode event: ${e.message}", e)
+                }
+            }, 1000)
+        }
+    }
+}
+
     override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
@@ -112,6 +170,8 @@ class MainActivity : ReactActivity() {
     } else {
         registerReceiver(closeReceiver, closeFilter)
     }
+
+    handleNightModeIntent(intent)
     
     val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
     val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
@@ -166,6 +226,8 @@ class MainActivity : ReactActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
+
+        handleNightModeIntent(intent)
         
         Log.d(TAG, "========================================")
         Log.d(TAG, "MainActivity onNewIntent")
@@ -757,6 +819,11 @@ class MainActivity : ReactActivity() {
     }
     
     override fun onBackPressed() {
+        if (YouTubeNightModeModule.isLockActive) {
+        Log.d(TAG, "🚫 Back button blocked - Night Mode is locked")
+        return
+    }
+
         val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
         val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
         val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
@@ -769,6 +836,32 @@ class MainActivity : ReactActivity() {
         
         super.onBackPressed()
     }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    // Check if YouTube Night Mode lock is active
+    if (YouTubeNightModeModule.isLockActive) {
+        Log.d(TAG, "🚫 Key event blocked - Night Mode is locked: $keyCode")
+        
+        // Block all navigation keys when Night Mode is locked
+        return when (keyCode) {
+            KeyEvent.KEYCODE_HOME,
+            KeyEvent.KEYCODE_BACK,
+            KeyEvent.KEYCODE_APP_SWITCH,
+            KeyEvent.KEYCODE_MENU,
+            KeyEvent.KEYCODE_RECENT_APPS -> {
+                // Block these keys completely
+                true
+            }
+            else -> {
+                // Allow other keys (volume, etc.)
+                super.onKeyDown(keyCode, event)
+            }
+        }
+    }
+    
+    // Normal behavior when not locked
+    return super.onKeyDown(keyCode, event)
+}
     
     private fun checkAndRequestPermissions() {
         if (!hasUsageAccessPermission()) {

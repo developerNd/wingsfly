@@ -50,28 +50,86 @@ const Schedule = ({
   // Default day names fallback
   const defaultDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+  // NEW: Function to find existing schedules from other apps
+  const findExistingSchedules = () => {
+    if (!allInstalledApps || allInstalledApps.length === 0) return [];
+
+    const existingSchedules = [];
+
+    try {
+      allInstalledApps.forEach(app => {
+        // Skip current app
+        if (!app || !selectedApp || app.packageName === selectedApp.packageName) return;
+
+        // Check if app has schedules
+        if (app.schedules && Array.isArray(app.schedules) && app.schedules.length > 0) {
+          app.schedules.forEach(schedule => {
+            if (schedule && schedule.timeRanges && Array.isArray(schedule.timeRanges) && schedule.timeRanges.length > 0) {
+              schedule.timeRanges.forEach(range => {
+                if (!range || !range.days || !Array.isArray(range.days)) return;
+                
+                try {
+                  const daysCopy = [...range.days];
+                  const scheduleKey = `${range.startHour}:${range.startMinute}-${range.endHour}:${range.endMinute}-${daysCopy.sort((a, b) => a - b).join(',')}`;
+                  
+                  // Check if this exact schedule already exists in suggestions
+                  const existingIndex = existingSchedules.findIndex(s => s && s.key === scheduleKey);
+                  
+                  if (existingIndex === -1) {
+                    existingSchedules.push({
+                      key: scheduleKey,
+                      startHour: range.startHour,
+                      startMinute: range.startMinute,
+                      endHour: range.endHour,
+                      endMinute: range.endMinute,
+                      days: daysCopy,
+                      type: schedule.type,
+                      appNames: [app.name],
+                      count: 1
+                    });
+                  } else {
+                    // Add app name to existing schedule and increment count
+                    if (existingSchedules[existingIndex] && 
+                        existingSchedules[existingIndex].appNames && 
+                        !existingSchedules[existingIndex].appNames.includes(app.name)) {
+                      existingSchedules[existingIndex].appNames.push(app.name);
+                      existingSchedules[existingIndex].count++;
+                    }
+                  }
+                } catch (err) {
+                  console.warn('Error processing schedule range:', err);
+                }
+              });
+            }
+          });
+        }
+      });
+
+      // Sort by count (most used schedules first)
+      return existingSchedules.sort((a, b) => (b?.count || 0) - (a?.count || 0));
+    } catch (error) {
+      console.error('Error in findExistingSchedules:', error);
+      return [];
+    }
+  };
+
   useEffect(() => {
     if (visible && selectedApp) {
       // Reset states when modal opens
       setLockTimeSlots([]);
       setUnlockTimeSlots([]);
-      setStartHour(8);
-      setStartMinute(0);
-      setEndHour(9);
-      setEndMinute(0);
-      setSelectedDays([]);
       setEditingTimeSlot(null);
-      
-      // Load app selection preferences
       setSelectedAppsForLocking(selectedApp.selectedAppsForLocking || []);
       setExcludeFromPomodoro(selectedApp.excludeFromPomodoro || false);
       
       // Load existing schedules if available
-      if (selectedApp.schedules) {
-        const lockSchedule = selectedApp.schedules.find((s) => s.type === ScheduleType.LOCK);
-        const unlockSchedule = selectedApp.schedules.find((s) => s.type === ScheduleType.UNLOCK);
+      let hasLoadedExistingSchedule = false;
+      
+      if (selectedApp.schedules && Array.isArray(selectedApp.schedules)) {
+        const lockSchedule = selectedApp.schedules.find((s) => s && s.type === ScheduleType.LOCK);
+        const unlockSchedule = selectedApp.schedules.find((s) => s && s.type === ScheduleType.UNLOCK);
         
-        if (lockSchedule) {
+        if (lockSchedule && lockSchedule.timeRanges && Array.isArray(lockSchedule.timeRanges)) {
           const lockSlots = lockSchedule.timeRanges.map((range, index) => ({
             id: `lock_${Date.now()}_${index}`,
             startTime: formatTimeForStorage(range.startHour, range.startMinute),
@@ -81,9 +139,10 @@ const Schedule = ({
             type: 'lock'
           }));
           setLockTimeSlots(lockSlots);
+          hasLoadedExistingSchedule = true;
         }
         
-        if (unlockSchedule) {
+        if (unlockSchedule && unlockSchedule.timeRanges && Array.isArray(unlockSchedule.timeRanges)) {
           const unlockSlots = unlockSchedule.timeRanges.map((range, index) => ({
             id: `unlock_${Date.now()}_${index}`,
             startTime: formatTimeForStorage(range.startHour, range.startMinute),
@@ -93,10 +152,98 @@ const Schedule = ({
             type: 'unlock'
           }));
           setUnlockTimeSlots(unlockSlots);
+          hasLoadedExistingSchedule = true;
         }
       }
+      
+      // NEW: If no existing schedules, try to pre-fill from other apps' schedules
+      if (!hasLoadedExistingSchedule) {
+        try {
+          const suggestions = findExistingSchedules();
+          if (suggestions && suggestions.length > 0) {
+            // Pre-fill with the most popular schedule (don't add it automatically)
+            const topSuggestion = suggestions[0];
+            setStartHour(topSuggestion.startHour);
+            setStartMinute(topSuggestion.startMinute);
+            setEndHour(topSuggestion.endHour);
+            setEndMinute(topSuggestion.endMinute);
+            setSelectedDays(Array.isArray(topSuggestion.days) ? [...topSuggestion.days] : []);
+            setTimerType(topSuggestion.type);
+          } else {
+            // No suggestions, use default values
+            setStartHour(8);
+            setStartMinute(0);
+            setEndHour(9);
+            setEndMinute(0);
+            setSelectedDays([]);
+            setTimerType('lock');
+          }
+        } catch (error) {
+          console.error('Error loading suggestions:', error);
+          // Fallback to defaults
+          setStartHour(8);
+          setStartMinute(0);
+          setEndHour(9);
+          setEndMinute(0);
+          setSelectedDays([]);
+          setTimerType('lock');
+        }
+      } else {
+        // Has existing schedules, reset to defaults
+        setStartHour(8);
+        setStartMinute(0);
+        setEndHour(9);
+        setEndMinute(0);
+        setSelectedDays([]);
+        setTimerType('lock');
+      }
     }
-  }, [visible, selectedApp]);
+  }, [visible, selectedApp, allInstalledApps]);
+
+  // NEW: Function to apply suggested schedule
+  const applySuggestedSchedule = (suggestion) => {
+    try {
+      if (!suggestion) return;
+      
+      // Set the timer type first
+      setTimerType(suggestion.type);
+      
+      // Create the new time slot directly with safe copies of data
+      const newSlot = {
+        id: Date.now().toString() + Math.random().toString(),
+        startTime: formatTimeForStorage(suggestion.startHour, suggestion.startMinute),
+        endTime: formatTimeForStorage(suggestion.endHour, suggestion.endMinute),
+        days: Array.isArray(suggestion.days) ? [...suggestion.days] : [],
+        isEnabled: true,
+        type: suggestion.type
+      };
+      
+      // Add to appropriate list
+      if (suggestion.type === 'lock') {
+        setLockTimeSlots(prev => [...prev, newSlot]);
+      } else {
+        setUnlockTimeSlots(prev => [...prev, newSlot]);
+      }
+      
+      // Also update the input fields so user can see what was added
+      setStartHour(suggestion.startHour);
+      setStartMinute(suggestion.startMinute);
+      setEndHour(suggestion.endHour);
+      setEndMinute(suggestion.endMinute);
+      setSelectedDays([]);
+      
+      const appNamesText = Array.isArray(suggestion.appNames) ? suggestion.appNames.join(', ') : 'other apps';
+      
+      Alert.alert(
+        'Schedule Added',
+        `Time slot from ${appNamesText} has been added successfully!`,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('Error applying suggested schedule:', error);
+      Alert.alert('Error', 'Failed to apply suggested schedule. Please try manually.');
+    }
+  };
 
   // Format time for storage (HH:MM format)
   const formatTimeForStorage = (hour, minute) => {
@@ -249,15 +396,12 @@ const Schedule = ({
           text: 'Delete', 
           style: 'destructive',
           onPress: () => {
-            console.log(`Deleting ${slotToDelete.type} time slot:`, slotToDelete.id);
-            
             if (slotToDelete.type === 'lock') {
               setLockTimeSlots(prev => prev.filter(slot => slot.id !== slotToDelete.id));
             } else {
               setUnlockTimeSlots(prev => prev.filter(slot => slot.id !== slotToDelete.id));
             }
             
-            // If we were editing this slot, cancel editing
             if (editingTimeSlot && editingTimeSlot.id === slotToDelete.id) {
               cancelEdit();
             }
@@ -294,7 +438,6 @@ const Schedule = ({
     };
     
     if (editingTimeSlot) {
-      // Update existing slot
       if (timerType === 'lock') {
         setLockTimeSlots(prev => prev.map(slot => 
           slot.id === editingTimeSlot.id ? newSlot : slot
@@ -306,7 +449,6 @@ const Schedule = ({
       }
       setEditingTimeSlot(null);
     } else {
-      // Add new slot
       if (timerType === 'lock') {
         setLockTimeSlots(prev => [...prev, newSlot]);
       } else {
@@ -314,7 +456,6 @@ const Schedule = ({
       }
     }
     
-    // Reset selected days after adding/updating
     setSelectedDays([]);
   };
 
@@ -342,7 +483,6 @@ const Schedule = ({
     try {
       setSavingSchedules(true);
       
-      // Create updated app with new schedules
       const updatedApp = {
         ...selectedApp,
         schedules: selectedApp.schedules || [],
@@ -350,7 +490,6 @@ const Schedule = ({
         excludeFromPomodoro: excludeFromPomodoro
       };
       
-      // Build schedules from time slots
       const schedules = [];
       
       if (lockTimeSlots.length > 0) {
@@ -389,19 +528,15 @@ const Schedule = ({
         schedules.push(unlockSchedule);
       }
       
-      // Update app schedules
       updatedApp.schedules = schedules;
       updatedApp.schedulesEnabled = schedules.length > 0;
       updatedApp.isLocked = schedules.length > 0;
       
-      // Update the app using the callback
       onAppUpdate(updatedApp);
       
-      // Save to native module
       await InstalledApps.setAppPomodoroExclusion(updatedApp.packageName, excludeFromPomodoro);
       await InstalledApps.setAppSchedule(updatedApp.packageName, updatedApp.schedules);
       
-      // Show success message
       setSuccessMessage(
         excludeFromPomodoro 
           ? 'Schedules saved! This app will not be blocked during Pomodoro sessions.'
@@ -409,10 +544,8 @@ const Schedule = ({
       );
       setShowSuccessModal(true);
       
-      // Close schedule modal
       onClose();
       
-      // Auto-hide success modal after 3 seconds
       setTimeout(() => {
         setShowSuccessModal(false);
       }, 3000);
@@ -424,9 +557,13 @@ const Schedule = ({
     }
   };
 
+  // NEW: Render suggested schedules
+  const renderSuggestedSchedules = () => {
+    return null; // Removed UI, logic handled in useEffect
+  };
+
   return (
     <>
-      {/* Schedule Modal */}
       <Modal
         transparent={true}
         visible={visible}
@@ -477,7 +614,6 @@ const Schedule = ({
                 </View>
               ) : (
                 <ScrollView style={styles.timeSlotsContainer}>
-                  {/* Exclude from Pomodoro Section */}
                   <View style={styles.pomodoroExcludeSection}>
                     <View style={styles.pomodoroExcludeInfo}>
                       <Text style={styles.pomodoroExcludeLabel}>Exclude from Pomodoro</Text>
@@ -588,7 +724,6 @@ const Schedule = ({
                     </View>
                   </View>
 
-                  {/* Time slots list - NOW WITH DELETE FUNCTIONALITY */}
                   <View style={styles.timeSlotsList}>
                     {(timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).length > 0 ? (
                       (timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).map(slot => (
@@ -624,7 +759,6 @@ const Schedule = ({
                                 <Icon name="edit" size={18} color="#2E7D32" />
                               </TouchableOpacity>
                               
-                              {/* NEW DELETE BUTTON */}
                               <TouchableOpacity
                                 style={styles.deleteButton}
                                 onPress={() => deleteTimeSlot(slot)}
@@ -672,7 +806,6 @@ const Schedule = ({
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Success Modal */}
       <Modal
         transparent={true}
         visible={showSuccessModal}

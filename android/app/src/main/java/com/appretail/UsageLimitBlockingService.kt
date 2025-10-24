@@ -125,27 +125,25 @@ class UsageLimitBlockingService : Service() {
     }
 
     private fun startForegroundService() {
-    try {
-        Log.d(TAG, "Starting foreground service")
-        
-        val notification = notificationManager.showForegroundNotification(this)
-        
-        // ✅ CORRECT - Using SAME ID as AppLockService (1000)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1000, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(1000, notification)
+        try {
+            Log.d(TAG, "Starting foreground service")
+            
+            val notification = notificationManager.showForegroundNotification(this)
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1000, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(1000, notification)
+            }
+            
+            Log.d(TAG, "Foreground service started with ID 1000")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting foreground: ${e.message}", e)
         }
-        
-        Log.d(TAG, "Foreground service started with ID 1000")
-    } catch (e: Exception) {
-        Log.e(TAG, "Error starting foreground: ${e.message}", e)
     }
-}
 
     fun updateNotification() {
         Log.d(TAG, "Manual notification update requested")
-        // Notify unified manager about usage limits change
         notificationManager.onUsageLimitsChanged()
     }
 
@@ -155,23 +153,6 @@ class UsageLimitBlockingService : Service() {
         startRealTimeBlocking()
         startSystemUsageSync()
     }
-
-    private fun startForegroundWithNotification() {
-    try {
-        val notification = notificationManager.showForegroundNotification(this)
-        
-        // Use same ID as AppLockService (1000)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1000, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(1000, notification)
-        }
-        
-        Log.d(TAG, "Started foreground with notification ID 1000")
-    } catch (e: Exception) {
-        Log.e(TAG, "Error starting foreground: ${e.message}", e)
-    }
-}
 
     private fun startUsageMonitoring() {
         Log.d(TAG, "Starting usage monitoring")
@@ -372,10 +353,15 @@ class UsageLimitBlockingService : Service() {
             if (totalUsageMinutes >= usageLimit) {
                 Log.d(TAG, "LIMIT EXCEEDED: $currentForegroundApp")
                 
+                // Check if app was already blocked before this usage session
+                val wasAlreadyBlocked = isAppAlreadyBlocked(currentForegroundApp)
+                
                 markLimitReached(currentForegroundApp)
                 
                 mainHandler.post {
-                    blockAppForUsageLimit(currentForegroundApp)
+                    // Show video only if app was being actively used when limit was reached
+                    // If already blocked, just close without video
+                    blockAppForUsageLimit(currentForegroundApp, showVideo = !wasAlreadyBlocked)
                 }
             }
         } catch (e: Exception) {
@@ -501,6 +487,15 @@ class UsageLimitBlockingService : Service() {
         return sharedPreferences.getLong("usage_limit_$packageName", 0L)
     }
 
+    // ✅ NEW: Check if app is already blocked today
+    private fun isAppAlreadyBlocked(packageName: String): Boolean {
+        val todayDate = getTodayDateString()
+        val savedDate = sharedPreferences.getString("usage_date_$packageName", "")
+        val isBlocked = sharedPreferences.getBoolean("usage_limit_reached_$packageName", false)
+        
+        return savedDate == todayDate && isBlocked
+    }
+
     private fun markLimitReached(packageName: String) {
         val todayDate = getTodayDateString()
         sharedPreferences.edit()
@@ -511,13 +506,34 @@ class UsageLimitBlockingService : Service() {
         Log.d(TAG, "Marked limit reached for $packageName")
     }
 
-    private fun blockAppForUsageLimit(packageName: String) {
+    // ✅ UPDATED: Show video only when limit is reached during active usage
+    private fun blockAppForUsageLimit(packageName: String, showVideo: Boolean) {
         try {
-            Log.d(TAG, "Blocking app for usage limit: $packageName")
+            Log.d(TAG, "Blocking app: $packageName, Show video: $showVideo")
             
             forceCloseApp(packageName)
-            showUsageLimitLockScreen(packageName)
             
+            if (showVideo) {
+                // App was being actively used when limit was reached - show video
+                val videoPrefs = getSharedPreferences("UsageLimitVideo", Context.MODE_PRIVATE)
+                val videoPath = videoPrefs.getString("video_file_path", "") ?: ""
+                val youtubeLink = videoPrefs.getString("youtube_link", "") ?: ""
+                
+                val hasVideoConfigured = videoPath.isNotEmpty() || youtubeLink.isNotEmpty()
+                
+                if (hasVideoConfigured) {
+                    Log.d(TAG, "Limit reached during usage - showing video")
+                    launchVideoLockActivity(packageName, videoPath, youtubeLink)
+                } else {
+                    Log.d(TAG, "Limit reached during usage - no video, showing lock screen")
+                    showUsageLimitLockScreen(packageName)
+                }
+            } else {
+                // App was already blocked, user tried to open it - just close
+                Log.d(TAG, "App already blocked - just closing without video")
+            }
+            
+            // Force close multiple times to ensure app stays closed
             mainHandler.postDelayed({ forceCloseApp(packageName) }, 100)
             mainHandler.postDelayed({ forceCloseApp(packageName) }, 300)
             mainHandler.postDelayed({ forceCloseApp(packageName) }, 500)
@@ -607,6 +623,35 @@ class UsageLimitBlockingService : Service() {
             
         } catch (e: Exception) {
             Log.e(TAG, "Error showing usage limit screen: ${e.message}", e)
+        }
+    }
+
+    private fun launchVideoLockActivity(packageName: String, videoPath: String, youtubeLink: String) {
+        try {
+            val packageManager = applicationContext.packageManager
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val appName = packageManager.getApplicationLabel(appInfo).toString()
+            
+            val intent = Intent(this, UsageLimitVideoLockActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra("package_name", packageName)
+                putExtra("app_name", appName)
+                
+                if (videoPath.isNotEmpty()) {
+                    putExtra("video_path", videoPath)
+                }
+                
+                if (youtubeLink.isNotEmpty()) {
+                    putExtra("youtube_link", youtubeLink)
+                }
+            }
+            
+            startActivity(intent)
+            Log.d(TAG, "Launched video lock activity for $packageName")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching video activity: ${e.message}", e)
+            showUsageLimitLockScreen(packageName)
         }
     }
 
@@ -738,8 +783,12 @@ class UsageLimitBlockingService : Service() {
             val totalUsage = getTotalUsageToday(packageName)
             if (totalUsage >= usageLimit) {
                 Log.d(TAG, "Manual check - limit exceeded for $packageName")
+                
+                // Check if already blocked
+                val isFirstTimeBlocked = !isAppAlreadyBlocked(packageName)
+                
                 mainHandler.post {
-                    blockAppForUsageLimit(packageName)
+                    blockAppForUsageLimit(packageName, isFirstTimeBlocked)
                 }
             }
         }

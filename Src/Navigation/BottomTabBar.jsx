@@ -5,6 +5,7 @@ import Home from '../Pages/Home/Home';
 import PlannerScreen from '../Pages/Planner/PlannerScreen';
 import SettingsScreen from '../Pages/SettingsScreens/SettingsScreen';
 import TaskAnalyticsScreen from '../Pages/AnalysisScreens/AnalysisScreen';
+import LockChallengesScreen from '../Pages/LockChallengesScreen/LockChallengesScreen';
 import ChallengesScreen from '../Pages/ChallengesScreen/ChallengesTab';
 import {Icons, colors} from '../Helper/Contants';
 
@@ -109,7 +110,7 @@ const BottomTabNavigator = () => {
       <Tab.Screen name="Uplift">
         {(props) => (
           <ScreenWithNotes>
-            <ChallengesScreen {...props} />
+            <LockChallengesScreen {...props} />
           </ScreenWithNotes>
         )}
       </Tab.Screen>
