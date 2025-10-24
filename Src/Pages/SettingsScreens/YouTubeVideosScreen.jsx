@@ -24,10 +24,11 @@ import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import AudioPlayer from '../../Components/Audioplayer';
 import VideoPlayer from '../../Components/Videoplayer';
+import { YOUTUBE_API_KEY } from '@env';
 
 const {YouTubeNightModeModule} = NativeModules;
 
-const YOUTUBE_API_KEY = 'AIzaSyBUAiHRSxge-MNkRD-TvmobkGf5FfNNGAg';
+const YOUTUBE_KEY = YOUTUBE_API_KEY;
 const STORAGE_KEY = '@youtube_admin_content';
 
 // Register playback service ONCE at module level
@@ -220,7 +221,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
 
       if (!videoIds) return;
 
-      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_KEY}`;
 
       const response = await fetch(detailsUrl);
       const data = await response.json();

@@ -17,11 +17,12 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {HP, WP, FS} from '../../utils/dimentions';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import { YOUTUBE_API_KEY } from '@env'
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 
 // Replace with your YouTube API Key
-const YOUTUBE_API_KEY = 'AIzaSyBUAiHRSxge-MNkRD-TvmobkGf5FfNNGAg';
+const YOUTUBE_KEY = YOUTUBE_API_KEY;
 
 const YouTubeIntegrationScreen = ({navigation}) => {
   const [activeTab, setActiveTab] = useState('home');
@@ -39,7 +40,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextPageToken, setNextPageToken] = useState(null);
   
-  // NEW: Shorts pagination states
+  // Shorts pagination states
   const [shortsNextPageToken, setShortsNextPageToken] = useState(null);
   const [loadingMoreShorts, setLoadingMoreShorts] = useState(false);
   const [searchNextPageToken, setSearchNextPageToken] = useState(null);
@@ -99,7 +100,17 @@ const YouTubeIntegrationScreen = ({navigation}) => {
     return `${Math.floor(diffDays / 365)} years ago`;
   };
 
-  // UPDATED: Fetch home videos with pagination 
+  // Helper function to remove duplicates by videoId
+  const removeDuplicates = (videoArray) => {
+    const seen = new Set();
+    return videoArray.filter(video => {
+      const duplicate = seen.has(video.videoId);
+      seen.add(video.videoId);
+      return !duplicate;
+    });
+  };
+
+  // Fetch home videos with pagination 
   const fetchHomeVideos = async (pageToken = null) => {
     try {
       if (!pageToken) {
@@ -109,7 +120,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       }
 
       // Search for videos with medium duration (4-20 minutes)
-      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=trending&type=video&videoDuration=medium&order=viewCount&key=${YOUTUBE_API_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=trending&type=video&videoDuration=medium&order=viewCount&key=${YOUTUBE_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
       
       const searchResponse = await fetch(searchUrl);
       const searchData = await searchResponse.json();
@@ -121,7 +132,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       const videoIds = searchData.items.map(item => item.id.videoId).join(',');
       
       // Fetch video details
-      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${videoIds}&key=${YOUTUBE_KEY}`;
       
       const detailsResponse = await fetch(detailsUrl);
       const detailsData = await detailsResponse.json();
@@ -131,7 +142,8 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       }
 
       const formattedVideos = detailsData.items.map((item, index) => ({
-        id: item.id,
+        // Use unique key combining videoId and timestamp to prevent duplicates
+        id: `${item.id}_${Date.now()}_${index}`,
         videoId: item.id,
         title: item.snippet.title,
         description: item.snippet.description,
@@ -143,7 +155,9 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       }));
 
       if (pageToken) {
-        setVideos(prev => [...prev, ...formattedVideos]);
+        // Remove duplicates when appending
+        const combinedVideos = [...videos, ...formattedVideos];
+        setVideos(removeDuplicates(combinedVideos));
       } else {
         setVideos(formattedVideos);
       }
@@ -158,7 +172,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
     }
   };
 
-  // UPDATED: Fetch shorts with pagination support
+  // Fetch shorts with pagination support
   const fetchShorts = async (pageToken = null) => {
     try {
       if (pageToken) {
@@ -166,7 +180,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       }
 
       // Search for short videos (under 1 minute)
-      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=viral|trending|funny&type=video&videoDuration=short&order=viewCount&key=${YOUTUBE_API_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=viral+trending+funny&type=video&videoDuration=short&order=viewCount&key=${YOUTUBE_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
       
       const searchResponse = await fetch(searchUrl);
       const searchData = await searchResponse.json();
@@ -192,7 +206,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
         return;
       }
 
-      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_KEY}`;
       
       const detailsResponse = await fetch(detailsUrl);
       const detailsData = await detailsResponse.json();
@@ -229,10 +243,11 @@ const YouTubeIntegrationScreen = ({navigation}) => {
             return false;
           }
         })
-        .map((item) => {
+        .map((item, index) => {
           try {
             return {
-              id: item.id || `short_${Math.random()}`,
+              // Use unique key combining videoId and timestamp
+              id: `${item.id}_${Date.now()}_${index}`,
               videoId: item.id,
               title: item.snippet?.title || 'Untitled',
               description: item.snippet?.description || '',
@@ -251,14 +266,14 @@ const YouTubeIntegrationScreen = ({navigation}) => {
 
       console.log(`Successfully fetched ${formattedShorts.length} shorts`);
       
-      // UPDATED: Append or replace based on pagination
       if (pageToken) {
-        setShorts(prev => [...prev, ...formattedShorts]);
+        // Remove duplicates when appending
+        const combinedShorts = [...shorts, ...formattedShorts];
+        setShorts(removeDuplicates(combinedShorts));
       } else {
         setShorts(formattedShorts);
       }
 
-      // Store next page token for pagination
       setShortsNextPageToken(searchData.nextPageToken);
       setLoadingMoreShorts(false);
     } catch (err) {
@@ -268,13 +283,13 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       // Fallback only on initial load
       if (!pageToken) {
         try {
-          const fallbackUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&chart=mostPopular&maxResults=10&videoCategoryId=10&key=${YOUTUBE_API_KEY}`;
+          const fallbackUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&chart=mostPopular&maxResults=10&videoCategoryId=10&key=${YOUTUBE_KEY}`;
           const fallbackResponse = await fetch(fallbackUrl);
           const fallbackData = await fallbackResponse.json();
           
           if (fallbackData.items && fallbackData.items.length > 0) {
-            const fallbackShorts = fallbackData.items.slice(0, 5).map(item => ({
-              id: item.id,
+            const fallbackShorts = fallbackData.items.slice(0, 5).map((item, index) => ({
+              id: `${item.id}_${Date.now()}_${index}`,
               videoId: item.id,
               title: item.snippet?.title || 'Video',
               description: item.snippet?.description || '',
@@ -293,9 +308,15 @@ const YouTubeIntegrationScreen = ({navigation}) => {
     }
   };
 
-  // UPDATED: Search videos with pagination
+  // Search videos with pagination
   const handleSearch = async (pageToken = null) => {
-    if (!searchQuery.trim() && !pageToken) return;
+    // Validate and sanitize search query
+    const sanitizedQuery = searchQuery.trim();
+    
+    if (!sanitizedQuery && !pageToken) {
+      console.log('Empty search query');
+      return;
+    }
     
     if (!pageToken) {
       setLoading(true);
@@ -305,28 +326,57 @@ const YouTubeIntegrationScreen = ({navigation}) => {
     }
     
     try {
-      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=${encodeURIComponent(searchQuery)}&type=video&key=${YOUTUBE_API_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      // Encode the search query properly and remove special characters that might cause issues
+      const cleanQuery = sanitizedQuery.replace(/[^\w\s]/gi, ' ').trim();
+      const encodedQuery = encodeURIComponent(cleanQuery);
+      
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=${encodedQuery}&type=video&key=${YOUTUBE_KEY}${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      
+      console.log('Search URL:', searchUrl);
       
       const searchResponse = await fetch(searchUrl);
       const searchData = await searchResponse.json();
 
       if (searchData.error) {
+        console.error('Search API Error:', searchData.error);
         throw new Error(searchData.error.message);
       }
 
-      const videoIds = searchData.items.map(item => item.id.videoId).join(',');
+      if (!searchData.items || searchData.items.length === 0) {
+        console.log('No search results found');
+        if (!pageToken) {
+          setSearchResults([]);
+        }
+        setLoading(false);
+        setLoadingMoreSearch(false);
+        return;
+      }
+
+      const videoIds = searchData.items
+        .filter(item => item && item.id && item.id.videoId)
+        .map(item => item.id.videoId)
+        .join(',');
       
-      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+      if (!videoIds) {
+        console.log('No valid video IDs in search results');
+        setLoading(false);
+        setLoadingMoreSearch(false);
+        return;
+      }
+
+      const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${videoIds}&key=${YOUTUBE_KEY}`;
       
       const detailsResponse = await fetch(detailsUrl);
       const detailsData = await detailsResponse.json();
 
       if (detailsData.error) {
+        console.error('Details API Error:', detailsData.error);
         throw new Error(detailsData.error.message);
       }
 
-      const formattedResults = detailsData.items.map((item) => ({
-        id: item.id,
+      const formattedResults = detailsData.items.map((item, index) => ({
+        // Use unique key combining videoId and timestamp
+        id: `${item.id}_${Date.now()}_${index}`,
         videoId: item.id,
         title: item.snippet.title,
         description: item.snippet.description,
@@ -337,9 +387,10 @@ const YouTubeIntegrationScreen = ({navigation}) => {
         publishedAt: formatPublishedDate(item.snippet.publishedAt),
       }));
 
-      // UPDATED: Append or replace based on pagination
       if (pageToken) {
-        setSearchResults(prev => [...prev, ...formattedResults]);
+        // Remove duplicates when appending
+        const combinedResults = [...searchResults, ...formattedResults];
+        setSearchResults(removeDuplicates(combinedResults));
       } else {
         setSearchResults(formattedResults);
       }
@@ -351,10 +402,15 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       console.error('Error searching videos:', err);
       setLoading(false);
       setLoadingMoreSearch(false);
+      
+      // Show user-friendly error message
+      if (!pageToken) {
+        setSearchResults([]);
+      }
     }
   };
 
-  // UPDATED: Load more videos when scrolling
+  // Load more videos when scrolling
   const handleLoadMore = () => {
     if (activeTab === 'home' && nextPageToken && !loadingMore) {
       fetchHomeVideos(nextPageToken);
@@ -363,7 +419,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
     }
   };
 
-  // NEW: Load more shorts
+  // Load more shorts
   const handleLoadMoreShorts = () => {
     if (shortsNextPageToken && !loadingMoreShorts) {
       fetchShorts(shortsNextPageToken);
@@ -394,10 +450,10 @@ const YouTubeIntegrationScreen = ({navigation}) => {
     if (!playingVideoId) return null;
     
     if (playingVideoType === 'short') {
-      return shorts.find(s => s.id === playingVideoId);
+      return shorts.find(s => s.videoId === playingVideoId || s.id === playingVideoId);
     } else {
       const allVideos = activeTab === 'search' ? searchResults : videos;
-      return allVideos.find(v => v.id === playingVideoId);
+      return allVideos.find(v => v.videoId === playingVideoId || v.id === playingVideoId);
     }
   }, [playingVideoId, playingVideoType, activeTab, searchResults, videos, shorts]);
 
@@ -426,7 +482,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
           <TouchableOpacity
             style={styles.thumbnailContainer}
             activeOpacity={0.9}
-            onPress={() => handleVideoPress(video.id, 'video')}>
+            onPress={() => handleVideoPress(video.videoId, 'video')}>
             <Image
               source={{uri: video.thumbnail}}
               style={styles.thumbnail}
@@ -565,7 +621,6 @@ const YouTubeIntegrationScreen = ({navigation}) => {
       setCurrentShortIndex(0);
     }, []);
 
-    // NEW: Handle load more shorts in modal
     const handleEndReached = () => {
       if (shortsNextPageToken && !loadingMoreShorts) {
         fetchShorts(shortsNextPageToken);
@@ -752,7 +807,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
           <>
             {currentVideos
               .slice(0, 1)
-              .filter(video => !(playingVideoType === 'video' && video.id === playingVideoId))
+              .filter(video => !(playingVideoType === 'video' && video.videoId === playingVideoId))
               .map(video => (
                 <VideoCard key={video.id} video={video} isPlaying={false} />
               ))}
@@ -783,7 +838,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
 
             {currentVideos
               .slice(1)
-              .filter(video => !(playingVideoType === 'video' && video.id === playingVideoId))
+              .filter(video => !(playingVideoType === 'video' && video.videoId === playingVideoId))
               .map(video => (
                 <VideoCard key={video.id} video={video} isPlaying={false} />
               ))}
@@ -793,7 +848,7 @@ const YouTubeIntegrationScreen = ({navigation}) => {
         {(activeTab !== 'home' || shorts.length === 0) && currentVideos.length > 0 && (
           <>
             {currentVideos
-              .filter(video => !(playingVideoType === 'video' && video.id === playingVideoId))
+              .filter(video => !(playingVideoType === 'video' && video.videoId === playingVideoId))
               .map(video => (
                 <VideoCard key={video.id} video={video} isPlaying={false} />
               ))}
