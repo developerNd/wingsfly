@@ -99,60 +99,204 @@ class MainActivity : ReactActivity() {
     override fun createReactActivityDelegate(): ReactActivityDelegate =
         DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
-        private fun handleNightModeIntent(intent: Intent?) {
+       private fun handleNightModeIntent(intent: Intent?) {
+    // ✅ GET DEVICE INFO
+    val androidVersion = Build.VERSION.SDK_INT
+    val androidRelease = Build.VERSION.RELEASE
+    val deviceManufacturer = Build.MANUFACTURER
+    val deviceModel = Build.MODEL
+    val deviceBrand = Build.BRAND
+    
+    Log.e(TAG, "")
+    Log.e(TAG, "🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍")
+    Log.e(TAG, "🔍 MAINACTIVITY - handleNightModeIntent CALLED")
+    Log.e(TAG, "🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍")
+    Log.e(TAG, "")
+    Log.e(TAG, "📱 DEVICE INFO:")
+    Log.e(TAG, "   Manufacturer: $deviceManufacturer")
+    Log.e(TAG, "   Brand: $deviceBrand")
+    Log.e(TAG, "   Model: $deviceModel")
+    Log.e(TAG, "   Android Version: $androidRelease (API $androidVersion)")
+    Log.e(TAG, "")
+    Log.e(TAG, "📦 INTENT INFO:")
+    Log.e(TAG, "   Intent is null: ${intent == null}")
+    
+    if (intent != null) {
+        Log.e(TAG, "   Intent action: ${intent.action}")
+        Log.e(TAG, "   Has extras: ${intent.extras != null}")
+        
+        if (intent.extras != null) {
+            Log.e(TAG, "   All extras:")
+            for (key in intent.extras!!.keySet()) {
+                Log.e(TAG, "      - $key = ${intent.extras!!.get(key)}")
+            }
+        }
+    }
+    Log.e(TAG, "")
+    
     if (intent?.action == "TRIGGER_NIGHT_MODE") {
+        Log.e(TAG, "✅ Action matches TRIGGER_NIGHT_MODE")
+        
         val triggerNightMode = intent.getBooleanExtra("trigger_night_mode", false)
         val fromAlarm = intent.getBooleanExtra("from_alarm", false)
         val appWasKilled = intent.getBooleanExtra("app_was_killed", false)
         
+        Log.e(TAG, "")
+        Log.e(TAG, "🎯 TRIGGER FLAGS:")
+        Log.e(TAG, "   trigger_night_mode: $triggerNightMode")
+        Log.e(TAG, "   from_alarm: $fromAlarm")
+        Log.e(TAG, "   app_was_killed: $appWasKilled")
+        Log.e(TAG, "")
+        
         if (triggerNightMode) {
+            Log.e(TAG, "✅ triggerNightMode is TRUE - Processing...")
+            
             val bedHour = intent.getIntExtra("bed_hour", 0)
             val bedMinute = intent.getIntExtra("bed_minute", 0)
 
-            Log.d(TAG, "========================================")
-            Log.d(TAG, "🌙 NIGHT MODE TRIGGER DETECTED")
-            Log.d(TAG, "From Alarm: $fromAlarm")
-            Log.d(TAG, "App Was Killed: $appWasKilled")
-            Log.d(TAG, "Bed Time: $bedHour:${String.format("%02d", bedMinute)}")
-            Log.d(TAG, "========================================")
+            Log.e(TAG, "")
+            Log.e(TAG, "🛏️ BED TIME INFO:")
+            Log.e(TAG, "   Hour: $bedHour")
+            Log.e(TAG, "   Minute: $bedMinute")
+            Log.e(TAG, "   Formatted: $bedHour:${String.format("%02d", bedMinute)}")
+            Log.e(TAG, "")
 
-            // Store trigger data in SharedPreferences for React Native to read
+            // Store trigger data in SharedPreferences
+            Log.e(TAG, "💾 Storing to SharedPreferences...")
             val nightModePrefs = getSharedPreferences("NightModeTrigger", Context.MODE_PRIVATE)
-            nightModePrefs.edit().apply {
-                putBoolean("should_trigger", true)
-                putBoolean("from_alarm", fromAlarm)
-                putBoolean("app_was_killed", appWasKilled)
-                putInt("bed_hour", bedHour)
-                putInt("bed_minute", bedMinute)
-                putLong("trigger_time", System.currentTimeMillis())
-                apply()
-            }
+            val editor = nightModePrefs.edit()
+            editor.putBoolean("should_trigger", true)
+            editor.putBoolean("from_alarm", fromAlarm)
+            editor.putBoolean("app_was_killed", appWasKilled)
+            editor.putInt("bed_hour", bedHour)
+            editor.putInt("bed_minute", bedMinute)
+            editor.putLong("trigger_time", System.currentTimeMillis())
+            val saved = editor.commit() // Use commit() instead of apply() for immediate save
+            
+            Log.e(TAG, "💾 SharedPreferences save result: $saved")
+            Log.e(TAG, "")
 
-            Log.d(TAG, "✅ Night Mode trigger data stored for React Native")
+            // Verify it was saved
+            Log.e(TAG, "✅ Verifying saved data...")
+            val shouldTrigger = nightModePrefs.getBoolean("should_trigger", false)
+            val savedBedHour = nightModePrefs.getInt("bed_hour", -1)
+            val savedBedMinute = nightModePrefs.getInt("bed_minute", -1)
+            Log.e(TAG, "   should_trigger: $shouldTrigger")
+            Log.e(TAG, "   bed_hour: $savedBedHour")
+            Log.e(TAG, "   bed_minute: $savedBedMinute")
+            Log.e(TAG, "")
 
-            // Also send event immediately if React Native is ready
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    val params = Arguments.createMap().apply {
-                        putInt("bed_hour", bedHour)
-                        putInt("bed_minute", bedMinute)
-                        putBoolean("from_alarm", fromAlarm)
-                        putBoolean("app_was_killed", appWasKilled)
-                        putString("message", "It's time to wind down for bed!")
-                    }
-
-                    reactInstanceManager
-                        ?.currentReactContext
-                        ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                        ?.emit("TRIGGER_NIGHT_MODE", params)
-                    
-                    Log.d(TAG, "✅ Night Mode event sent to React Native")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Error sending Night Mode event: ${e.message}", e)
-                }
-            }, 1000)
+            // Send event to React Native with retry logic
+            Log.e(TAG, "📡 Attempting to send event to React Native...")
+            sendNightModeEventWithRetry(bedHour, bedMinute, fromAlarm, appWasKilled, 0)
+            
+        } else {
+            Log.e(TAG, "⚠️ triggerNightMode is FALSE - Skipping processing")
         }
+    } else {
+        Log.e(TAG, "⚠️ Action does NOT match TRIGGER_NIGHT_MODE")
+        Log.e(TAG, "   Expected: TRIGGER_NIGHT_MODE")
+        Log.e(TAG, "   Got: ${intent?.action}")
     }
+    
+    Log.e(TAG, "")
+    Log.e(TAG, "🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍")
+    Log.e(TAG, "")
+}
+
+/**
+ * ✅ NEW: Send Night Mode event with retry logic
+ */
+private fun sendNightModeEventWithRetry(
+    bedHour: Int, 
+    bedMinute: Int, 
+    fromAlarm: Boolean, 
+    appWasKilled: Boolean,
+    attempt: Int
+) {
+    val maxAttempts = 5
+    val delayMs = when(attempt) {
+        0 -> 500L    // First try after 500ms
+        1 -> 1000L   // Second try after 1s
+        2 -> 2000L   // Third try after 2s
+        3 -> 3000L   // Fourth try after 3s
+        else -> 5000L // Final try after 5s
+    }
+
+    Log.e(TAG, "⏳ Scheduling event send attempt ${attempt + 1}/$maxAttempts in ${delayMs}ms")
+
+    Handler(Looper.getMainLooper()).postDelayed({
+        try {
+            Log.e(TAG, "")
+            Log.e(TAG, "📡 EVENT SEND ATTEMPT ${attempt + 1}/$maxAttempts")
+            Log.e(TAG, "")
+            
+            val reactContext = reactInstanceManager?.currentReactContext
+            
+            Log.e(TAG, "   reactInstanceManager: ${reactInstanceManager != null}")
+            Log.e(TAG, "   reactContext: ${reactContext != null}")
+            
+            if (reactContext != null) {
+                Log.e(TAG, "   ✅ React Native context is READY!")
+                
+                val params = Arguments.createMap().apply {
+                    putInt("bed_hour", bedHour)
+                    putInt("bed_minute", bedMinute)
+                    putBoolean("from_alarm", fromAlarm)
+                    putBoolean("app_was_killed", appWasKilled)
+                    putString("message", "It's time to wind down for bed!")
+                }
+
+                Log.e(TAG, "")
+                Log.e(TAG, "📤 Emitting TRIGGER_NIGHT_MODE event...")
+                Log.e(TAG, "   Event data:")
+                Log.e(TAG, "      bed_hour: $bedHour")
+                Log.e(TAG, "      bed_minute: $bedMinute")
+                Log.e(TAG, "      from_alarm: $fromAlarm")
+                Log.e(TAG, "      app_was_killed: $appWasKilled")
+
+                reactContext
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    ?.emit("TRIGGER_NIGHT_MODE", params)
+                
+                Log.e(TAG, "")
+                Log.e(TAG, "✅✅✅ NIGHT MODE EVENT SENT SUCCESSFULLY! ✅✅✅")
+                Log.e(TAG, "")
+                
+                // Clear the SharedPreferences flag after successful send
+                val nightModePrefs = getSharedPreferences("NightModeTrigger", Context.MODE_PRIVATE)
+                nightModePrefs.edit().putBoolean("should_trigger", false).commit()
+                
+                Log.e(TAG, "🧹 Cleared 'should_trigger' flag from SharedPreferences")
+                
+            } else if (attempt < maxAttempts - 1) {
+                Log.e(TAG, "   ⚠️ React Native context NOT ready yet")
+                Log.e(TAG, "   🔄 Will retry (attempt ${attempt + 2}/$maxAttempts)...")
+                sendNightModeEventWithRetry(bedHour, bedMinute, fromAlarm, appWasKilled, attempt + 1)
+            } else {
+                Log.e(TAG, "")
+                Log.e(TAG, "❌❌❌ FAILED: React Native context not ready after $maxAttempts attempts!")
+                Log.e(TAG, "")
+                Log.e(TAG, "💾 Night Mode data is saved in SharedPreferences")
+                Log.e(TAG, "   It will be checked when React Native becomes ready")
+                Log.e(TAG, "")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "")
+            Log.e(TAG, "❌ ERROR in event send attempt ${attempt + 1}: ${e.message}")
+            Log.e(TAG, "")
+            e.printStackTrace()
+            
+            if (attempt < maxAttempts - 1) {
+                Log.e(TAG, "🔄 Will retry due to error (attempt ${attempt + 2}/$maxAttempts)...")
+                sendNightModeEventWithRetry(bedHour, bedMinute, fromAlarm, appWasKilled, attempt + 1)
+            } else {
+                Log.e(TAG, "")
+                Log.e(TAG, "❌❌❌ FAILED: All retry attempts exhausted!")
+                Log.e(TAG, "")
+            }
+        }
+    }, delayMs)
 }
 
     override fun onCreate(savedInstanceState: Bundle?) {

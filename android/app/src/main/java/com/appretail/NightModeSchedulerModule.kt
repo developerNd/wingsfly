@@ -43,6 +43,13 @@ class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
             val context = reactApplicationContext
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
+            // ✅ GET DEVICE INFO
+            val androidVersion = Build.VERSION.SDK_INT
+            val androidRelease = Build.VERSION.RELEASE
+            val deviceManufacturer = Build.MANUFACTURER
+            val deviceModel = Build.MODEL
+            val deviceBrand = Build.BRAND
+
             // Calculate trigger hour and minute (1 hour before bed)
             val calendar = Calendar.getInstance().apply {
                 timeInMillis = triggerTimeMillis.toLong()
@@ -123,10 +130,19 @@ class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
             
             Log.d(TAG, "========================================")
             Log.d(TAG, "✅ Night Mode alarm scheduled (works when app is killed)!")
-            Log.d(TAG, "Trigger time: $triggerDate")
-            Log.d(TAG, "Time until trigger: $timeUntil minutes")
-            Log.d(TAG, "Bed time: ${bedHour}:${String.format("%02d", bedMinute)}")
-            Log.d(TAG, "Trigger time: ${triggerHour}:${String.format("%02d", triggerMinute)}")
+            Log.d(TAG, "")
+            Log.d(TAG, "📱 DEVICE INFORMATION:")
+            Log.d(TAG, "   Manufacturer: $deviceManufacturer")
+            Log.d(TAG, "   Brand: $deviceBrand")
+            Log.d(TAG, "   Model: $deviceModel")
+            Log.d(TAG, "   Android Version: $androidRelease (API $androidVersion)")
+            Log.d(TAG, "")
+            Log.d(TAG, "⏰ SCHEDULE DETAILS:")
+            Log.d(TAG, "   Trigger time: $triggerDate")
+            Log.d(TAG, "   Time until trigger: $timeUntil minutes")
+            Log.d(TAG, "   Bed time: ${bedHour}:${String.format("%02d", bedMinute)}")
+            Log.d(TAG, "   Trigger time: ${triggerHour}:${String.format("%02d", triggerMinute)}")
+            Log.d(TAG, "   Current time: ${Date(now)}")
             Log.d(TAG, "========================================")
             
             promise.resolve(true)
@@ -247,22 +263,53 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (context == null || intent == null) return
 
+        // ✅ CRITICAL DEBUG INFO
+        val currentTime = System.currentTimeMillis()
+        val currentDate = Date(currentTime)
         val action = intent.action
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "🌙 Receiver triggered with action: $action")
-        Log.d(TAG, "App state: POTENTIALLY KILLED - Alarm will launch app")
-        Log.d(TAG, "========================================")
+        
+        // ✅ GET DEVICE INFO
+        val androidVersion = Build.VERSION.SDK_INT
+        val androidRelease = Build.VERSION.RELEASE
+        val deviceManufacturer = Build.MANUFACTURER
+        val deviceModel = Build.MODEL
+        val deviceBrand = Build.BRAND
+        
+        Log.e(TAG, "")
+        Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
+        Log.e(TAG, "🔥 ALARM FIRED! 🔥")
+        Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
+        Log.e(TAG, "")
+        Log.e(TAG, "📱 DEVICE INFORMATION:")
+        Log.e(TAG, "   Manufacturer: $deviceManufacturer")
+        Log.e(TAG, "   Brand: $deviceBrand")
+        Log.e(TAG, "   Model: $deviceModel")
+        Log.e(TAG, "   Android Version: $androidRelease (API $androidVersion)")
+        Log.e(TAG, "")
+        Log.e(TAG, "⏰ ALARM DETAILS:")
+        Log.e(TAG, "   Trigger Time: $currentDate")
+        Log.e(TAG, "   Timestamp (ms): $currentTime")
+        Log.e(TAG, "   Action: $action")
+        Log.e(TAG, "")
 
         when (action) {
             NightModeSchedulerModule.ACTION_NIGHT_MODE_ALARM -> {
+                Log.e(TAG, "✅ Correct alarm action received!")
                 handleNightModeAlarm(context, intent)
             }
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON" -> {
+                Log.e(TAG, "📱 Boot completed action received")
                 handleBootCompleted(context)
             }
+            else -> {
+                Log.e(TAG, "⚠️ Unknown action received: $action")
+            }
         }
+        
+        Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
+        Log.e(TAG, "")
     }
 
     private fun handleNightModeAlarm(context: Context, intent: Intent) {
@@ -276,12 +323,13 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                 acquire(60000) // 1 minute
             }
 
-            Log.d(TAG, "🌙 Night Mode alarm triggered! (App may be killed)")
+            Log.e(TAG, "🌙 Night Mode alarm triggered! (App may be killed)")
+            Log.e(TAG, "🔒 Wake lock acquired")
 
             val bedHour = intent.getIntExtra("bed_hour", 0)
             val bedMinute = intent.getIntExtra("bed_minute", 0)
 
-            Log.d(TAG, "Bed time: $bedHour:${String.format("%02d", bedMinute)}")
+            Log.e(TAG, "Bed time: $bedHour:${String.format("%02d", bedMinute)}")
 
             // ✅ CRITICAL: Launch MainActivity with Night Mode flag
             // This will start the app if it's killed
@@ -299,18 +347,21 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                 putExtra("app_was_killed", true) // Indicate app might have been killed
             }
 
+            Log.e(TAG, "🚀 Starting MainActivity...")
             context.startActivity(launchIntent)
-
-            Log.d(TAG, "✅ MainActivity launched for Night Mode (from killed state)")
+            Log.e(TAG, "✅ MainActivity launch requested")
 
             // ✅ Reschedule for tomorrow
+            Log.e(TAG, "📅 Rescheduling for tomorrow...")
             rescheduleForTomorrow(context, bedHour, bedMinute)
 
             // Release wake lock
             wakeLock.release()
+            Log.e(TAG, "🔓 Wake lock released")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error in alarm receiver: ${e.message}", e)
+            e.printStackTrace()
         }
     }
 
@@ -369,9 +420,10 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
 
             scheduleAlarm(context, calendar.timeInMillis, bedHour, bedMinute, triggerHour, triggerMinute)
 
-            Log.d(TAG, "✅ Rescheduled for tomorrow: ${calendar.time}")
+            Log.e(TAG, "✅ Rescheduled for tomorrow: ${calendar.time}")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error rescheduling: ${e.message}", e)
+            e.printStackTrace()
         }
     }
 
@@ -424,6 +476,6 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent)
         alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
 
-        Log.d(TAG, "Alarm scheduled for: ${Date(triggerTime)}")
+        Log.e(TAG, "📅 Alarm scheduled for: ${Date(triggerTime)}")
     }
 }
