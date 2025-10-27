@@ -3,14 +3,21 @@ package com.wingsfly
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.util.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import androidx.core.app.NotificationCompat
 
 class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -30,7 +37,171 @@ class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
     override fun getName() = "NightModeSchedulerModule"
 
     /**
+     * ✅ NEW: Check if device is Xiaomi
+     */
+    @ReactMethod
+    fun isXiaomi(promise: Promise) {
+        try {
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            val isXiaomi = manufacturer.contains("xiaomi") || 
+                          manufacturer.contains("redmi") ||
+                          manufacturer.contains("poco")
+            
+            Log.d(TAG, "Device manufacturer: ${Build.MANUFACTURER}, isXiaomi: $isXiaomi")
+            promise.resolve(isXiaomi)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking manufacturer: ${e.message}", e)
+            promise.resolve(false)
+        }
+    }
+
+    /**
+     * ✅ NEW: Check if battery optimizations are ignored
+     */
+    @ReactMethod
+    fun isIgnoringBatteryOptimizations(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                val packageName = context.packageName
+                val isIgnoring = powerManager.isIgnoringBatteryOptimizations(packageName)
+                
+                Log.d(TAG, "Battery optimization ignored: $isIgnoring")
+                promise.resolve(isIgnoring)
+            } else {
+                promise.resolve(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking battery optimization: ${e.message}", e)
+            promise.resolve(false)
+        }
+    }
+
+    /**
+     * ✅ NEW: Request to ignore battery optimizations
+     */
+    @ReactMethod
+    fun requestIgnoreBatteryOptimization(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                
+                try {
+                    context.startActivity(intent)
+                    promise.resolve(true)
+                } catch (e: Exception) {
+                    // Fallback to app settings
+                    openAppSettings(promise)
+                }
+            } else {
+                promise.resolve(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting battery optimization: ${e.message}", e)
+            promise.reject("ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * ✅ NEW: Open Xiaomi autostart settings
+     */
+    @ReactMethod
+    fun openAutostartSettings(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            
+            // Try Xiaomi autostart settings
+            val xiaomiIntents = listOf(
+                Intent().apply {
+                    component = ComponentName(
+                        "com.miui.securitycenter",
+                        "com.miui.permcenter.autostart.AutoStartManagementActivity"
+                    )
+                },
+                Intent().apply {
+                    component = ComponentName(
+                        "com.miui.securitycenter",
+                        "com.miui.powercenter.PowerSettings"
+                    )
+                },
+                Intent().apply {
+                    action = "miui.intent.action.OP_AUTO_START"
+                    addCategory(Intent.CATEGORY_DEFAULT)
+                }
+            )
+            
+            var opened = false
+            for (intent in xiaomiIntents) {
+                try {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                    opened = true
+                    Log.d(TAG, "✅ Opened Xiaomi autostart settings")
+                    break
+                } catch (e: Exception) {
+                    Log.d(TAG, "Failed intent: ${e.message}")
+                }
+            }
+            
+            if (!opened) {
+                Log.w(TAG, "Could not open autostart settings, opening app settings")
+                openAppSettings(promise)
+            } else {
+                promise.resolve(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening autostart settings: ${e.message}", e)
+            promise.reject("ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * ✅ NEW: Open app settings
+     */
+    @ReactMethod
+    fun openAppSettings(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening app settings: ${e.message}", e)
+            promise.reject("ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * ✅ NEW: Get device info for debugging
+     */
+    @ReactMethod
+    fun getDeviceInfo(promise: Promise) {
+        try {
+            val info = Arguments.createMap().apply {
+                putString("manufacturer", Build.MANUFACTURER)
+                putString("brand", Build.BRAND)
+                putString("model", Build.MODEL)
+                putString("device", Build.DEVICE)
+                putInt("sdkInt", Build.VERSION.SDK_INT)
+                putString("release", Build.VERSION.RELEASE)
+            }
+            promise.resolve(info)
+        } catch (e: Exception) {
+            promise.reject("ERROR", e.message, e)
+        }
+    }
+
+    /**
      * Schedule alarm for Night Mode trigger (1 hour before bedtime)
+     * ✅ ENHANCED: Better logging and Xiaomi handling
      */
     @ReactMethod
     fun scheduleNightModeAlarm(
@@ -49,6 +220,9 @@ class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
             val deviceManufacturer = Build.MANUFACTURER
             val deviceModel = Build.MODEL
             val deviceBrand = Build.BRAND
+            val isXiaomi = deviceManufacturer.lowercase().let {
+                it.contains("xiaomi") || it.contains("redmi") || it.contains("poco")
+            }
 
             // Calculate trigger hour and minute (1 hour before bed)
             val calendar = Calendar.getInstance().apply {
@@ -136,6 +310,9 @@ class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
             Log.d(TAG, "   Brand: $deviceBrand")
             Log.d(TAG, "   Model: $deviceModel")
             Log.d(TAG, "   Android Version: $androidRelease (API $androidVersion)")
+            if (isXiaomi) {
+                Log.w(TAG, "   ⚠️ XIAOMI DEVICE DETECTED - May need autostart permission!")
+            }
             Log.d(TAG, "")
             Log.d(TAG, "⏰ SCHEDULE DETAILS:")
             Log.d(TAG, "   Trigger time: $triggerDate")
@@ -145,7 +322,13 @@ class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
             Log.d(TAG, "   Current time: ${Date(now)}")
             Log.d(TAG, "========================================")
             
-            promise.resolve(true)
+            // Return device info to React Native for UI warnings
+            val result = Arguments.createMap().apply {
+                putBoolean("success", true)
+                putBoolean("isXiaomi", isXiaomi)
+                putString("manufacturer", deviceManufacturer)
+            }
+            promise.resolve(result)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error scheduling alarm: ${e.message}", e)
             promise.reject("SCHEDULE_ERROR", e.message, e)
@@ -201,281 +384,13 @@ class NightModeSchedulerModule(reactContext: ReactApplicationContext) :
             val context = reactApplicationContext
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val isScheduled = prefs.getBoolean(KEY_ALARM_SCHEDULED, false)
+            
+            Log.d(TAG, "Alarm scheduled status: $isScheduled")
             promise.resolve(isScheduled)
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error checking alarm: ${e.message}", e)
-            promise.reject("CHECK_ERROR", e.message, e)
-        }
-    }
-
-    /**
-     * Get scheduled alarm details
-     */
-    @ReactMethod
-    fun getScheduledAlarmDetails(promise: Promise) {
-        try {
-            val context = reactApplicationContext
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            
-            val result = Arguments.createMap().apply {
-                putBoolean("isScheduled", prefs.getBoolean(KEY_ALARM_SCHEDULED, false))
-                putInt("bedHour", prefs.getInt(KEY_BED_HOUR, 0))
-                putInt("bedMinute", prefs.getInt(KEY_BED_MINUTE, 0))
-                putInt("triggerHour", prefs.getInt(KEY_TRIGGER_HOUR, 0))
-                putInt("triggerMinute", prefs.getInt(KEY_TRIGGER_MINUTE, 0))
-            }
-            
-            promise.resolve(result)
-        } catch (e: Exception) {
-            promise.reject("ERROR", e.message, e)
-        }
-    }
-
-    /**
-     * Send event to React Native
-     */
-    fun sendEvent(eventName: String, params: WritableMap?) {
-        try {
-            reactApplicationContext
-                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                .emit(eventName, params)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error sending event: ${e.message}", e)
+            Log.e(TAG, "Error checking alarm: ${e.message}", e)
+            promise.resolve(false)
         }
     }
 }
 
-/**
- * Broadcast Receiver for Night Mode alarm
- * THIS RUNS EVEN WHEN APP IS KILLED
- */
-class NightModeAlarmReceiver : BroadcastReceiver() {
-    
-    companion object {
-        private const val TAG = "NightModeAlarmReceiver"
-        private const val PREFS_NAME = "NightModePrefs"
-        private const val KEY_BED_HOUR = "bed_hour"
-        private const val KEY_BED_MINUTE = "bed_minute"
-        private const val KEY_TRIGGER_HOUR = "trigger_hour"
-        private const val KEY_TRIGGER_MINUTE = "trigger_minute"
-    }
-
-    override fun onReceive(context: Context?, intent: Intent?) {
-        if (context == null || intent == null) return
-
-        // ✅ CRITICAL DEBUG INFO
-        val currentTime = System.currentTimeMillis()
-        val currentDate = Date(currentTime)
-        val action = intent.action
-        
-        // ✅ GET DEVICE INFO
-        val androidVersion = Build.VERSION.SDK_INT
-        val androidRelease = Build.VERSION.RELEASE
-        val deviceManufacturer = Build.MANUFACTURER
-        val deviceModel = Build.MODEL
-        val deviceBrand = Build.BRAND
-        
-        Log.e(TAG, "")
-        Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
-        Log.e(TAG, "🔥 ALARM FIRED! 🔥")
-        Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
-        Log.e(TAG, "")
-        Log.e(TAG, "📱 DEVICE INFORMATION:")
-        Log.e(TAG, "   Manufacturer: $deviceManufacturer")
-        Log.e(TAG, "   Brand: $deviceBrand")
-        Log.e(TAG, "   Model: $deviceModel")
-        Log.e(TAG, "   Android Version: $androidRelease (API $androidVersion)")
-        Log.e(TAG, "")
-        Log.e(TAG, "⏰ ALARM DETAILS:")
-        Log.e(TAG, "   Trigger Time: $currentDate")
-        Log.e(TAG, "   Timestamp (ms): $currentTime")
-        Log.e(TAG, "   Action: $action")
-        Log.e(TAG, "")
-
-        when (action) {
-            NightModeSchedulerModule.ACTION_NIGHT_MODE_ALARM -> {
-                Log.e(TAG, "✅ Correct alarm action received!")
-                handleNightModeAlarm(context, intent)
-            }
-            Intent.ACTION_BOOT_COMPLETED,
-            Intent.ACTION_LOCKED_BOOT_COMPLETED,
-            "android.intent.action.QUICKBOOT_POWERON" -> {
-                Log.e(TAG, "📱 Boot completed action received")
-                handleBootCompleted(context)
-            }
-            else -> {
-                Log.e(TAG, "⚠️ Unknown action received: $action")
-            }
-        }
-        
-        Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
-        Log.e(TAG, "")
-    }
-
-    private fun handleNightModeAlarm(context: Context, intent: Intent) {
-        try {
-            // Acquire wake lock to ensure alarm works even in doze mode
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-            val wakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "WingsFly::NightModeWakeLock"
-            ).apply {
-                acquire(60000) // 1 minute
-            }
-
-            Log.e(TAG, "🌙 Night Mode alarm triggered! (App may be killed)")
-            Log.e(TAG, "🔒 Wake lock acquired")
-
-            val bedHour = intent.getIntExtra("bed_hour", 0)
-            val bedMinute = intent.getIntExtra("bed_minute", 0)
-
-            Log.e(TAG, "Bed time: $bedHour:${String.format("%02d", bedMinute)}")
-
-            // ✅ CRITICAL: Launch MainActivity with Night Mode flag
-            // This will start the app if it's killed
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                action = "TRIGGER_NIGHT_MODE"
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or 
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-                )
-                putExtra("trigger_night_mode", true)
-                putExtra("bed_hour", bedHour)
-                putExtra("bed_minute", bedMinute)
-                putExtra("from_alarm", true)
-                putExtra("app_was_killed", true) // Indicate app might have been killed
-            }
-
-            Log.e(TAG, "🚀 Starting MainActivity...")
-            context.startActivity(launchIntent)
-            Log.e(TAG, "✅ MainActivity launch requested")
-
-            // ✅ Reschedule for tomorrow
-            Log.e(TAG, "📅 Rescheduling for tomorrow...")
-            rescheduleForTomorrow(context, bedHour, bedMinute)
-
-            // Release wake lock
-            wakeLock.release()
-            Log.e(TAG, "🔓 Wake lock released")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error in alarm receiver: ${e.message}", e)
-            e.printStackTrace()
-        }
-    }
-
-    private fun handleBootCompleted(context: Context) {
-        try {
-            Log.d(TAG, "📱 Device booted - checking for scheduled alarms")
-            
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val isScheduled = prefs.getBoolean("alarm_scheduled", false)
-            
-            if (isScheduled) {
-                val bedHour = prefs.getInt(KEY_BED_HOUR, 0)
-                val bedMinute = prefs.getInt(KEY_BED_MINUTE, 0)
-                val triggerHour = prefs.getInt(KEY_TRIGGER_HOUR, bedHour - 1)
-                val triggerMinute = prefs.getInt(KEY_TRIGGER_MINUTE, bedMinute)
-                
-                Log.d(TAG, "Found scheduled alarm: Bed=${bedHour}:${bedMinute}, Trigger=${triggerHour}:${triggerMinute}")
-                
-                // Calculate next trigger time
-                val calendar = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, triggerHour)
-                    set(Calendar.MINUTE, triggerMinute)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                    
-                    // If time has passed today, schedule for tomorrow
-                    if (timeInMillis <= System.currentTimeMillis()) {
-                        add(Calendar.DAY_OF_YEAR, 1)
-                    }
-                }
-                
-                scheduleAlarm(context, calendar.timeInMillis, bedHour, bedMinute, triggerHour, triggerMinute)
-                
-                Log.d(TAG, "✅ Alarm rescheduled after boot for: ${calendar.time}")
-            } else {
-                Log.d(TAG, "No scheduled alarm found after boot")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error handling boot: ${e.message}", e)
-        }
-    }
-
-    private fun rescheduleForTomorrow(context: Context, bedHour: Int, bedMinute: Int) {
-        try {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val triggerHour = prefs.getInt(KEY_TRIGGER_HOUR, bedHour - 1)
-            val triggerMinute = prefs.getInt(KEY_TRIGGER_MINUTE, bedMinute)
-
-            val calendar = Calendar.getInstance().apply {
-                add(Calendar.DAY_OF_YEAR, 1)
-                set(Calendar.HOUR_OF_DAY, triggerHour)
-                set(Calendar.MINUTE, triggerMinute)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-
-            scheduleAlarm(context, calendar.timeInMillis, bedHour, bedMinute, triggerHour, triggerMinute)
-
-            Log.e(TAG, "✅ Rescheduled for tomorrow: ${calendar.time}")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error rescheduling: ${e.message}", e)
-            e.printStackTrace()
-        }
-    }
-
-    private fun scheduleAlarm(
-        context: Context, 
-        triggerTime: Long, 
-        bedHour: Int, 
-        bedMinute: Int,
-        triggerHour: Int,
-        triggerMinute: Int
-    ) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        
-        val intent = Intent(context, NightModeAlarmReceiver::class.java).apply {
-            action = NightModeSchedulerModule.ACTION_NIGHT_MODE_ALARM
-            putExtra("bed_hour", bedHour)
-            putExtra("bed_minute", bedMinute)
-            putExtra("trigger_hour", triggerHour)
-            putExtra("trigger_minute", triggerMinute)
-        }
-
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            NightModeSchedulerModule.ALARM_REQUEST_CODE,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE
-            } else {
-                0
-            }
-        )
-
-        // Use setAlarmClock for maximum reliability (works even when app is killed)
-        val showIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val showPendingIntent = PendingIntent.getActivity(
-            context,
-            NightModeSchedulerModule.ALARM_REQUEST_CODE + 1,
-            showIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE
-            } else {
-                0
-            }
-        )
-
-        val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent)
-        alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
-
-        Log.e(TAG, "📅 Alarm scheduled for: ${Date(triggerTime)}")
-    }
-}

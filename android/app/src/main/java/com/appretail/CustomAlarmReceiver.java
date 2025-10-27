@@ -14,7 +14,11 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
     
     @Override
     public void onReceive(Context context, Intent intent) {
-        Log.d(TAG, "Custom alarm receiver triggered");
+        Log.d(TAG, "========================================");
+        Log.d(TAG, "ALARM RECEIVER TRIGGERED");
+        Log.d(TAG, "========================================");
+        Log.d(TAG, "Thread: " + Thread.currentThread().getName());
+        Log.d(TAG, "Time: " + new java.util.Date().toString());
         
         try {
             String alarmId = intent.getStringExtra("alarmId");
@@ -25,40 +29,139 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
             String alarmType = intent.getStringExtra("alarmType");
             boolean isSnooze = intent.getBooleanExtra("isSnooze", false);
             
-            // NEW: Extract custom tone data
+            // Extract custom tone data
             String toneType = intent.getStringExtra("toneType");
             String customToneUri = intent.getStringExtra("customToneUri");
             String customToneName = intent.getStringExtra("customToneName");
             
+            Log.d(TAG, "Alarm Data:");
+            Log.d(TAG, "  - ID: " + alarmId);
+            Log.d(TAG, "  - Time: " + time);
+            Log.d(TAG, "  - Label: " + label);
+            Log.d(TAG, "  - Days: " + days);
+            Log.d(TAG, "  - UserId: " + userId);
+            Log.d(TAG, "  - Type: " + alarmType);
+            Log.d(TAG, "  - IsSnooze: " + isSnooze);
+            Log.d(TAG, "  - ToneType: " + toneType);
+            Log.d(TAG, "  - CustomToneUri: " + (customToneUri != null ? customToneUri : "NULL"));
+            Log.d(TAG, "  - CustomToneName: " + (customToneName != null ? customToneName : "NULL"));
+            
             if (alarmId == null) {
-                Log.e(TAG, "No alarm ID provided in custom alarm");
+                Log.e(TAG, "CRITICAL ERROR: No alarm ID provided!");
                 return;
             }
             
-            Log.d(TAG, "Custom alarm triggered - ID: " + alarmId + ", Time: " + time + ", Label: " + label);
-            Log.d(TAG, "Is snooze: " + isSnooze + ", Type: " + alarmType);
-            Log.d(TAG, "Tone type: " + toneType + ", Custom tone: " + (customToneUri != null ? "PROVIDED" : "NULL"));
-            
-            // Acquire wake lock to ensure device wakes up
+            // Check device state
             PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            KeyguardManager keyguardManager = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+            
+            boolean isInteractive = false;
+            boolean isLocked = false;
+            boolean isSecure = false;
+            
+            if (powerManager != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                    isInteractive = powerManager.isInteractive();
+                } else {
+                    isInteractive = powerManager.isScreenOn();
+                }
+            }
+            
+            if (keyguardManager != null) {
+                isLocked = keyguardManager.isKeyguardLocked();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                    isSecure = keyguardManager.isKeyguardSecure();
+                }
+            }
+            
+            Log.d(TAG, "Device State:");
+            Log.d(TAG, "  - Screen Interactive: " + isInteractive);
+            Log.d(TAG, "  - Device Locked: " + isLocked);
+            Log.d(TAG, "  - Secure Lock: " + isSecure);
+            Log.d(TAG, "  - Android Version: " + Build.VERSION.SDK_INT);
+            Log.d(TAG, "  - Device Model: " + Build.MODEL);
+            Log.d(TAG, "  - Manufacturer: " + Build.MANUFACTURER);
+            
+            // Acquire wake lock IMMEDIATELY
+            Log.d(TAG, "Acquiring wake lock...");
             PowerManager.WakeLock wakeLock = null;
             
             if (powerManager != null) {
-                wakeLock = powerManager.newWakeLock(
-                    PowerManager.FULL_WAKE_LOCK | 
-                    PowerManager.ACQUIRE_CAUSES_WAKEUP | 
-                    PowerManager.ON_AFTER_RELEASE,
-                    "CustomAlarm:WakeDevice"
-                );
-                wakeLock.acquire(5 * 60 * 1000L); // 5 minutes
-                Log.d(TAG, "Wake lock acquired for custom alarm");
+                try {
+                    wakeLock = powerManager.newWakeLock(
+                        PowerManager.FULL_WAKE_LOCK | 
+                        PowerManager.ACQUIRE_CAUSES_WAKEUP | 
+                        PowerManager.ON_AFTER_RELEASE,
+                        "CustomAlarm:WakeDevice"
+                    );
+                    wakeLock.acquire(5 * 60 * 1000L); // 5 minutes
+                    Log.d(TAG, "Wake lock acquired successfully");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to acquire wake lock", e);
+                }
+            } else {
+                Log.e(TAG, "PowerManager is null - cannot acquire wake lock!");
             }
             
-            // Check if device is locked
-            KeyguardManager keyguardManager = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
-            boolean isLocked = keyguardManager != null && keyguardManager.isKeyguardLocked();
+            // Start the custom alarm activity with multiple launch attempts
+            Log.d(TAG, "Launching alarm activity...");
+            boolean activityLaunched = launchAlarmActivity(
+                context, alarmId, time, label, days, userId, 
+                isLocked, isSnooze, alarmType, toneType, customToneUri, customToneName
+            );
             
-            // Start the custom alarm activity
+            if (!activityLaunched) {
+                Log.e(TAG, "Activity launch failed, starting fallback service...");
+                startCustomAlarmService(
+                    context, alarmId, time, label, days, userId, 
+                    isLocked, isSnooze, toneType, customToneUri, customToneName
+                );
+            }
+            
+            // If this is not a snooze, reschedule for next occurrence (if repeating)
+            if (!isSnooze && days != null && !days.isEmpty()) {
+                Log.d(TAG, "Rescheduling repeating alarm...");
+                rescheduleRepeatingAlarm(
+                    context, alarmId, time, label, days, userId, 
+                    toneType, customToneUri, customToneName
+                );
+            } else {
+                Log.d(TAG, "Not rescheduling (isSnooze: " + isSnooze + ", days: " + days + ")");
+            }
+            
+            // Release wake lock after a delay
+            final PowerManager.WakeLock finalWakeLock = wakeLock;
+            if (finalWakeLock != null) {
+                android.os.Handler handler = new android.os.Handler();
+                handler.postDelayed(() -> {
+                    try {
+                        if (finalWakeLock.isHeld()) {
+                            finalWakeLock.release();
+                            Log.d(TAG, "Wake lock released");
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error releasing wake lock", e);
+                    }
+                }, 30000); // Release after 30 seconds
+            }
+            
+            Log.d(TAG, "========================================");
+            Log.d(TAG, "ALARM RECEIVER COMPLETED SUCCESSFULLY");
+            Log.d(TAG, "========================================");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "========================================");
+            Log.e(TAG, "CRITICAL ERROR IN ALARM RECEIVER");
+            Log.e(TAG, "========================================");
+            Log.e(TAG, "Error details:", e);
+            e.printStackTrace();
+        }
+    }
+    
+    private boolean launchAlarmActivity(Context context, String alarmId, String time, String label, 
+                                       String days, String userId, boolean isLocked, boolean isSnooze,
+                                       String alarmType, String toneType, String customToneUri, String customToneName) {
+        try {
             Intent alarmActivityIntent = new Intent(context, CustomAlarmActivity.class);
             alarmActivityIntent.putExtra("alarmId", alarmId);
             alarmActivityIntent.putExtra("time", time);
@@ -70,52 +173,43 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
             alarmActivityIntent.putExtra("alarmType", alarmType);
             alarmActivityIntent.putExtra("triggeredTime", System.currentTimeMillis());
             
-            // NEW: Pass custom tone data to activity
+            // Pass custom tone data to activity
             alarmActivityIntent.putExtra("toneType", toneType != null ? toneType : "default");
             alarmActivityIntent.putExtra("customToneUri", customToneUri);
             alarmActivityIntent.putExtra("customToneName", customToneName);
             
-            // Add flags for proper activity launch
+            // Add ALL necessary flags for lock screen
             alarmActivityIntent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK |
                 Intent.FLAG_ACTIVITY_CLEAR_TOP |
                 Intent.FLAG_ACTIVITY_SINGLE_TOP |
-                Intent.FLAG_ACTIVITY_NO_USER_ACTION
+                Intent.FLAG_ACTIVITY_NO_USER_ACTION |
+                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             );
             
+            // For Android 10+ (API 29+), also add this flag
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                alarmActivityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                Log.d(TAG, "Added Android 10+ specific flags");
+            }
+            
+            Log.d(TAG, "Starting activity with flags: " + Integer.toHexString(alarmActivityIntent.getFlags()));
+            context.startActivity(alarmActivityIntent);
+            Log.d(TAG, "Activity started successfully");
+            
+            // Give activity time to launch
             try {
-                context.startActivity(alarmActivityIntent);
-                Log.d(TAG, "Custom alarm activity started successfully with tone type: " + toneType);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to start custom alarm activity", e);
-                
-                // Fallback: Start foreground service if activity fails
-                startCustomAlarmService(context, alarmId, time, label, days, userId, isLocked, isSnooze, toneType, customToneUri, customToneName);
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Sleep interrupted", e);
             }
             
-            // If this is not a snooze, reschedule for next occurrence (if repeating)
-            if (!isSnooze && days != null && !days.isEmpty()) {
-                rescheduleRepeatingAlarm(context, alarmId, time, label, days, userId, toneType, customToneUri, customToneName);
-            }
-            
-            // Release wake lock after a delay
-            final PowerManager.WakeLock finalWakeLock = wakeLock;
-            if (finalWakeLock != null) {
-                android.os.Handler handler = new android.os.Handler();
-                handler.postDelayed(() -> {
-                    try {
-                        if (finalWakeLock.isHeld()) {
-                            finalWakeLock.release();
-                            Log.d(TAG, "Wake lock released for custom alarm");
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error releasing wake lock", e);
-                    }
-                }, 30000); // Release after 30 seconds
-            }
+            return true;
             
         } catch (Exception e) {
-            Log.e(TAG, "Error in custom alarm receiver", e);
+            Log.e(TAG, "Failed to start alarm activity", e);
+            e.printStackTrace();
+            return false;
         }
     }
     
@@ -123,6 +217,8 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
                                        String days, String userId, boolean isLocked, boolean isSnooze,
                                        String toneType, String customToneUri, String customToneName) {
         try {
+            Log.d(TAG, "Starting custom alarm service as fallback...");
+            
             Intent serviceIntent = new Intent(context, CustomAlarmService.class);
             serviceIntent.putExtra("alarmId", alarmId);
             serviceIntent.putExtra("time", time);
@@ -133,34 +229,41 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
             serviceIntent.putExtra("isSnooze", isSnooze);
             serviceIntent.putExtra("serviceAction", "START_CUSTOM_ALARM");
             
-            // NEW: Pass custom tone data to service
+            // Pass custom tone data to service
             serviceIntent.putExtra("toneType", toneType != null ? toneType : "default");
             serviceIntent.putExtra("customToneUri", customToneUri);
             serviceIntent.putExtra("customToneName", customToneName);
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent);
+                Log.d(TAG, "Started foreground service (Android O+)");
             } else {
                 context.startService(serviceIntent);
+                Log.d(TAG, "Started service (pre-Android O)");
             }
             
-            Log.d(TAG, "Custom alarm service started as fallback with tone type: " + toneType);
+            Log.d(TAG, "Service started successfully with tone type: " + toneType);
             
         } catch (Exception e) {
-            Log.e(TAG, "Failed to start custom alarm service", e);
+            Log.e(TAG, "CRITICAL: Failed to start custom alarm service", e);
+            e.printStackTrace();
         }
     }
     
     private void rescheduleRepeatingAlarm(Context context, String alarmId, String time, String label, 
-                                        String days, String userId, String toneType, String customToneUri, String customToneName) {
+                                        String days, String userId, String toneType, 
+                                        String customToneUri, String customToneName) {
         try {
-            Log.d(TAG, "Rescheduling repeating custom alarm: " + alarmId);
+            Log.d(TAG, "Rescheduling repeating alarm: " + alarmId);
             
             // Calculate next occurrence
             long nextAlarmTime = calculateNextAlarmTime(time, days);
             
+            Log.d(TAG, "Next alarm calculated for: " + new java.util.Date(nextAlarmTime));
+            
             if (nextAlarmTime > System.currentTimeMillis()) {
-                android.app.AlarmManager alarmManager = (android.app.AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                android.app.AlarmManager alarmManager = (android.app.AlarmManager) 
+                    context.getSystemService(Context.ALARM_SERVICE);
                 
                 if (alarmManager != null) {
                     Intent nextAlarmIntent = new Intent(context, CustomAlarmReceiver.class);
@@ -171,7 +274,7 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
                     nextAlarmIntent.putExtra("userId", userId);
                     nextAlarmIntent.putExtra("alarmType", "CUSTOM_ALARM");
                     
-                    // NEW: Include custom tone data in rescheduled alarm
+                    // Include custom tone data in rescheduled alarm
                     nextAlarmIntent.putExtra("toneType", toneType != null ? toneType : "default");
                     nextAlarmIntent.putExtra("customToneUri", customToneUri);
                     nextAlarmIntent.putExtra("customToneName", customToneName);
@@ -190,16 +293,23 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
                         android.app.AlarmManager.AlarmClockInfo alarmClockInfo = 
                             new android.app.AlarmManager.AlarmClockInfo(nextAlarmTime, pendingIntent);
                         alarmManager.setAlarmClock(alarmClockInfo, pendingIntent);
+                        Log.d(TAG, "Rescheduled using setAlarmClock");
                     } else {
                         alarmManager.setExact(android.app.AlarmManager.RTC_WAKEUP, nextAlarmTime, pendingIntent);
+                        Log.d(TAG, "Rescheduled using setExact");
                     }
                     
-                    Log.d(TAG, "Next custom alarm scheduled for: " + new java.util.Date(nextAlarmTime) + " with tone type: " + toneType);
+                    Log.d(TAG, "Successfully rescheduled for: " + new java.util.Date(nextAlarmTime));
+                } else {
+                    Log.e(TAG, "AlarmManager is null - cannot reschedule!");
                 }
+            } else {
+                Log.w(TAG, "Calculated time is in the past, not rescheduling");
             }
             
         } catch (Exception e) {
             Log.e(TAG, "Error rescheduling repeating alarm", e);
+            e.printStackTrace();
         }
     }
     
@@ -217,10 +327,12 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
             calendar.set(java.util.Calendar.MILLISECOND, 0);
             
             if (days == null || days.isEmpty()) {
+                Log.d(TAG, "No specific days, using tomorrow");
                 return calendar.getTimeInMillis();
             }
             
             String[] dayArray = days.split(",");
+            Log.d(TAG, "Looking for next occurrence in days: " + days);
             
             // Find next matching day within the next week
             for (int i = 0; i < 7; i++) {
@@ -229,6 +341,7 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
                 
                 for (String day : dayArray) {
                     if (day.trim().equals(dayString)) {
+                        Log.d(TAG, "Found next occurrence on: " + dayString);
                         return calendar.getTimeInMillis();
                     }
                 }
@@ -237,6 +350,7 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
             }
             
             // Fallback
+            Log.w(TAG, "Could not find matching day, using fallback");
             return System.currentTimeMillis() + (24 * 60 * 60 * 1000);
             
         } catch (Exception e) {
