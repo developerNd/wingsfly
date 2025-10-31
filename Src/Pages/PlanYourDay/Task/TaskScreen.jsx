@@ -29,23 +29,94 @@ import {taskService} from '../../../services/api/taskService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
 
+// Custom Dropdown Component
+const CustomDropdown = ({
+  options = [],
+  defaultValue = '',
+  onSelect = () => {},
+  placeholder = 'Select an option',
+  style = {},
+  dropdownStyle = {},
+  optionStyle = {},
+  textStyle = {},
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedValue, setSelectedValue] = useState(defaultValue);
+
+  const handleOptionSelect = option => {
+    setSelectedValue(option);
+    setIsOpen(false);
+    onSelect(option);
+  };
+
+  return (
+    <View style={[styles.dropdownWrapper, style]}>
+      <TouchableOpacity
+        style={[
+          styles.dropdownContainer,
+          isOpen && styles.dropdownContainerOpen,
+          dropdownStyle,
+        ]}
+        onPress={() => setIsOpen(!isOpen)}>
+        <Text
+          style={[
+            styles.dropdownText,
+            !selectedValue && styles.placeholderText,
+            textStyle,
+          ]}>
+          {selectedValue || placeholder}
+        </Text>
+        <MaterialIcons
+          name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+          size={24}
+          color="#666666"
+        />
+      </TouchableOpacity>
+
+      {isOpen && (
+        <View style={[styles.dropdownOptions, optionStyle]}>
+          {options.map((option, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.dropdownOption,
+                index === options.length - 1 && styles.dropdownOptionLast,
+              ]}
+              onPress={() => handleOptionSelect(option)}>
+              <Text
+                style={[
+                  styles.dropdownOptionText,
+                  selectedValue === option && styles.dropdownOptionTextSelected,
+                ]}>
+                {option}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
+
 const TaskScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const {user} = useAuth();
 
-  // Get category from route params (from CategorySelection screen)
+  // Step tracking state - Initialize from route params or default to 1
+  const [currentStep, setCurrentStep] = useState(route.params?.currentStep || 1);
+  const TOTAL_STEPS = 4;
+
+  // Get category from route params
   const selectedCategory = route.params?.selectedCategory || {
     title: 'Work and Career',
   };
 
-  // Get evaluation type from route params
   const evaluationType = route.params?.evaluationType || null;
 
   // Helper function to get category icon
   const getCategoryIcon = categoryName => {
     if (!categoryName) return Icons.Work;
-
     const categoryImageMap = {
       'Work & Career': Icons.Work,
       'Work and Career': Icons.Work,
@@ -63,7 +134,6 @@ const TaskScreen = () => {
       Other: Icons.Other,
       'Create a category': Icons.Create,
     };
-
     return categoryImageMap[categoryName] || Icons.Work;
   };
 
@@ -72,6 +142,13 @@ const TaskScreen = () => {
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
+
+  // Numeric evaluation type states
+  const [numericGoal, setNumericGoal] = useState('');
+  const [numericUnit, setNumericUnit] = useState('');
+  const [numericCondition, setNumericCondition] = useState('At Least');
+  const [description, setDescription] = useState('');
+  const [goalFocused, setGoalFocused] = useState(false);
 
   // Input focus states
   const [taskFocused, setTaskFocused] = useState(false);
@@ -99,8 +176,10 @@ const TaskScreen = () => {
   const [startDate, setStartDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
 
-  // Check if evaluation type is timer
   const isTimerEvaluation = evaluationType === 'timer';
+  const isNumericEvaluation = evaluationType === 'numeric';
+
+  const dropdownOptions = ['At Least', 'Less than', 'Exactly', 'Any Value'];
 
   const priorityOptions = [
     {
@@ -117,13 +196,17 @@ const TaskScreen = () => {
     },
   ];
 
-  // Load data when screen comes into focus (when returning from PomodoroSettings)
+  // Load data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       if (route.params) {
         const params = route.params;
-
-        // Restore all form data when returning from navigation
+        
+        // Restore current step if coming back from another screen
+        if (params.currentStep !== undefined) {
+          setCurrentStep(params.currentStep);
+        }
+        
         if (params.taskTitle !== undefined) setTaskTitle(params.taskTitle);
         if (params.priority !== undefined) setPriority(params.priority);
         if (params.note !== undefined) setNote(params.note);
@@ -135,7 +218,6 @@ const TaskScreen = () => {
           setAddToGoogleCalendar(params.addToGoogleCalendar);
         if (params.reminderData) setReminderData(params.reminderData);
 
-        // Restore date data
         if (params.startDate) {
           const date =
             typeof params.startDate === 'string'
@@ -144,7 +226,6 @@ const TaskScreen = () => {
           setStartDate(date);
         }
 
-        // Restore schedule data (block time and duration)
         if (params.scheduleData) {
           if (params.scheduleData.blockTimeData) {
             setBlockTimeData(params.scheduleData.blockTimeData);
@@ -154,14 +235,12 @@ const TaskScreen = () => {
           }
         }
 
-        // Restore direct block time and duration data if available
         if (params.blockTimeData) setBlockTimeData(params.blockTimeData);
         if (params.durationData) setDurationData(params.durationData);
 
-        // Restore pomodoro settings and state
         if (params.pomodoroSettings) {
           setPomodoroSettings(params.pomodoroSettings);
-          setAddPomodoro(true); // Enable pomodoro when settings are available
+          setAddPomodoro(true);
         }
       }
     }, [route.params]),
@@ -171,7 +250,6 @@ const TaskScreen = () => {
   const calculateDuration = (startTime, endTime) => {
     if (!startTime || !endTime) return null;
 
-    // Parse time strings (assuming format like "10:00 AM" or "12:30 PM")
     const parseTime = timeStr => {
       const [time, period] = timeStr.split(' ');
       const [hours, minutes] = time.split(':').map(Number);
@@ -189,13 +267,11 @@ const TaskScreen = () => {
     const start = parseTime(startTime);
     const end = parseTime(endTime);
 
-    // Calculate duration in minutes
     const startMinutes = start.hours * 60 + start.minutes;
     let endMinutes = end.hours * 60 + end.minutes;
 
-    // Handle case where end time is next day
     if (endMinutes <= startMinutes) {
-      endMinutes += 24 * 60; // Add 24 hours
+      endMinutes += 24 * 60;
     }
 
     const durationMinutes = endMinutes - startMinutes;
@@ -212,7 +288,6 @@ const TaskScreen = () => {
     };
   };
 
-  // Helper functions
   const showToast = (message, type = 'error') => {
     setToastMessage(message);
     setToastType(type);
@@ -224,26 +299,41 @@ const TaskScreen = () => {
   };
 
   const isTaskLabelActive = taskFocused || taskTitle.length > 0;
+  const isGoalLabelActive = goalFocused || numericGoal.length > 0;
 
-  // Handle Pomodoro toggle with navigation to PomodoroSettings - FIXED VERSION
+  // Handle numeric dropdown select
+  const handleDropdownSelect = value => {
+    setNumericCondition(value);
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
+  // Handle numeric goal change
+  const handleGoalChange = text => {
+    setNumericGoal(text);
+    if (toastVisible && numericCondition !== 'Any Value') {
+      if (text.trim()) {
+        hideToast();
+      }
+    }
+  };
+
+  // Handle Pomodoro toggle
   const handlePomodoroToggle = () => {
-    // Only allow pomodoro for timer evaluation type
     if (!isTimerEvaluation) {
       return;
     }
 
     if (addPomodoro) {
-      // If turning off, just disable and clear settings
       setAddPomodoro(false);
       setPomodoroSettings(null);
     } else {
-      // Check if block time is available first (now block time is the primary requirement)
       if (!blockTimeData) {
         showToast('Please select a block time first to set up Pomodoro');
         return;
       }
 
-      // Calculate duration from block time for Pomodoro
       let calculatedDuration = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
         calculatedDuration = calculateDuration(
@@ -252,7 +342,6 @@ const TaskScreen = () => {
         );
       }
 
-      // Use calculated duration from block time or existing duration data
       const durationForPomodoro = calculatedDuration || durationData;
 
       if (!durationForPomodoro) {
@@ -262,7 +351,6 @@ const TaskScreen = () => {
         return;
       }
 
-      // Prepare current data and navigate to PomodoroSettings
       const currentData = {
         taskTitle,
         selectedCategory,
@@ -271,18 +359,19 @@ const TaskScreen = () => {
         isPendingTask,
         startDate: startDate.toISOString(),
         blockTimeData,
-        durationData: durationForPomodoro, // Pass calculated duration from block time
-        addPomodoro: true, // Set to true for navigation
+        durationData: durationForPomodoro,
+        addPomodoro: true,
         reminderData,
         addReminder,
         addToGoogleCalendar,
         pomodoroSettings,
         evaluationType,
-        screenType: 'GoalScreen',
+        screenType: 'TaskScreen',
+        currentStep: currentStep, // Pass current step so we can return to it
         scheduleData: {
           startDate: startDate.toISOString(),
           blockTimeData,
-          durationData: durationForPomodoro, // Include duration calculated from block time
+          durationData: durationForPomodoro,
           addPomodoro: true,
           reminderData,
           addReminder,
@@ -291,52 +380,96 @@ const TaskScreen = () => {
         },
       };
 
-      // Navigate to PomodoroSettings screen
       navigation.navigate('PomodoroSettings', currentData);
     }
   };
 
-  // UPDATED Handle Next button press with ReminderScheduler
-  const handleNextPress = async () => {
+  // VALIDATION AND NAVIGATION LOGIC
+  const validateCurrentStep = () => {
     if (toastVisible) {
       hideToast();
     }
 
-    // Check if user is authenticated
+    switch (currentStep) {
+      case 1:
+        // Step 1: Task, Category, Start Date (and numeric inputs if applicable)
+        if (!taskTitle.trim()) {
+          showToast('Enter a name');
+          return false;
+        }
+        // For numeric evaluation, check goal value if condition requires it
+        if (isNumericEvaluation && numericCondition !== 'Any Value') {
+          if (!numericGoal.trim()) {
+            showToast('Enter a value');
+            return false;
+          }
+        }
+        return true;
+
+      case 2:
+        // Step 2: Duration, Block Time, Priority
+        if (!durationData) {
+          showToast('Select a duration');
+          return false;
+        }
+        if (!blockTimeData) {
+          showToast('Select a block time');
+          return false;
+        }
+        return true;
+
+      case 3:
+        // Step 3: Note, Pending Task, Pomodoro
+        if (isTimerEvaluation && !addPomodoro) {
+          showToast('Select a Pomodoro Timer');
+          return false;
+        }
+        if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
+          showToast('Please configure Pomodoro settings');
+          return false;
+        }
+        return true;
+
+      case 4:
+        // Step 4: Link to Goal, Reminder, Google Calendar - no validation needed
+        return true;
+
+      default:
+        return true;
+    }
+  };
+
+  const handleNextPress = async () => {
+    // Validate current step
+    if (!validateCurrentStep()) {
+      return;
+    }
+
+    // If we're on the last step, save the task
+    if (currentStep === TOTAL_STEPS) {
+      await handleSaveTask();
+    } else {
+      // Move to next step
+      setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
+    }
+  };
+
+  const handleBackPress = () => {
+    if (currentStep > 1) {
+      setCurrentStep(prev => prev - 1);
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  // SAVE TASK LOGIC
+  const handleSaveTask = async () => {
     if (!user) {
       Alert.alert('Error', 'Please log in to create tasks.');
       return;
     }
 
-    if (!taskTitle.trim()) {
-      showToast('Enter a name');
-      return;
-    }
-
-    if (!durationData) {
-      showToast('Select a duration');
-      return;
-    }
-
-    if (!blockTimeData) {
-      showToast('Select a block time');
-      return;
-    }
-
-    // Additional validation for timer evaluation type
-    if (isTimerEvaluation && !addPomodoro) {
-      showToast('Select a Pomodoro Timer');
-      return;
-    }
-
-    // Validate pomodoro settings if pomodoro is enabled
-    if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
-      showToast('Please configure Pomodoro settings');
-      return;
-    }
-
     try {
-      // Calculate duration from block time for pomodoro (not from manual duration)
       let finalDurationForPomodoro = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
         finalDurationForPomodoro = calculateDuration(
@@ -345,39 +478,28 @@ const TaskScreen = () => {
         );
       }
 
-      // Prepare task data for database
       const taskData = {
         title: taskTitle.trim(),
-        description: note || '',
+        description: isNumericEvaluation ? (description || '') : (note || ''),
         category: selectedCategory?.title || 'Work and Career',
         taskType: 'Task',
-        evaluationType: evaluationType || 'yesNo', // Use passed evaluation type
+        evaluationType: evaluationType || 'yesNo',
         userId: user.id,
-
-        // Visual and display properties
         time: blockTimeData?.startTime || null,
         timeColor: '#E4EBF3',
         tags: ['Task', priority || 'Must'],
         image: null,
         hasFlag: true,
         priority: priority || 'High',
-
-        // Task-specific data (minimal for basic tasks)
         numericValue: 0,
-        numericGoal: null,
-        numericUnit: null,
-        numericCondition: 'At Least',
-
-        // Timer-specific data (minimal)
+        numericGoal: isNumericEvaluation ? (numericGoal ? parseInt(numericGoal.toString()) : null) : null,
+        numericUnit: isNumericEvaluation ? (numericUnit || null) : null,
+        numericCondition: isNumericEvaluation ? (numericCondition || 'At Least') : 'At Least',
         timerDuration: {hours: 0, minutes: 0, seconds: 0},
         timerCondition: 'At Least',
-
-        // Checklist-specific data (minimal)
         checklistItems: null,
         successCondition: 'All Items',
         customItemsCount: 1,
-
-        // Repetition and frequency settings (one-time task)
         frequencyType: 'Once',
         selectedWeekdays: [],
         selectedMonthDates: [],
@@ -390,91 +512,58 @@ const TaskScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-
-        // Scheduling settings
-        startDate: startDate
-          ? new Date(startDate).toISOString().split('T')[0]
-          : null,
+        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
         endDate: null,
         isEndDateEnabled: false,
-
-        // Block time settings
         blockTimeEnabled: !!blockTimeData,
         blockTimeData: blockTimeData,
-
-        // Duration settings
         durationEnabled: !!durationData,
         durationData: durationData,
-
-        // Additional features
         addPomodoro: addPomodoro || false,
         addToGoogleCalendar: addToGoogleCalendar || false,
         isPendingTask: isPendingTask || false,
-
-        // Goal linking (not applicable)
         linkedGoalId: null,
         linkedGoalTitle: null,
         linkedGoalType: null,
-
-        // Notes
         note: note || '',
-
-        // Progress tracking
         progress: null,
       };
 
-      // Add pomodoro settings if pomodoro is enabled - Use duration calculated from block time
       if (addPomodoro && pomodoroSettings) {
-        // Use duration calculated from block time for pomodoro, not manual duration
         taskData.pomodoroDuration = finalDurationForPomodoro
           ? finalDurationForPomodoro.totalMinutes
           : null;
-
-        // Store pomodoro settings
         taskData.focusDuration = pomodoroSettings.focusTime;
         taskData.shortBreakDuration = pomodoroSettings.shortBreak;
         taskData.longBreakDuration = pomodoroSettings.longBreak;
         taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
-        taskData.autoStartShortBreaks =
-          pomodoroSettings.autoStartShortBreaks || false;
-        taskData.autoStartFocusSessions =
-          pomodoroSettings.autoStartFocusSessions || false;
-
-        // Initialize pomodoro progress fields
+        taskData.autoStartShortBreaks = pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions = pomodoroSettings.autoStartFocusSessions || false;
         taskData.pomodoroSessionsCompleted = 0;
-        taskData.pomodoroTotalSessions =
-          pomodoroSettings.focusSessionsPerRound || 4;
+        taskData.pomodoroTotalSessions = pomodoroSettings.focusSessionsPerRound || 4;
       }
 
-      // ADD THIS NEW SECTION - Prepare reminder data for task
       if (addReminder && reminderData) {
         taskData.reminderEnabled = true;
         taskData.reminderData = reminderData;
-
-        // Add schedule info needed for reminder calculations
         taskData.startDate = startDate;
-        taskData.endDate = null; // No end date for one-time goal task
+        taskData.endDate = null;
         taskData.isEndDateEnabled = false;
         taskData.blockTimeData = blockTimeData;
         taskData.durationData = durationData;
-        taskData.frequencyType = 'Once'; // One-time task
+        taskData.frequencyType = 'Once';
         taskData.selectedWeekdays = [];
-        taskData.everyDays = null; // Not applicable for one-time tasks
+        taskData.everyDays = null;
       } else {
         taskData.reminderEnabled = false;
         taskData.reminderData = null;
       }
 
-      console.log('Saving task data:', taskData);
-
-      // Save to database
       const newTask = await taskService.createTask(taskData);
 
-      // ADD THIS NEW SECTION - Schedule reminders after task is saved
       let reminderMessage = '';
       if (taskData.reminderEnabled && taskData.reminderData) {
         try {
-          // Get user profile for personalized TTS
           const userProfile = {
             username:
               user?.user_metadata?.display_name ||
@@ -485,32 +574,24 @@ const TaskScreen = () => {
             email: user?.email,
           };
 
-          const scheduledReminders =
-            await ReminderScheduler.scheduleTaskReminders(
-              {
-                ...taskData,
-                userProfile: userProfile,
-              },
-              newTask,
-            );
+          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
+            {...taskData, userProfile: userProfile},
+            newTask,
+          );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
-            console.log('Scheduled reminders:', scheduledReminders);
           }
         } catch (reminderError) {
           console.error('Error scheduling reminders:', reminderError);
-          // Don't fail the entire task creation if reminder scheduling fails
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      // Update success alert to include reminder info
       Alert.alert('Success', `Task created successfully!${reminderMessage}`, [
         {
           text: 'OK',
           onPress: () => {
-            // Navigate back to home with success flag
             navigation.reset({
               index: 0,
               routes: [
@@ -529,27 +610,10 @@ const TaskScreen = () => {
     }
   };
 
-  // Handle Link To Goal press - UPDATE WITH VALIDATION
   const handleLinkToGoalPress = () => {
     if (toastVisible) {
       hideToast();
     }
-
-    if (!taskTitle.trim()) {
-      showToast('Enter a name');
-      return;
-    }
-
-    if (!durationData) {
-      showToast('Select a duration');
-      return;
-    }
-
-    if (!blockTimeData) {
-      showToast('Select a block time');
-      return;
-    }
-
     navigation.navigate('LinkGoal');
   };
 
@@ -562,20 +626,7 @@ const TaskScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -589,15 +640,12 @@ const TaskScreen = () => {
     setShowStartDatePicker(false);
   };
 
-  // Handle Duration press - Open duration modal
   const handleDurationPress = () => {
     setShowDurationModal(true);
   };
 
-  // Handle Duration save - Save duration data
   const handleDurationSave = durationData => {
     setDurationData(durationData);
-    // Hide toast when duration is saved
     if (toastVisible) {
       hideToast();
     }
@@ -610,26 +658,18 @@ const TaskScreen = () => {
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
 
-    // Automatically calculate duration from block time
     if (timeData && timeData.startTime && timeData.endTime) {
-      const calculatedDuration = calculateDuration(
-        timeData.startTime,
-        timeData.endTime,
-      );
-
-      // Update duration data if it's not manually set or if we want to override
+      const calculatedDuration = calculateDuration(timeData.startTime, timeData.endTime);
       if (!durationData) {
         setDurationData(calculatedDuration);
       }
     }
 
-    // Hide toast when block time is saved
     if (toastVisible) {
       hideToast();
     }
   };
 
-  // Handle priority dropdown
   const handlePriorityPress = () => {
     setShowPriorityDropdown(!showPriorityDropdown);
   };
@@ -639,7 +679,6 @@ const TaskScreen = () => {
     setShowPriorityDropdown(false);
   };
 
-  // Handle note press
   const handleNotePress = () => {
     setShowNoteModal(true);
   };
@@ -648,7 +687,6 @@ const TaskScreen = () => {
     setNote(noteText);
   };
 
-  // UPDATED reminder handlers to match SchedulePreference pattern
   const handleReminderToggle = () => {
     if (addReminder) {
       setAddReminder(false);
@@ -669,10 +707,7 @@ const TaskScreen = () => {
 
   const renderToggle = (isEnabled, onToggle) => {
     return (
-      <TouchableOpacity
-        style={styles.toggleContainer}
-        onPress={onToggle}
-        activeOpacity={0.7}>
+      <TouchableOpacity style={styles.toggleContainer} onPress={onToggle} activeOpacity={0.7}>
         <View
           style={[
             styles.toggleTrack,
@@ -681,9 +716,7 @@ const TaskScreen = () => {
           <View
             style={[
               styles.toggleSwitch,
-              isEnabled
-                ? styles.toggleSwitchActive
-                : styles.toggleSwitchInactive,
+              isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
             ]}
           />
         </View>
@@ -711,39 +744,22 @@ const TaskScreen = () => {
           activeOpacity={onRowPress ? 0.7 : hasToggle || hasPlus ? 1 : 0.7}
           onPress={onRowPress || (() => {})}>
           <View style={styles.optionLeft}>
-            <Image
-              source={iconSource}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
+            <Image source={iconSource} style={styles.optionIcon} resizeMode="contain" />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>{title}</Text>
-              {subtitle && (
-                <Text style={styles.optionSubtitle}>{subtitle}</Text>
-              )}
+              {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
             </View>
           </View>
 
           <View style={styles.optionRight}>
             {hasToggle && renderToggle(toggleState, onTogglePress)}
             {hasPlus && (
-              <TouchableOpacity
-                onPress={onPlusPress}
-                style={styles.plusButton}
-                activeOpacity={0.7}>
-                <Image
-                  source={Icons.Plus}
-                  style={styles.plusIcon}
-                  resizeMode="contain"
-                />
+              <TouchableOpacity onPress={onPlusPress} style={styles.plusButton} activeOpacity={0.7}>
+                <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
               </TouchableOpacity>
             )}
             {hasDropdown && (
-              <MaterialIcons
-                name="keyboard-arrow-down"
-                size={WP(6)}
-                color="#646464"
-              />
+              <MaterialIcons name="keyboard-arrow-down" size={WP(6)} color="#646464" />
             )}
             {customRight && customRight}
           </View>
@@ -752,357 +768,434 @@ const TaskScreen = () => {
     );
   };
 
-  // Duration section - Now with duration picker functionality
-  const renderDurationSection = () => {
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity
-          style={styles.optionRow}
-          activeOpacity={0.7}
-          onPress={handleDurationPress}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Clock}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Duration</Text>
-              {durationData && (
-                <Text style={styles.optionSubtitle}>
-                  {durationData.formattedDuration ||
-                    `${durationData.hours}h ${durationData.minutes}m`}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.optionRight}>
-            <TouchableOpacity
-              onPress={handleDurationPress}
-              style={styles.plusButton}
-              activeOpacity={0.7}>
-              <Image
-                source={Icons.Plus}
-                style={styles.plusIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderBlockTimeSection = () => {
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity
-          style={styles.optionRow}
-          activeOpacity={0.7}
-          onPress={handleBlockTimePress}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Alarm}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Block Time</Text>
-              {blockTimeData && (
-                <Text style={styles.optionSubtitle}>
-                  {blockTimeData.startTime} - {blockTimeData.endTime}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.optionRight}>
-            <TouchableOpacity
-              onPress={handleBlockTimePress}
-              style={styles.plusButton}
-              activeOpacity={0.7}>
-              <Image
-                source={Icons.Plus}
-                style={styles.plusIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderPomodoroSection = () => {
-    // Only show Pomodoro section if evaluation type is timer
-    if (!isTimerEvaluation) {
-      return null;
-    }
-
-    // Format pomodoro settings display (focus, break, sessions only)
-    const formatPomodoroDisplay = () => {
-      if (!pomodoroSettings) return null;
-
-      const focusTime = pomodoroSettings.focusTime || 25;
-      const shortBreak = pomodoroSettings.shortBreak || 5;
-      const sessionsPerRound = pomodoroSettings.focusSessionsPerRound || 4;
-
-      return `${focusTime}min focus, ${shortBreak}min break, ${sessionsPerRound} sessions`;
-    };
-
-    // Calculate duration display from block time
-    const getDurationDisplay = () => {
-      if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        const calculatedDuration = calculateDuration(
-          blockTimeData.startTime,
-          blockTimeData.endTime,
-        );
-        return calculatedDuration ? calculatedDuration.formattedDuration : null;
-      }
-      return durationData ? durationData.formattedDuration : null;
-    };
-
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Clock}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Add Pomodoro</Text>
-              {addPomodoro && pomodoroSettings && (
-                <Text style={styles.optionSubtitle}>
-                  {formatPomodoroDisplay()}
-                </Text>
-              )}
-              {addPomodoro && getDurationDisplay() && (
-                <Text style={styles.pomodoroDuration}>
-                  Duration: {getDurationDisplay()}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.optionRight}>
-            {renderToggle(addPomodoro, handlePomodoroToggle)}
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  // Priority section
-  const renderPrioritySection = () => {
-    return (
-      <View
-        style={[
-          styles.optionContainer,
-          showPriorityDropdown && styles.priorityContainerExpanded,
-        ]}>
-        <TouchableOpacity
-          style={styles.optionRow}
-          activeOpacity={0.7}
-          onPress={handlePriorityPress}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Flag}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Priority</Text>
-            </View>
-          </View>
-
-          <View style={styles.optionRight}>
-            <MaterialIcons
-              name={
-                showPriorityDropdown
-                  ? 'keyboard-arrow-up'
-                  : 'keyboard-arrow-down'
-              }
-              size={WP(6)}
-              color="#646464"
-            />
-          </View>
-        </TouchableOpacity>
-
-        {showPriorityDropdown && (
-          <View style={styles.priorityDropdown}>
-            <View style={styles.priorityButtonsContainer}>
-              {priorityOptions.map((option, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.priorityButton,
-                    {backgroundColor: option.backgroundColor},
-                    priority === option.value && styles.priorityButtonSelected,
-                  ]}
-                  onPress={() => handlePrioritySelect(option)}
-                  activeOpacity={0.8}>
-                  <Text
-                    style={[
-                      styles.priorityButtonText,
-                      {color: option.textColor},
-                    ]}>
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-      </View>
-    );
-  };
-
-  // Note section
-  const renderNoteSection = () => {
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity
-          style={styles.optionRow}
-          activeOpacity={0.7}
-          onPress={handleNotePress}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Note}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Note</Text>
-              {note && (
-                <Text style={styles.optionSubtitle} numberOfLines={1}>
-                  {note}
-                </Text>
-              )}
-            </View>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderReminderSection = () => {
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
-          <View style={styles.optionLeft}>
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.addTitle}>Add a Reminder</Text>
-              {reminderData && addReminder && (
-                <Text style={styles.optionSubtitle1}>
-                  {reminderData.type === 'notification'
-                    ? '🔔 Notification'
-                    : reminderData.type === 'alarm'
-                    ? '⏰ Alarm'
-                    : '🔕 No reminder'}{' '}
-                  at {reminderData.time}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.optionRight}>
-            {renderToggle(addReminder, handleReminderToggle)}
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderLinkGoalSection = () => {
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity
-          style={styles.optionRow}
-          activeOpacity={0.7}
-          onPress={handleLinkToGoalPress}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Link}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Link To Goal</Text>
-            </View>
-          </View>
-
-          <View style={styles.optionRight}>
-            <TouchableOpacity
-              style={styles.plusButton}
-              activeOpacity={0.7}
-              onPress={handleLinkToGoalPress}>
-              <Image
-                source={Icons.Plus}
-                style={styles.plusIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderPendingTaskSection = () => {
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Pending}
-              style={styles.optionIcon1}
-              resizeMode="contain"
-            />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Pending Task</Text>
-              <Text style={styles.pendingSubtitle}>
-                It will be shown each day until completed.
+  // RENDER STEP CONTENT
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        // Step 1: Task, Category, Start Date (and numeric inputs if applicable)
+        return (
+          <>
+            <View style={styles.taskInputContainer}>
+              <Text
+                style={[
+                  styles.inputLabel,
+                  isTaskLabelActive ? styles.inputLabelActive : styles.inputLabelInactive,
+                ]}>
+                {isNumericEvaluation ? 'Habit' : 'Task'}
               </Text>
+              <TextInput
+                style={styles.taskInput}
+                value={taskTitle}
+                onChangeText={setTaskTitle}
+                onFocus={() => setTaskFocused(true)}
+                onBlur={() => setTaskFocused(false)}
+                placeholder=""
+                placeholderTextColor="#625F5F"
+                multiline={false}
+                maxLength={70}
+              />
             </View>
-          </View>
 
-          <View style={styles.optionRight}>
-            <TouchableOpacity
-              style={styles.radioButton}
-              onPress={() => setIsPendingTask(!isPendingTask)}
-              activeOpacity={0.7}>
+            {/* Numeric Evaluation Specific Inputs */}
+            {isNumericEvaluation && (
+              <>
+                {/* Dropdown and Goal Row */}
+                <View style={styles.rowContainer}>
+                  <View style={styles.dropdownContainerWrapper}>
+                    <CustomDropdown
+                      options={dropdownOptions}
+                      defaultValue="At Least"
+                      onSelect={handleDropdownSelect}
+                      placeholder="Select option"
+                      style={styles.dropdownStyle}
+                    />
+                  </View>
+
+                  <View style={[styles.taskInputContainer, styles.goalContainer]}>
+                    <Text
+                      style={[
+                        styles.inputLabel,
+                        isGoalLabelActive ? styles.inputLabelActive : styles.inputLabelInactive1,
+                      ]}>
+                      Goal
+                    </Text>
+                    <TextInput
+                      style={styles.textInput1}
+                      value={numericGoal}
+                      onChangeText={handleGoalChange}
+                      onFocus={() => setGoalFocused(true)}
+                      onBlur={() => setGoalFocused(false)}
+                      placeholder=""
+                      placeholderTextColor="#575656"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                {/* Unit and Day Row */}
+                <View style={styles.unitMainContainer}>
+                  <View style={styles.unitDisplayContainer}>
+                    <TextInput
+                      style={styles.unitDisplayText}
+                      value={numericUnit}
+                      onChangeText={setNumericUnit}
+                      placeholder="Unit (optional)"
+                      placeholderTextColor="#929292"
+                    />
+                  </View>
+                  <Text style={styles.dayText}>a day.</Text>
+                </View>
+
+                {/* Example Text */}
+                <Text style={styles.exampleText}>
+                  e.g. go running. At least 3 miles a day.
+                </Text>
+
+                {/* Description Input Container */}
+                <View style={styles.taskInputContainer}>
+                  <TextInput
+                    style={styles.descriptionInput}
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholder="Description (optional)"
+                    placeholderTextColor="#575656"
+                    multiline={true}
+                    maxLength={200}
+                  />
+                </View>
+              </>
+            )}
+
+            <View style={styles.optionContainer}>
+              <View style={styles.optionRow}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Category} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Category</Text>
+                  </View>
+                </View>
+                <View style={styles.categoryRight}>
+                  <Text style={styles.categoryText}>
+                    {selectedCategory?.title || 'Work and Career'}
+                  </Text>
+                  <Image
+                    source={getCategoryIcon(selectedCategory?.title || 'Work and Career')}
+                    style={styles.categoryIcon}
+                    resizeMode="contain"
+                  />
+                </View>
+              </View>
+            </View>
+
+            {renderOptionRow(
+              Icons.Set,
+              'Start Date',
+              false,
+              false,
+              null,
+              false,
+              null,
+              null,
+              <View style={styles.dateContainer}>
+                <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+              </View>,
+              () => setShowStartDatePicker(true),
+            )}
+          </>
+        );
+
+      case 2:
+        // Step 2: Duration, Block Time, Priority
+        return (
+          <>
+            {renderOptionRow(
+              Icons.Clock,
+              'Duration',
+              false,
+              false,
+              null,
+              true,
+              handleDurationPress,
+              durationData
+                ? durationData.formattedDuration ||
+                  `${durationData.hours}h ${durationData.minutes}m`
+                : null,
+            )}
+
+            {renderOptionRow(
+              Icons.Alarm,
+              'Block Time',
+              false,
+              false,
+              null,
+              true,
+              handleBlockTimePress,
+              blockTimeData ? `${blockTimeData.startTime} - ${blockTimeData.endTime}` : null,
+            )}
+
+            <View
+              style={[
+                styles.optionContainer,
+                showPriorityDropdown && styles.priorityContainerExpanded,
+              ]}>
+              <TouchableOpacity
+                style={styles.optionRow}
+                activeOpacity={0.7}
+                onPress={handlePriorityPress}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Flag} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Priority</Text>
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  <MaterialIcons
+                    name={showPriorityDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={WP(6)}
+                    color="#646464"
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {showPriorityDropdown && (
+                <View style={styles.priorityDropdown}>
+                  <View style={styles.priorityButtonsContainer}>
+                    {priorityOptions.map((option, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={[
+                          styles.priorityButton,
+                          {backgroundColor: option.backgroundColor},
+                          priority === option.value && styles.priorityButtonSelected,
+                        ]}
+                        onPress={() => handlePrioritySelect(option)}
+                        activeOpacity={0.8}>
+                        <Text style={[styles.priorityButtonText, {color: option.textColor}]}>
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          </>
+        );
+
+      case 3:
+        // Step 3: Note, Pending Task, Pomodoro
+        return (
+          <>
+            <View style={styles.optionContainer}>
+              <TouchableOpacity
+                style={styles.optionRow}
+                activeOpacity={0.7}
+                onPress={handleNotePress}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Note} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Note</Text>
+                    {note && (
+                      <Text style={styles.optionSubtitle} numberOfLines={1}>
+                        {note}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionContainer}>
+              <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Pending} style={styles.optionIcon1} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Pending Task</Text>
+                    <Text style={styles.pendingSubtitle}>
+                      It will be shown each day until completed.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  <TouchableOpacity
+                    style={styles.radioButton}
+                    onPress={() => setIsPendingTask(!isPendingTask)}
+                    activeOpacity={0.7}>
+                    <View
+                      style={[
+                        styles.radioOuter,
+                        isPendingTask && styles.radioOuterSelected,
+                      ]}>
+                      {isPendingTask && <View style={styles.radioInner} />}
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {isTimerEvaluation && (
+              <View style={styles.optionContainer}>
+                <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                  <View style={styles.optionLeft}>
+                    <Image source={Icons.Clock} style={styles.optionIcon} resizeMode="contain" />
+                    <View style={styles.optionTextContainer}>
+                      <Text style={styles.optionTitle}>Add Pomodoro</Text>
+                      {addPomodoro && pomodoroSettings && (
+                        <>
+                          <Text style={styles.optionSubtitle}>
+                            {`${pomodoroSettings.focusTime || 25}min focus, ${
+                              pomodoroSettings.shortBreak || 5
+                            }min break, ${pomodoroSettings.focusSessionsPerRound || 4} sessions`}
+                          </Text>
+                          {(blockTimeData?.startTime && blockTimeData?.endTime
+                            ? calculateDuration(blockTimeData.startTime, blockTimeData.endTime)
+                            : durationData) && (
+                            <Text style={styles.pomodoroDuration}>
+                              Duration:{' '}
+                              {(blockTimeData?.startTime && blockTimeData?.endTime
+                                ? calculateDuration(blockTimeData.startTime, blockTimeData.endTime)
+                                : durationData
+                              )?.formattedDuration}
+                            </Text>
+                          )}
+                        </>
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.optionRight}>
+                    {renderToggle(addPomodoro, handlePomodoroToggle)}
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
+        );
+
+      case 4:
+        // Step 4: Link to Goal, Reminder, Google Calendar
+        return (
+          <>
+            <View style={styles.optionContainer}>
+              <TouchableOpacity
+                style={styles.optionRow}
+                activeOpacity={0.7}
+                onPress={handleLinkToGoalPress}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Link} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Link To Goal</Text>
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  <TouchableOpacity
+                    style={styles.plusButton}
+                    activeOpacity={0.7}
+                    onPress={handleLinkToGoalPress}>
+                    <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionContainer}>
+              <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                <View style={styles.optionLeft}>
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.addTitle}>Add a Reminder</Text>
+                    {reminderData && addReminder && (
+                      <Text style={styles.optionSubtitle1}>
+                        {reminderData.type === 'notification'
+                          ? '🔔 Notification'
+                          : reminderData.type === 'alarm'
+                          ? '⏰ Alarm'
+                          : '🔕 No reminder'}{' '}
+                        at {reminderData.time}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  {renderToggle(addReminder, handleReminderToggle)}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.calendarContainer}>
               <View
                 style={[
-                  styles.radioOuter,
-                  isPendingTask && styles.radioOuterSelected,
+                  styles.optionContainer,
+                  addToGoogleCalendar ? styles.noBottomBorder : null,
                 ]}>
-                {isPendingTask && <View style={styles.radioInner} />}
+                <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                  <View style={styles.optionLeft}>
+                    <View style={styles.optionTextContainer}>
+                      <Text style={styles.optionTitle}>Add to Google Calendar</Text>
+                    </View>
+                  </View>
+                  <View>
+                    {renderToggle(addToGoogleCalendar, () =>
+                      setAddToGoogleCalendar(!addToGoogleCalendar),
+                    )}
+                  </View>
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
+
+              {addToGoogleCalendar && (
+                <View style={[styles.optionContainer, styles.connectedContainer]}>
+                  <TouchableOpacity style={styles.optionRow}>
+                    <View style={styles.optionLeft}>
+                      <View style={styles.optionTextContainer}>
+                        <Text style={styles.optionTitle1}>Select Calendar</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </>
+        );
+
+      default:
+        return null;
+    }
   };
 
-  // Progress indicator
+  // RENDER PROGRESS INDICATOR
   const renderProgressIndicator = () => {
-    return (
-      <View style={styles.progressIndicator}>
-        <View style={styles.progressDotCompleted}>
-          <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
-        </View>
-        <View style={styles.progressLine} />
-        <View style={styles.progressDotActive}>
-          <View style={styles.progressDotActiveInner}>
-            <Text style={styles.progressDotTextActive}>2</Text>
+    const dots = [];
+    for (let i = 1; i <= TOTAL_STEPS; i++) {
+      if (i < currentStep) {
+        // Completed steps
+        dots.push(
+          <View key={i} style={styles.progressDotCompleted}>
+            <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
           </View>
-        </View>
-      </View>
-    );
+        );
+      } else if (i === currentStep) {
+        // Current active step
+        dots.push(
+          <View key={i} style={styles.progressDotActive}>
+            <View style={styles.progressDotActiveInner}>
+              <Text style={styles.progressDotTextActive}>{i}</Text>
+            </View>
+          </View>
+        );
+      } else {
+        // Future steps
+        dots.push(
+          <View key={i} style={styles.progressDotInactive}>
+            <Text style={styles.progressDotTextInactive}>{i}</Text>
+          </View>
+        );
+      }
+
+      // Add line between dots (except after last dot)
+      if (i < TOTAL_STEPS) {
+        dots.push(<View key={`line-${i}`} style={styles.progressLine} />);
+      }
+    }
+
+    return <View style={styles.progressIndicator}>{dots}</View>;
   };
 
   return (
@@ -1111,147 +1204,29 @@ const TaskScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="New Task">
-          <TouchableOpacity onPress={handleNextPress}>
-            <Text style={styles.nextText}>Next</Text>
-          </TouchableOpacity>
-        </Headers>
+        <Headers title="New Task" onBackPress={currentStep > 1 ? handleBackPress : null} />
       </View>
 
       {/* Content */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.taskInputContainer}>
-          <Text
-            style={[
-              styles.inputLabel,
-              isTaskLabelActive
-                ? styles.inputLabelActive
-                : styles.inputLabelInactive,
-            ]}>
-            Task
+        {renderStepContent()}
+
+        {/* Next/Done Button */}
+        <TouchableOpacity 
+          style={styles.nextButton} 
+          onPress={handleNextPress}
+          activeOpacity={0.8}>
+          <Text style={styles.nextButtonText}>
+            {currentStep === TOTAL_STEPS ? 'Done' : 'Next'}
           </Text>
-          <TextInput
-            style={styles.taskInput}
-            value={taskTitle}
-            onChangeText={setTaskTitle}
-            onFocus={() => setTaskFocused(true)}
-            onBlur={() => setTaskFocused(false)}
-            placeholder=""
-            placeholderTextColor="#625F5F"
-            multiline={false}
-          />
-        </View>
-
-        {/* Category */}
-        <View style={styles.optionContainer}>
-          <View style={styles.optionRow}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Category}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Category</Text>
-              </View>
-            </View>
-
-            <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>
-                {selectedCategory?.title || 'Work and Career'}
-              </Text>
-              <Image
-                source={getCategoryIcon(
-                  selectedCategory?.title || 'Work and Career',
-                )}
-                style={styles.categoryIcon}
-                resizeMode="contain"
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Start Date */}
-        {renderOptionRow(
-          Icons.Set,
-          'Start Date',
-          false,
-          false,
-          null,
-          false,
-          null,
-          null,
-          <View style={styles.dateContainer}>
-            <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
-          </View>,
-          () => setShowStartDatePicker(true),
-        )}
-
-        {/* Duration - Now above Block Time */}
-        {renderDurationSection()}
-
-        {/* Block Time - Now below Duration */}
-        {renderBlockTimeSection()}
-
-        {/* Add Pomodoro - Only show for timer evaluation type */}
-        {renderPomodoroSection()}
-
-        {/* Priority with dropdown */}
-        {renderPrioritySection()}
-
-        {/* Note */}
-        {renderNoteSection()}
-
-        {/* Pending Task */}
-        {renderPendingTaskSection()}
-
-        {/* Link To Goal */}
-        {renderLinkGoalSection()}
-
-        {/* Add a Reminder */}
-        {renderReminderSection()}
-
-        {/* Add to Google Calendar with connected Select Calendar */}
-        <View style={styles.calendarContainer}>
-          <View
-            style={[
-              styles.optionContainer,
-              addToGoogleCalendar ? styles.noBottomBorder : null,
-            ]}>
-            <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
-              <View style={styles.optionLeft}>
-                <View style={styles.optionTextContainer}>
-                  <Text style={styles.optionTitle}>Add to Google Calendar</Text>
-                </View>
-              </View>
-
-              <View>
-                {renderToggle(addToGoogleCalendar, () =>
-                  setAddToGoogleCalendar(!addToGoogleCalendar),
-                )}
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {addToGoogleCalendar && (
-            <View style={[styles.optionContainer, styles.connectedContainer]}>
-              <TouchableOpacity style={styles.optionRow}>
-                <View style={styles.optionLeft}>
-                  <View style={styles.optionTextContainer}>
-                    <Text style={styles.optionTitle1}>Select Calendar</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        </TouchableOpacity>
 
         {/* Spacer for bottom content */}
         <View style={styles.bottomSpacer} />
-
-        {/* Progress Indicator */}
-        {renderProgressIndicator()}
       </ScrollView>
+
+      {/* Progress Indicator */}
+      {renderProgressIndicator()}
 
       {/* Date Picker Modal */}
       <DatePickerModal
@@ -1316,12 +1291,6 @@ const styles = StyleSheet.create({
   headerWrapper: {
     marginTop: HP(2.5),
     paddingBottom: HP(0.625),
-  },
-  nextText: {
-    fontSize: FS(1.8),
-    color: '#0059FF',
-    fontFamily: 'OpenSans-Bold',
-    marginTop: HP(0.5),
   },
   content: {
     flex: 1,
@@ -1397,23 +1366,6 @@ const styles = StyleSheet.create({
   priorityContainerExpanded: {
     minHeight: HP(12),
     paddingBottom: HP(1.5),
-  },
-  noteContainer: {
-    backgroundColor: colors.White,
-    borderRadius: WP(2.133),
-    padding: WP(2.133),
-    marginBottom: HP(0.9),
-    elevation: 3,
-    shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: HP(0.25),
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: WP(2.133),
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    minHeight: HP(4.375),
   },
   noBottomBorder: {
     borderBottomLeftRadius: 0,
@@ -1603,12 +1555,31 @@ const styles = StyleSheet.create({
     borderRadius: WP(1.25),
     backgroundColor: colors.Primary,
   },
+  nextButton: {
+    backgroundColor: colors.Primary,
+    paddingVertical: HP(1.4),
+    paddingHorizontal: WP(7),
+    borderRadius: WP(3),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: HP(3),
+    marginBottom: HP(1),
+    alignSelf: 'center',
+    elevation: 2,
+    shadowColor: colors.Shadow,
+    shadowOffset: {width: 0, height: HP(0.25)},
+    shadowOpacity: 0.1,
+    shadowRadius: WP(1.5),
+  },
+  nextButtonText: {
+    fontSize: FS(1.8),
+    color: colors.White,
+    fontFamily: 'OpenSans-Bold',
+  },
   bottomSpacer: {
     height: HP(3),
   },
-  calendarContainer: {
-    // Container for calendar sections
-  },
+  calendarContainer: {},
   priorityDropdown: {
     paddingTop: HP(1),
     paddingHorizontal: WP(10),
@@ -1631,6 +1602,163 @@ const styles = StyleSheet.create({
   priorityButtonText: {
     fontSize: FS(1.5),
     fontFamily: 'OpenSans-SemiBold',
+  },
+  rowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: HP(1.0),
+    gap: WP(1.5),
+  },
+  dropdownContainerWrapper: {
+    flex: 1,
+    marginRight: WP(3.0),
+  },
+  dropdownStyle: {
+    marginBottom: HP(2.3),
+  },
+  goalContainer: {
+    flex: 1,
+  },
+  inputLabelInactive1: {
+    top: HP(1.7),
+    left: WP(3.2),
+    fontSize: FS(1.9),
+    color: '#929292',
+    fontFamily: 'OpenSans-SemiBold',
+  },
+  textInput1: {
+    fontSize: FS(2.0),
+    fontFamily: 'OpenSans-SemiBold',
+    color: colors.Black,
+    paddingVertical: HP(0.3),
+    paddingHorizontal: WP(2.133),
+  },
+  unitMainContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: HP(1.7),
+    marginTop: HP(-1.5),
+  },
+  unitDisplayContainer: {
+    backgroundColor: colors.White,
+    borderRadius: WP(1.8),
+    padding: WP(2.133),
+    marginBottom: HP(0.7),
+    elevation: 3,
+    shadowColor: colors.Shadow,
+    shadowOffset: {width: 0, height: HP(0.25)},
+    shadowOpacity: 0.08,
+    shadowRadius: WP(2.133),
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    minHeight: HP(4.375),
+    width: WP(41),
+  },
+  unitDisplayText: {
+    fontSize: FS(1.7),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#575656',
+    paddingVertical: HP(0.25),
+    paddingHorizontal: WP(2.133),
+  },
+  dayText: {
+    fontSize: FS(1.625),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#929292',
+    marginLeft: WP(3),
+    marginBottom: HP(1.4),
+  },
+  exampleText: {
+    fontSize: FS(1.5),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#A3A3A3',
+    marginBottom: HP(2.0),
+    lineHeight: HP(2.25),
+    textAlign: 'center',
+  },
+  descriptionInput: {
+    fontSize: FS(1.8),
+    fontFamily: 'OpenSans-Regular',
+    color: '#575656',
+    minHeight: HP(2.0),
+    paddingVertical: HP(0.3),
+    paddingHorizontal: WP(2.667),
+  },
+  dropdownWrapper: {
+    position: 'relative',
+    zIndex: 1000,
+  },
+  dropdownContainer: {
+    backgroundColor: colors.White,
+    borderRadius: WP(2),
+    padding: WP(2.133),
+    elevation: 3,
+    shadowColor: colors.Shadow,
+    shadowOffset: {width: 0, height: HP(0.25)},
+    shadowOpacity: 0.08,
+    shadowRadius: WP(2.133),
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    minHeight: HP(4.375),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: HP(0.6),
+    paddingHorizontal: WP(3.2),
+    marginTop: HP(0.6),
+  },
+  dropdownContainerOpen: {
+    borderColor: colors.Primary,
+    borderWidth: 1.5,
+  },
+  dropdownText: {
+    fontSize: FS(1.875),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#575656',
+    paddingVertical: HP(1.375),
+    marginLeft: WP(1.867),
+  },
+  placeholderText: {
+    color: '#575656',
+    fontFamily: 'OpenSans-SemiBold',
+  },
+  dropdownOptions: {
+    backgroundColor: colors.White,
+    borderBottomLeftRadius: WP(1.5),
+    borderBottomRightRadius: WP(1.5),
+    elevation: 3,
+    shadowColor: colors.Shadow,
+    shadowOffset: {width: 0, height: HP(0.25)},
+    shadowOpacity: 0.08,
+    shadowRadius: WP(2.133),
+    position: 'absolute',
+    top: '99%',
+    left: 0,
+    right: 0,
+    zIndex: 1001,
+    paddingHorizontal: WP(0.933),
+    height: HP(23.5),
+    marginTop: HP(0.1),
+  },
+  dropdownOption: {
+    paddingHorizontal: WP(4.267),
+    paddingVertical: HP(0.3),
+    marginTop: HP(2.2),
+    marginLeft: WP(-0.5),
+  },
+  dropdownOptionLast: {
+    borderBottomWidth: 0,
+    marginBottom: HP(1.0),
+  },
+  dropdownOptionText: {
+    fontSize: FS(1.7),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#575656',
+  },
+  dropdownOptionTextSelected: {
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#575656',
   },
   progressIndicator: {
     flexDirection: 'row',
@@ -1668,6 +1796,21 @@ const styles = StyleSheet.create({
   },
   progressDotTextActive: {
     color: colors.White,
+    fontSize: FS(1.1),
+    fontFamily: 'OpenSans-Bold',
+  },
+  progressDotInactive: {
+    width: WP(5.3),
+    height: WP(5.3),
+    borderRadius: WP(2.65),
+    backgroundColor: 'transparent',
+    borderWidth: WP(0.5),
+    borderColor: colors.Primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressDotTextInactive: {
+    color: colors.Primary,
     fontSize: FS(1.1),
     fontFamily: 'OpenSans-Bold',
   },

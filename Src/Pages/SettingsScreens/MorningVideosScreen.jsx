@@ -31,9 +31,9 @@ import {YOUTUBE_API_KEY} from '@env';
 const {YouTubeNightModeModule} = NativeModules;
 
 const YOUTUBE_KEY = YOUTUBE_API_KEY;
-const STORAGE_KEY = '@youtube_admin_content';
-const VOICE_SETTINGS_KEY = '@youtube_voice_settings';
-const SESSION_TIMER_KEY = '@youtube_session_timer';
+const STORAGE_KEY = '@morning_admin_content';
+const VOICE_SETTINGS_KEY = '@morning_voice_settings'; 
+const SESSION_TIMER_KEY = '@morning_session_timer';
 
 let isServiceRegistered = false;
 if (!isServiceRegistered) {
@@ -45,7 +45,7 @@ if (!isServiceRegistered) {
   }
 }
 
-const YouTubeVideosScreen = ({navigation, route}) => {
+const MorningVideosScreen = ({navigation, route}) => {
   const [content, setContent] = useState({videos: [], audios: []});
   const [videoDetails, setVideoDetails] = useState({});
   const [loading, setLoading] = useState(true);
@@ -337,7 +337,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
     const enableLock = async () => {
       if (lockMode && YouTubeNightModeModule) {
         try {
-          console.log('🔒 Enabling Night Mode Lock...');
+          console.log('🔒 Enabling Morning Mode Lock...');
           await YouTubeNightModeModule.enableKioskLock();
           if (mounted) {
             setIsLocked(true);
@@ -480,7 +480,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
       if (isSessionExpired) {
         Alert.alert(
           'Session Expired',
-          'Your Night Mode session has ended. Please exit and start a new session.',
+          'Your Morning Mode session has ended. Please exit and start a new session.',
         );
         return;
       }
@@ -512,7 +512,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
       if (isSessionExpired) {
         Alert.alert(
           'Session Expired',
-          'Your Night Mode session has ended. Please exit and start a new session.',
+          'Your Morning Mode session has ended. Please exit and start a new session.',
         );
         return;
       }
@@ -537,10 +537,10 @@ const YouTubeVideosScreen = ({navigation, route}) => {
           id: audio.id,
           url: audioUrl,
           title: audio.title || audio.name || 'Audio',
-          artist: 'Night Mode Audio',
+          artist: 'Morning Mode Audio',
           artwork:
             audio.thumbnail ||
-            'https://via.placeholder.com/300/1DB954/FFFFFF?text=🎵',
+            'https://via.placeholder.com/300/FFA500/FFFFFF?text=🌅',
         };
 
         console.log('Adding track:', track);
@@ -574,13 +574,13 @@ const YouTubeVideosScreen = ({navigation, route}) => {
   );
 
   const handleSettingsPress = () => {
-    navigation.navigate('YouTubeSettings');
+    navigation.navigate('MorningModeSettings');
   };
 
   const handleExitPress = () => {
     Alert.alert(
-      'Exit Night Mode?',
-      'Are you sure you want to exit Night Mode?',
+      'Exit Morning Mode?',
+      'Are you sure you want to exit Morning Mode?',
       [
         {
           text: 'Cancel',
@@ -646,7 +646,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
           barStyle="light-content"
           backgroundColor={colors.Primary || '#FF0000'}
         />
-        <Headers title="Night Mode" />
+        <Headers title="Morning Mode" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.Primary || '#FF0000'} />
           <Text style={styles.loadingText}>Loading content...</Text>
@@ -662,7 +662,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
           barStyle="light-content"
           backgroundColor={colors.Primary || '#FF0000'}
         />
-        <Headers title="Night Mode" />
+        <Headers title="Morning Mode" />
         <View style={styles.errorContainer}>
           <MaterialIcons name="error-outline" size={WP(15)} color="#606060" />
           <Text style={styles.errorText}>{error}</Text>
@@ -702,7 +702,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
               style={styles.lockIcon}
             />
             <View style={styles.headerTextContainer}>
-              <Text style={styles.lockedTitle}>Night Mode</Text>
+              <Text style={styles.lockedTitle}>Morning Mode</Text>
               {voiceSettings &&
                 voiceSettings.enabled &&
                 remainingTime !== null && (
@@ -719,7 +719,7 @@ const YouTubeVideosScreen = ({navigation, route}) => {
           </TouchableOpacity>
         </View>
       ) : (
-        <Headers title="Night Mode" />
+        <Headers title="Morning Mode" />
       )}
 
       <ScrollView
@@ -729,20 +729,20 @@ const YouTubeVideosScreen = ({navigation, route}) => {
         {/* Session Expired Message */}
         {isSessionExpired && (
           <View style={styles.expiredContainer}>
-            <View style={styles.moonIconContainer}>
+            <View style={styles.sunIconContainer}>
               <Ionicons
-                name="moon-sharp"
+                name="sunny"
                 size={WP(17)}
                 color={colors.Primary}
               />
             </View>
 
-            <Text style={styles.expiredTitle}>Good Night! 🌙</Text>
+            <Text style={styles.expiredTitle}>Great Morning! 🌅</Text>
 
             <Text style={styles.expiredMessage}>
               {voiceSettings && voiceSettings.text
                 ? voiceSettings.text
-                : 'Sleep well and have sweet dreams'}
+                : 'Ready to conquer the day!'}
             </Text>
           </View>
         )}
@@ -907,7 +907,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
   },
-  moonIconContainer: {
+  sunIconContainer: {
     marginBottom: HP(4),
     alignItems: 'center',
     justifyContent: 'center',
@@ -915,7 +915,7 @@ const styles = StyleSheet.create({
   expiredTitle: {
     fontSize: FS(3.5),
     fontFamily: 'OpenSans-Bold',
-    color: '#1E3A8A',
+    color: '#F59E0B',
     marginBottom: HP(2.5),
     textAlign: 'center',
   },
@@ -959,4 +959,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default YouTubeVideosScreen;
+export default MorningVideosScreen;

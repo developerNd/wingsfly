@@ -21,6 +21,7 @@ import {challengeService} from './Src/services/api/challengeService';
 import SleepTrackerModal from './Src/Components/SleepTrackerModal';
 import {sleepTrackerService} from './Src/services/api/SleepTrackerService';
 import NightModeScheduler from './Src/services/NightModeScheduler';
+import MorningModeScheduler from './Src/services/MorningModeScheduler';
 
 // Music Manager Component
 const MusicManager = () => {
@@ -982,6 +983,148 @@ const NightModeSchedulerManager = ({navigationRef}) => {
   return null;
 };
 
+const MorningModeSchedulerManager = ({navigationRef}) => {
+  const {user} = useAuth();
+  const [isNavReady, setIsNavReady] = useState(false);
+  const pendingNavigation = useRef(null);
+  const hasInitialized = useRef(false);
+
+  // Track navigation readiness using proper React Navigation method
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      // Use the proper isReady() method from React Navigation
+      if (navigationRef?.current?.isReady?.()) {
+        if (!isNavReady) {
+          console.log(
+            '✅ [MorningModeSchedulerManager] Navigation is NOW ready (via isReady())',
+          );
+          setIsNavReady(true);
+        }
+      }
+    }, 100); // Check every 100ms
+
+    return () => clearInterval(checkInterval);
+  }, [navigationRef, isNavReady]);
+
+  // Execute pending navigation when ready
+  useEffect(() => {
+    if (isNavReady && pendingNavigation.current) {
+      console.log(
+        '🚀 [MorningModeSchedulerManager] Executing pending navigation',
+      );
+      const {screen, params} = pendingNavigation.current;
+
+      setTimeout(() => {
+        try {
+          navigationRef.current.navigate(screen, params);
+          console.log(
+            '✅ [MorningModeSchedulerManager] Navigation executed successfully',
+          );
+          pendingNavigation.current = null;
+        } catch (error) {
+          console.error(
+            '❌ [MorningModeSchedulerManager] Navigation error:',
+            error,
+          );
+        }
+      }, 300);
+    }
+  }, [isNavReady, navigationRef]);
+
+  // Initialize Morning Mode Scheduler
+  useEffect(() => {
+    const initializeScheduler = async () => {
+      if (hasInitialized.current || !user?.id || !isNavReady) {
+        return;
+      }
+
+      try {
+        console.log('☀️ [MorningModeSchedulerManager] Initializing scheduler');
+        await MorningModeScheduler.initialize(user.id, navigationRef);
+        hasInitialized.current = true;
+        console.log('✅ [MorningModeSchedulerManager] Scheduler initialized');
+      } catch (error) {
+        console.error('❌ [MorningModeSchedulerManager] Init error:', error);
+      }
+    };
+
+    setTimeout(initializeScheduler, 2500); // 2.5s delay (after Night Mode)
+  }, [user?.id, isNavReady, navigationRef]);
+
+  // Listen for Morning Mode triggers
+  useEffect(() => {
+    const handleTrigger = data => {
+      console.log(
+        '☀️ [MorningModeSchedulerManager] TRIGGER_MORNING_MODE received:',
+        data,
+      );
+
+      const wakeUpHour = data.wake_up_hour || 7;
+      const wakeUpMinute = data.wake_up_minute || 0;
+      const appWasKilled = data.app_was_killed || false;
+
+      console.log(
+        `☀️ Wake-up: ${wakeUpHour}:${String(wakeUpMinute).padStart(
+          2,
+          '0',
+        )}, Was killed: ${appWasKilled}`,
+      );
+
+      const navParams = {
+        autoStart: true,
+        fromMorningModeScheduler: true,
+        fromKilledState: appWasKilled,
+        wakeUpHour,
+        wakeUpMinute,
+      };
+
+      // Check if navigation is TRULY ready using isReady()
+      if (navigationRef?.current?.isReady?.()) {
+        console.log(
+          '🚀 [MorningModeSchedulerManager] Nav ready - navigating NOW',
+        );
+
+        try {
+          navigationRef.current.navigate('MorningVideosScreen', navParams);
+          console.log('✅ [MorningModeSchedulerManager] Navigation SUCCESS');
+        } catch (error) {
+          console.error(
+            '❌ [MorningModeSchedulerManager] Navigation FAILED:',
+            error.message,
+          );
+          // Store for retry
+          pendingNavigation.current = {
+            screen: 'MorningVideosScreen',
+            params: navParams,
+          };
+        }
+      } else {
+        console.warn(
+          '⚠️ [MorningModeSchedulerManager] Nav NOT ready - storing pending',
+        );
+        pendingNavigation.current = {
+          screen: 'MorningVideosScreen',
+          params: navParams,
+        };
+      }
+    };
+
+    const subscription = DeviceEventEmitter.addListener(
+      'TRIGGER_MORNING_MODE',
+      handleTrigger,
+    );
+
+    console.log('✅ [MorningModeSchedulerManager] Listener registered');
+
+    return () => {
+      subscription.remove();
+      console.log('☀️ [MorningModeSchedulerManager] Listener removed');
+    };
+  }, [navigationRef]);
+
+  return null;
+};
+
 // Main App Content
 const AppContent = () => {
   const {user} = useAuth();
@@ -1156,6 +1299,7 @@ const AppContent = () => {
         <WaterReminderManager />
         <SessionTrackingManager />
         <NightModeSchedulerManager navigationRef={navigationRef} />
+        <MorningModeSchedulerManager navigationRef={navigationRef} />
       </SessionProvider>
     </NavigationContainer>
   );

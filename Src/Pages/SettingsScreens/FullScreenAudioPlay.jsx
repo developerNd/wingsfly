@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -25,13 +25,73 @@ import {colors} from '../../Helper/Contants';
 const {width} = Dimensions.get('window');
 
 const FullScreenAudioPlay = ({route, navigation}) => {
-  const {audio} = route.params;
+  const {audio, timerData} = route.params;
   const playbackState = usePlaybackState();
   const progress = useProgress();
 
   const [isBuffering, setIsBuffering] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [hasEnded, setHasEnded] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [shouldNavigateBack, setShouldNavigateBack] = useState(false);
+
+  const timerIntervalRef = useRef(null);
+
+  const {sessionStartTime, voiceSettings, isSessionExpired} = timerData || {};
+
+  // Timer tick effect
+  useEffect(() => {
+    if (
+      !sessionStartTime ||
+      !voiceSettings ||
+      !voiceSettings.enabled ||
+      isSessionExpired
+    ) {
+      return;
+    }
+
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+
+    // Update immediately
+    const now = Date.now();
+    const elapsed = Math.floor((now - sessionStartTime) / 1000);
+    setElapsedSeconds(elapsed);
+
+    timerIntervalRef.current = setInterval(() => {
+      const now = Date.now();
+      const elapsed = Math.floor((now - sessionStartTime) / 1000);
+      setElapsedSeconds(elapsed);
+
+      // Fixed 1 hour duration (3600 seconds)
+      const durationSeconds = 60 * 60;
+
+      if (elapsed >= durationSeconds && !shouldNavigateBack) {
+        console.log('⏰ Session expired in audio player - navigating back');
+        setShouldNavigateBack(true);
+      }
+    }, 1000);
+
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, [sessionStartTime, voiceSettings, isSessionExpired, shouldNavigateBack]);
+
+  // Navigate back when session expires
+  useEffect(() => {
+    if (shouldNavigateBack) {
+      // Pause audio before navigating
+      TrackPlayer.pause().catch(err => console.error('Error pausing:', err));
+
+      // Small delay to ensure state is updated
+      setTimeout(() => {
+        navigation.goBack();
+      }, 500);
+    }
+  }, [shouldNavigateBack, navigation]);
 
   // Listen for playback ended event
   useTrackPlayerEvents([Event.PlaybackQueueEnded], async event => {
@@ -110,6 +170,29 @@ const FullScreenAudioPlay = ({route, navigation}) => {
     navigation.goBack();
   };
 
+  // Format time for display
+  const formatTimeDisplay = seconds => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs
+        .toString()
+        .padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Get remaining time
+  const getRemainingTime = () => {
+    if (!voiceSettings || !voiceSettings.enabled) return null;
+
+    const durationSeconds = 60 * 60; // Fixed 1 hour
+    const remaining = Math.max(0, durationSeconds - elapsedSeconds);
+    return remaining;
+  };
+
   // Determine the icon to show
   const getPlayButtonIcon = () => {
     if (isBuffering) {
@@ -134,6 +217,8 @@ const FullScreenAudioPlay = ({route, navigation}) => {
     return <MaterialIcons name="play-arrow" size={WP(14)} color="#FFFFFF" />;
   };
 
+  const remainingTime = getRemainingTime();
+
   return (
     <View style={styles.container}>
       <StatusBar
@@ -141,7 +226,7 @@ const FullScreenAudioPlay = ({route, navigation}) => {
         backgroundColor={colors.Primary || '#1DB954'}
       />
 
-      {/* Header */}
+      {/* Header with Timer */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -153,7 +238,23 @@ const FullScreenAudioPlay = ({route, navigation}) => {
             color="#FFFFFF"
           />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Now Playing</Text>
+
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Now Playing</Text>
+          {voiceSettings && voiceSettings.enabled && remainingTime !== null && (
+            <View style={styles.timerBadge}>
+              <MaterialIcons
+                name="access-time"
+                size={WP(3.5)}
+                color="#FFFFFF"
+              />
+              <Text style={styles.timerBadgeText}>
+                {formatTimeDisplay(remainingTime)}
+              </Text>
+            </View>
+          )}
+        </View>
+
         <View style={styles.backButton} />
       </View>
 
@@ -253,10 +354,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: FS(1.4),
     fontFamily: 'OpenSans-SemiBold',
     color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: HP(0.5),
+  },
+  timerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: WP(2.5),
+    paddingVertical: HP(0.5),
+    borderRadius: WP(4),
+  },
+  timerBadgeText: {
+    fontSize: FS(1.2),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#FFFFFF',
+    marginLeft: WP(1),
   },
   artworkContainer: {
     flex: 1,

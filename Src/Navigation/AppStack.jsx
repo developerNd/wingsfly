@@ -88,6 +88,8 @@ import YouTubeSettingsScreen from '../Pages/SettingsScreens/YouTubeSettingsScree
 import NightRoutineScreen from '../Pages/SettingsScreens/NightRoutineScreen';
 import FullScreenAudioPlay from '../Pages/SettingsScreens/FullScreenAudioPlay';
 import FullScreenVideoPlayer from '../Pages/SettingsScreens/FullScreenVideoPlayer';
+import MorningVideosScreen from '../Pages/SettingsScreens/MorningVideosScreen';
+import MorningModeSettingsScreen from '../Pages/SettingsScreens/MorningModeSettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -595,6 +597,22 @@ function AppStack({route}) {
           {props => (
             <ScreenWithNotes>
               <NightRoutineScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="MorningVideosScreen">
+          {props => (
+            <ScreenWithNotes>
+              <MorningVideosScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="MorningModeSettingsScreen">
+          {props => (
+            <ScreenWithNotes>
+              <MorningModeSettingsScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>

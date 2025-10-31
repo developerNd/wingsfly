@@ -119,7 +119,34 @@
     <category android:name="android.intent.category.DEFAULT" />
 </intent-filter>
 
+<!-- Intent filter for Morning Mode trigger -->
+<intent-filter>
+    <action android:name="TRIGGER_MORNING_MODE" />
+    <category android:name="android.intent.category.DEFAULT" />
+</intent-filter>
+
         </activity>
+
+        <!-- Morning Mode Alarm Receiver - Handles both alarms AND boot events -->
+<receiver
+    android:name=".MorningModeAlarmReceiver"
+    android:enabled="true"
+    android:exported="true"
+    android:directBootAware="true"
+    android:priority="1000">
+    
+    <!-- Boot events to reschedule after device restart -->
+    <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+    </intent-filter>
+    
+    <!-- Morning Mode alarm trigger -->
+    <intent-filter android:priority="1000">
+        <action android:name="com.wingsfly.MORNING_MODE_ALARM" />
+    </intent-filter>
+</receiver>
 
         <!-- Night Mode Alarm Receiver - Handles both alarms AND boot events -->
 <receiver
@@ -703,6 +730,13 @@
     android:enabled="true"
     android:exported="false"
     android:foregroundServiceType="dataSync" />
+
+
+    <service
+    android:name=".NightModeVibrationService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="shortService" />
 
 
 

@@ -15,10 +15,10 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.util.*
 
-class NightModeAlarmReceiver : BroadcastReceiver() {
+class MorningModeAlarmReceiver : BroadcastReceiver() {
 
     companion object {
-        private const val TAG = "NightModeAlarmReceiver"
+        private const val TAG = "MorningModeAlarmReceiver"
         private val LONG_VIBRATION_PATTERN = longArrayOf(0, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000)
         
         // ✅ Wake lock durations
@@ -28,7 +28,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.e(TAG, "")
         Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
-        Log.e(TAG, "🔥 ALARM FIRED! 🔥")
+        Log.e(TAG, "🔥 MORNING ALARM FIRED! 🔥")
         Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
         Log.e(TAG, "")
 
@@ -43,9 +43,9 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         Log.e(TAG, "⏰ Action: $action")
 
         when (action) {
-            NightModeSchedulerModule.ACTION_NIGHT_MODE_ALARM -> {
+            MorningModeSchedulerModule.ACTION_MORNING_MODE_ALARM -> {
                 Log.e(TAG, "✅ Correct alarm action received!")
-                handleNightModeAlarm(context, intent)
+                handleMorningModeAlarm(context, intent)
             }
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
@@ -62,7 +62,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         Log.e(TAG, "")
     }
 
-    private fun handleNightModeAlarm(context: Context, intent: Intent) {
+    private fun handleMorningModeAlarm(context: Context, intent: Intent) {
         var wakeLock: PowerManager.WakeLock? = null
         
         try {
@@ -89,11 +89,11 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                 PowerManager.FULL_WAKE_LOCK or 
                 PowerManager.ACQUIRE_CAUSES_WAKEUP or
                 PowerManager.ON_AFTER_RELEASE,
-                "WingsFly::NightModeWakeLock"
+                "WingsFly::MorningModeWakeLock"
             )
             wakeLock.acquire(INITIAL_WAKE_LOCK_DURATION)
 
-            Log.e(TAG, "🌙 Night Mode alarm triggered!")
+            Log.e(TAG, "☀️ Morning Mode alarm triggered!")
             Log.e(TAG, "🔒 Wake lock acquired: FULL_WAKE_LOCK for ${INITIAL_WAKE_LOCK_DURATION / 1000}s")
             Log.e(TAG, "   ✅ This keeps the screen ON for 2 minutes")
             Log.e(TAG, "   ✅ App will stay visible as long as:")
@@ -102,10 +102,10 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
             Log.e(TAG, "      - User doesn't manually minimize")
             Log.e(TAG, "")
 
-            val bedHour = intent.getIntExtra("bed_hour", 0)
-            val bedMinute = intent.getIntExtra("bed_minute", 0)
+            val wakeUpHour = intent.getIntExtra("wake_up_hour", 0)
+            val wakeUpMinute = intent.getIntExtra("wake_up_minute", 0)
 
-            Log.e(TAG, "Bed time: $bedHour:${String.format("%02d", bedMinute)}")
+            Log.e(TAG, "Wake-up time: $wakeUpHour:${String.format("%02d", wakeUpMinute)}")
 
             // ✅ STRATEGY: Start vibration service if device is locked
             // Service runs independently and vibrates until device is unlocked
@@ -115,7 +115,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                 Log.e(TAG, "Starting vibration service...")
                 Log.e(TAG, "Service will vibrate every 8s until you unlock!")
                 Log.e(TAG, "")
-                startVibrationService(context, bedHour, bedMinute)
+                startVibrationService(context, wakeUpHour, wakeUpMinute)
                 
                 // Small delay to ensure service starts
                 Thread.sleep(800)
@@ -125,7 +125,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
 
             // Create launch intent for MainActivity
             val launchIntent = Intent(context, MainActivity::class.java).apply {
-                action = "TRIGGER_NIGHT_MODE"
+                action = "TRIGGER_MORNING_MODE"
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -134,15 +134,15 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                     Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT or
                     Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                 )
-                putExtra("trigger_night_mode", true)
-                putExtra("bed_hour", bedHour)
-                putExtra("bed_minute", bedMinute)
+                putExtra("trigger_morning_mode", true)
+                putExtra("wake_up_hour", wakeUpHour)
+                putExtra("wake_up_minute", wakeUpMinute)
                 putExtra("from_alarm", true)
                 putExtra("app_was_killed", true)
             }
 
             // Create full-screen notification
-            createFullScreenNotification(context, launchIntent, bedHour, bedMinute)
+            createFullScreenNotification(context, launchIntent, wakeUpHour, wakeUpMinute)
 
             // Launch MainActivity
             Log.e(TAG, "🚀 Launching MainActivity above lock screen...")
@@ -158,7 +158,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
             // Reschedule for tomorrow
             Log.e(TAG, "")
             Log.e(TAG, "📅 Rescheduling for tomorrow...")
-            rescheduleForTomorrow(context, bedHour, bedMinute)
+            rescheduleForTomorrow(context, wakeUpHour, wakeUpMinute)
             Log.e(TAG, "")
 
         } catch (e: Exception) {
@@ -180,11 +180,13 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun startVibrationService(context: Context, bedHour: Int, bedMinute: Int) {
+    private fun startVibrationService(context: Context, wakeUpHour: Int, wakeUpMinute: Int) {
         try {
+            // Use the existing NightModeVibrationService for both Night and Morning modes
             val serviceIntent = Intent(context, NightModeVibrationService::class.java).apply {
-                putExtra("bed_hour", bedHour)
-                putExtra("bed_minute", bedMinute)
+                putExtra("wake_up_hour", wakeUpHour)
+                putExtra("wake_up_minute", wakeUpMinute)
+                putExtra("is_morning_mode", true) // Flag to distinguish morning mode
             }
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -203,19 +205,19 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
     private fun createFullScreenNotification(
         context: Context, 
         launchIntent: Intent,
-        bedHour: Int,
-        bedMinute: Int
+        wakeUpHour: Int,
+        wakeUpMinute: Int
     ) {
         try {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(
-                    "night_mode_alarm_urgent",
-                    "Night Mode Alarm",
+                    "morning_mode_alarm_urgent",
+                    "Morning Mode Alarm",
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "Night Mode bedtime alarm"
+                    description = "Morning Mode wake-up alarm"
                     enableVibration(true)
                     vibrationPattern = LONG_VIBRATION_PATTERN
                     enableLights(true)
@@ -238,10 +240,10 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                 }
             )
 
-            val notification = NotificationCompat.Builder(context, "night_mode_alarm_urgent")
+            val notification = NotificationCompat.Builder(context, "morning_mode_alarm_urgent")
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle("🌙 Night Mode - Time to Wind Down")
-                .setContentText("Bedtime at $bedHour:${String.format("%02d", bedMinute)}")
+                .setContentTitle("☀️ Morning Mode - Good Morning!")
+                .setContentText("Wake-up time: $wakeUpHour:${String.format("%02d", wakeUpMinute)}")
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setFullScreenIntent(fullScreenPendingIntent, true)
@@ -261,11 +263,11 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun rescheduleForTomorrow(context: Context, bedHour: Int, bedMinute: Int) {
+    private fun rescheduleForTomorrow(context: Context, wakeUpHour: Int, wakeUpMinute: Int) {
         try {
-            val prefs = context.getSharedPreferences("NightModePrefs", Context.MODE_PRIVATE)
-            val triggerHour = prefs.getInt("trigger_hour", bedHour - 1)
-            val triggerMinute = prefs.getInt("trigger_minute", bedMinute)
+            val prefs = context.getSharedPreferences("MorningModePrefs", Context.MODE_PRIVATE)
+            val triggerHour = prefs.getInt("trigger_hour", wakeUpHour)
+            val triggerMinute = prefs.getInt("trigger_minute", wakeUpMinute)
 
             val calendar = Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_YEAR, 1)
@@ -275,7 +277,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                 set(Calendar.MILLISECOND, 0)
             }
 
-            scheduleAlarm(context, calendar.timeInMillis, bedHour, bedMinute, triggerHour, triggerMinute)
+            scheduleAlarm(context, calendar.timeInMillis, wakeUpHour, wakeUpMinute, triggerHour, triggerMinute)
 
             Log.e(TAG, "✅ Rescheduled for tomorrow: ${calendar.time}")
         } catch (e: Exception) {
@@ -288,16 +290,16 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         try {
             Log.d(TAG, "📱 Device booted - checking for scheduled alarms")
             
-            val prefs = context.getSharedPreferences("NightModePrefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("MorningModePrefs", Context.MODE_PRIVATE)
             val isScheduled = prefs.getBoolean("alarm_scheduled", false)
             
             if (isScheduled) {
-                val bedHour = prefs.getInt("bed_hour", 0)
-                val bedMinute = prefs.getInt("bed_minute", 0)
-                val triggerHour = prefs.getInt("trigger_hour", bedHour - 1)
-                val triggerMinute = prefs.getInt("trigger_minute", bedMinute)
+                val wakeUpHour = prefs.getInt("wake_up_hour", 0)
+                val wakeUpMinute = prefs.getInt("wake_up_minute", 0)
+                val triggerHour = prefs.getInt("trigger_hour", wakeUpHour)
+                val triggerMinute = prefs.getInt("trigger_minute", wakeUpMinute)
                 
-                Log.d(TAG, "Found scheduled alarm: Bed=${bedHour}:${bedMinute}, Trigger=${triggerHour}:${triggerMinute}")
+                Log.d(TAG, "Found scheduled alarm: WakeUp=${wakeUpHour}:${wakeUpMinute}, Trigger=${triggerHour}:${triggerMinute}")
                 
                 val calendar = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, triggerHour)
@@ -310,7 +312,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
                     }
                 }
                 
-                scheduleAlarm(context, calendar.timeInMillis, bedHour, bedMinute, triggerHour, triggerMinute)
+                scheduleAlarm(context, calendar.timeInMillis, wakeUpHour, wakeUpMinute, triggerHour, triggerMinute)
                 
                 Log.d(TAG, "✅ Alarm rescheduled after boot for: ${calendar.time}")
             } else {
@@ -324,24 +326,24 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
     private fun scheduleAlarm(
         context: Context, 
         triggerTime: Long, 
-        bedHour: Int, 
-        bedMinute: Int,
+        wakeUpHour: Int, 
+        wakeUpMinute: Int,
         triggerHour: Int,
         triggerMinute: Int
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
         
-        val intent = Intent(context, NightModeAlarmReceiver::class.java).apply {
-            action = NightModeSchedulerModule.ACTION_NIGHT_MODE_ALARM
-            putExtra("bed_hour", bedHour)
-            putExtra("bed_minute", bedMinute)
+        val intent = Intent(context, MorningModeAlarmReceiver::class.java).apply {
+            action = MorningModeSchedulerModule.ACTION_MORNING_MODE_ALARM
+            putExtra("wake_up_hour", wakeUpHour)
+            putExtra("wake_up_minute", wakeUpMinute)
             putExtra("trigger_hour", triggerHour)
             putExtra("trigger_minute", triggerMinute)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            NightModeSchedulerModule.ALARM_REQUEST_CODE,
+            MorningModeSchedulerModule.ALARM_REQUEST_CODE,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -356,7 +358,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         }
         val showPendingIntent = PendingIntent.getActivity(
             context,
-            NightModeSchedulerModule.ALARM_REQUEST_CODE + 1,
+            MorningModeSchedulerModule.ALARM_REQUEST_CODE + 1,
             showIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

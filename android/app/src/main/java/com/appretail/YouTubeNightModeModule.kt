@@ -2,7 +2,10 @@ package com.wingsfly
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.os.Build
 import android.os.Handler
@@ -29,6 +32,7 @@ class YouTubeNightModeModule(reactContext: ReactApplicationContext) :
     private var wakeLock: PowerManager.WakeLock? = null
     private val systemUIHandler = Handler(Looper.getMainLooper())
     private var systemUIRunnable: Runnable? = null
+    private var screenUnlockReceiver: BroadcastReceiver? = null
 
     override fun getName(): String = "YouTubeNightModeModule"
 
@@ -47,6 +51,9 @@ class YouTubeNightModeModule(reactContext: ReactApplicationContext) :
                 Log.d(TAG, "========================================")
 
                 isLockActive = true
+
+                // Register screen unlock receiver
+                registerScreenUnlockReceiver(activity)
 
                 // Setup kiosk mode (app pinning)
                 setupKioskMode(activity)
@@ -85,6 +92,9 @@ class YouTubeNightModeModule(reactContext: ReactApplicationContext) :
                 Log.d(TAG, "========================================")
 
                 isLockActive = false
+
+                // Unregister screen unlock receiver
+                unregisterScreenUnlockReceiver()
 
                 // Stop continuous system UI hiding
                 stopContinuousSystemUIHiding()
@@ -153,6 +163,77 @@ class YouTubeNightModeModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    // ==================== SCREEN UNLOCK RECEIVER ====================
+
+    private fun registerScreenUnlockReceiver(activity: Activity) {
+        try {
+            // Unregister if already exists
+            unregisterScreenUnlockReceiver()
+
+            screenUnlockReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    when (intent?.action) {
+                        Intent.ACTION_USER_PRESENT -> {
+                            // Screen unlocked by user
+                            Log.d(TAG, "🔓 Screen unlocked - Reapplying kiosk lock")
+                            if (isLockActive) {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    currentActivity?.let { act ->
+                                        setupKioskMode(act)
+                                        hideSystemUIMaximum(act)
+                                    }
+                                }, 200) // Small delay to ensure UI is ready
+                            }
+                        }
+                        Intent.ACTION_SCREEN_ON -> {
+                            // Screen turned on
+                            Log.d(TAG, "💡 Screen turned on")
+                            if (isLockActive) {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    currentActivity?.let { act ->
+                                        hideSystemUIMaximum(act)
+                                    }
+                                }, 100)
+                            }
+                        }
+                        Intent.ACTION_SCREEN_OFF -> {
+                            Log.d(TAG, "🌙 Screen turned off")
+                        }
+                    }
+                }
+            }
+
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_USER_PRESENT) // User unlocked the device
+                addAction(Intent.ACTION_SCREEN_ON)     // Screen turned on
+                addAction(Intent.ACTION_SCREEN_OFF)    // Screen turned off
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                activity.registerReceiver(screenUnlockReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                activity.registerReceiver(screenUnlockReceiver, filter)
+            }
+
+            Log.d(TAG, "✅ Screen unlock receiver registered")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error registering screen unlock receiver: ${e.message}")
+        }
+    }
+
+    private fun unregisterScreenUnlockReceiver() {
+        try {
+            screenUnlockReceiver?.let {
+                currentActivity?.unregisterReceiver(it)
+                Log.d(TAG, "✅ Screen unlock receiver unregistered")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error unregistering receiver: ${e.message}")
+        } finally {
+            screenUnlockReceiver = null
+        }
+    }
+
     // ==================== PRIVATE HELPER METHODS ====================
 
     private fun setupKioskMode(activity: Activity) {
@@ -160,14 +241,27 @@ class YouTubeNightModeModule(reactContext: ReactApplicationContext) :
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 try {
                     val activityManager = activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-                    if (activityManager.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_NONE) {
-                        activity.startLockTask()
-                        Log.d(TAG, "✅ Kiosk mode (app pinning) activated - This blocks status bar & navigation")
-                    } else {
-                        Log.d(TAG, "ℹ️ Already in lock task mode")
+                    val lockTaskMode = activityManager.lockTaskModeState
+                    
+                    when (lockTaskMode) {
+                        ActivityManager.LOCK_TASK_MODE_NONE -> {
+                            activity.startLockTask()
+                            Log.d(TAG, "✅ Kiosk mode (app pinning) activated - Blocks status bar & navigation")
+                        }
+                        ActivityManager.LOCK_TASK_MODE_LOCKED -> {
+                            Log.d(TAG, "ℹ️ Already in LOCKED task mode")
+                        }
+                        ActivityManager.LOCK_TASK_MODE_PINNED -> {
+                            Log.d(TAG, "ℹ️ Already in PINNED task mode")
+                        }
+                        else -> {
+                            Log.d(TAG, "ℹ️ Lock task mode state: $lockTaskMode")
+                        }
                     }
                 } catch (e: SecurityException) {
                     Log.w(TAG, "⚠️ Kiosk mode requires device owner or user must pin app manually: ${e.message}")
+                } catch (e: IllegalStateException) {
+                    Log.w(TAG, "⚠️ Cannot start lock task in current state: ${e.message}")
                 } catch (e: Exception) {
                     Log.w(TAG, "⚠️ Kiosk mode not available: ${e.message}")
                 }
@@ -339,6 +433,7 @@ class YouTubeNightModeModule(reactContext: ReactApplicationContext) :
         try {
             val activity = currentActivity
             if (activity != null && isLockActive) {
+                unregisterScreenUnlockReceiver()
                 stopContinuousSystemUIHiding()
                 releaseWakeLock()
                 exitKioskMode(activity)

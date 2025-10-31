@@ -90,6 +90,16 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('NightRoutineScreen');
   };
 
+  const handleMorningVideosScreen = () => {
+    navigation.navigate('MorningVideosScreen', {
+      lockMode: true, // Enable lock mode
+    });
+  };
+
+  const handleMorningModeSettingsScreen = () => {
+    navigation.navigate('MorningModeSettingsScreen');
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Logout',
@@ -269,12 +279,21 @@ const SettingsScreen = ({navigation}) => {
               onPress={handleYouTubeVideosPress}
             />
             <View style={styles.separator} />
+            <SettingItem
+              title="Morning Mode"
+              onPress={handleMorningVideosScreen}
+            />
+            <View style={styles.separator} />
             <SettingItem title="YouTube" onPress={handleYouTubePress} />
-
             <View style={styles.separator} />
             <SettingItem
               title="YouTube Settings"
               onPress={handleYouTubeSettingsPress}
+            />
+            <View style={styles.separator} />
+            <SettingItem
+              title="Morning Settings"
+              onPress={handleMorningModeSettingsScreen}
             />
           </View>
         </View>

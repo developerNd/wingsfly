@@ -18,10 +18,10 @@ import Headers from '../../Components/Headers';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 
-const STORAGE_KEY = '@youtube_admin_content';
-const VOICE_SETTINGS_KEY = '@youtube_voice_settings';
+const STORAGE_KEY = '@morning_admin_content';
+const VOICE_SETTINGS_KEY = '@morning_voice_settings';
 
-const YouTubeSettingsScreen = ({navigation}) => {
+const MorningModeSettingsScreen = ({navigation}) => {
   const [videos, setVideos] = useState([]);
   const [audios, setAudios] = useState([]);
   const [videoInput, setVideoInput] = useState('');
@@ -81,7 +81,7 @@ const YouTubeSettingsScreen = ({navigation}) => {
       };
 
       await AsyncStorage.setItem(VOICE_SETTINGS_KEY, JSON.stringify(settings));
-      console.log('Voice settings saved:', settings);
+      console.log('Morning voice settings saved:', settings);
     } catch (error) {
       console.error('Error saving voice settings:', error);
     }
@@ -350,7 +350,7 @@ const YouTubeSettingsScreen = ({navigation}) => {
       // Save voice settings
       await saveVoiceSettings();
 
-      Alert.alert('Success', 'Content and settings saved successfully!', [
+      Alert.alert('Success', 'Morning mode content and settings saved successfully!', [
         {
           text: 'OK',
           onPress: () => navigation.goBack(),
@@ -393,7 +393,7 @@ const YouTubeSettingsScreen = ({navigation}) => {
       <View style={styles.container}>
         <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
         <View style={styles.headerWrapper}>
-          <Headers title="Content Management" />
+          <Headers title="Morning Mode Settings" />
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.Primary || '#FF0000'} />
@@ -408,7 +408,7 @@ const YouTubeSettingsScreen = ({navigation}) => {
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
 
       <View style={styles.headerWrapper}>
-        <Headers title="Content Management" />
+        <Headers title="Morning Mode Settings" />
       </View>
 
       <ScrollView
@@ -419,14 +419,14 @@ const YouTubeSettingsScreen = ({navigation}) => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <MaterialIcons
-              name="record-voice-over"
+              name="wb-sunny"
               size={WP(6)}
               color={colors.Primary || '#FF0000'}
             />
-            <Text style={styles.sectionTitle}>Voice Command Settings</Text>
+            <Text style={styles.sectionTitle}>Morning Voice Command</Text>
           </View>
           <Text style={styles.sectionDescription}>
-            Configure voice command message
+            Configure morning motivation message
           </Text>
 
           {/* Enable Voice Command Toggle */}
@@ -437,7 +437,7 @@ const YouTubeSettingsScreen = ({navigation}) => {
             <View style={styles.toggleInfo}>
               <Text style={styles.toggleLabel}>Enable Voice Command</Text>
               <Text style={styles.toggleSubtext}>
-                Play voice message after session ends
+                Play voice message when morning session ends
               </Text>
             </View>
             <View
@@ -458,11 +458,11 @@ const YouTubeSettingsScreen = ({navigation}) => {
           {voiceCommandEnabled && (
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>
-                Voice Command Message *
+                Morning Message *
               </Text>
               <TextInput
                 style={styles.textAreaInput}
-                placeholder="Enter message to be spoken (e.g., 'Great job! Your session is complete.')"
+                placeholder="Enter morning motivation message (e.g., 'Great morning! Ready to conquer the day?')"
                 placeholderTextColor="#999"
                 value={voiceCommandText}
                 onChangeText={setVoiceCommandText}
@@ -471,7 +471,7 @@ const YouTubeSettingsScreen = ({navigation}) => {
                 textAlignVertical="top"
               />
               <Text style={styles.inputHint}>
-                This message will be played when the session ends
+                This message will be played when the morning session ends
               </Text>
             </View>
           )}
@@ -485,10 +485,10 @@ const YouTubeSettingsScreen = ({navigation}) => {
               size={WP(6)}
               color={colors.Primary || '#FF0000'}
             />
-            <Text style={styles.sectionTitle}>YouTube Videos</Text>
+            <Text style={styles.sectionTitle}>Morning YouTube Videos</Text>
           </View>
           <Text style={styles.sectionDescription}>
-            Add YouTube videos by URL or video ID
+            Add energizing videos for your morning routine
           </Text>
 
           <View style={styles.inputContainer}>
@@ -554,10 +554,10 @@ const YouTubeSettingsScreen = ({navigation}) => {
               size={WP(6)}
               color={colors.Primary || '#FF0000'}
             />
-            <Text style={styles.sectionTitle}>Audio Files</Text>
+            <Text style={styles.sectionTitle}>Morning Audio Files</Text>
           </View>
           <Text style={styles.sectionDescription}>
-            Upload audio files from your device (Max 50MB)
+            Upload energizing audio files (Max 50MB)
           </Text>
 
           <TouchableOpacity
@@ -718,7 +718,7 @@ const YouTubeSettingsScreen = ({navigation}) => {
                 color={colors.Primary || '#FF0000'}
               />
               <View style={styles.summaryContent}>
-                <Text style={styles.summaryTitle}>Configuration Summary</Text>
+                <Text style={styles.summaryTitle}>Morning Mode Summary</Text>
                 <Text style={styles.summaryText}>
                   {videos.length} video{videos.length !== 1 ? 's' : ''} •{' '}
                   {audios.length} audio file{audios.length !== 1 ? 's' : ''}
@@ -818,12 +818,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F9F9F9',
+    backgroundColor: '#FFF9E6',
     borderRadius: WP(3),
     padding: WP(4),
     marginBottom: HP(2),
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#FFE8A3',
   },
   toggleInfo: {
     flex: 1,
@@ -995,7 +995,7 @@ const styles = StyleSheet.create({
     marginTop: HP(1.5),
   },
   audioDetailsForm: {
-    backgroundColor: '#F0F8FF',
+    backgroundColor: '#FFF9E6',
     borderRadius: WP(3),
     padding: WP(4),
     marginTop: HP(2),
@@ -1173,7 +1173,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF5F5',
+    backgroundColor: '#FFF9E6',
     borderRadius: WP(3),
     padding: WP(4),
     borderLeftWidth: 4,
@@ -1239,4 +1239,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default YouTubeSettingsScreen;
+export default MorningModeSettingsScreen;

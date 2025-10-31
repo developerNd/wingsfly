@@ -159,26 +159,31 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
     }
     
     private boolean launchAlarmActivity(Context context, String alarmId, String time, String label, 
-                                       String days, String userId, boolean isLocked, boolean isSnooze,
-                                       String alarmType, String toneType, String customToneUri, String customToneName) {
-        try {
-            Intent alarmActivityIntent = new Intent(context, CustomAlarmActivity.class);
-            alarmActivityIntent.putExtra("alarmId", alarmId);
-            alarmActivityIntent.putExtra("time", time);
-            alarmActivityIntent.putExtra("label", label);
-            alarmActivityIntent.putExtra("days", days);
-            alarmActivityIntent.putExtra("userId", userId);
-            alarmActivityIntent.putExtra("isDeviceLocked", isLocked);
-            alarmActivityIntent.putExtra("isSnooze", isSnooze);
-            alarmActivityIntent.putExtra("alarmType", alarmType);
-            alarmActivityIntent.putExtra("triggeredTime", System.currentTimeMillis());
-            
-            // Pass custom tone data to activity
-            alarmActivityIntent.putExtra("toneType", toneType != null ? toneType : "default");
-            alarmActivityIntent.putExtra("customToneUri", customToneUri);
-            alarmActivityIntent.putExtra("customToneName", customToneName);
-            
-            // Add ALL necessary flags for lock screen
+                                   String days, String userId, boolean isLocked, boolean isSnooze,
+                                   String alarmType, String toneType, String customToneUri, String customToneName) {
+    try {
+        Intent alarmActivityIntent = new Intent(context, CustomAlarmActivity.class);
+        alarmActivityIntent.putExtra("alarmId", alarmId);
+        alarmActivityIntent.putExtra("time", time);
+        alarmActivityIntent.putExtra("label", label);
+        alarmActivityIntent.putExtra("days", days);
+        alarmActivityIntent.putExtra("userId", userId);
+        alarmActivityIntent.putExtra("isDeviceLocked", isLocked);
+        alarmActivityIntent.putExtra("isSnooze", isSnooze);
+        alarmActivityIntent.putExtra("alarmType", alarmType);
+        alarmActivityIntent.putExtra("triggeredTime", System.currentTimeMillis());
+        
+        // Pass custom tone data to activity
+        alarmActivityIntent.putExtra("toneType", toneType != null ? toneType : "default");
+        alarmActivityIntent.putExtra("customToneUri", customToneUri);
+        alarmActivityIntent.putExtra("customToneName", customToneName);
+        
+        // CRITICAL: Use FULL_SCREEN_INTENT via Notification for locked screen
+        if (isLocked) {
+            Log.d(TAG, "Device is locked - using notification with full screen intent");
+            showFullScreenNotification(context, alarmActivityIntent, alarmId, label);
+        } else {
+            Log.d(TAG, "Device is unlocked - launching activity directly");
             alarmActivityIntent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK |
                 Intent.FLAG_ACTIVITY_CLEAR_TOP |
@@ -187,31 +192,80 @@ public class CustomAlarmReceiver extends BroadcastReceiver {
                 Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             );
             
-            // For Android 10+ (API 29+), also add this flag
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                alarmActivityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                Log.d(TAG, "Added Android 10+ specific flags");
-            }
-            
-            Log.d(TAG, "Starting activity with flags: " + Integer.toHexString(alarmActivityIntent.getFlags()));
             context.startActivity(alarmActivityIntent);
-            Log.d(TAG, "Activity started successfully");
-            
-            // Give activity time to launch
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                Log.w(TAG, "Sleep interrupted", e);
-            }
-            
-            return true;
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start alarm activity", e);
-            e.printStackTrace();
-            return false;
         }
+        
+        Log.d(TAG, "Activity launch initiated successfully");
+        
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            Log.w(TAG, "Sleep interrupted", e);
+        }
+        
+        return true;
+        
+    } catch (Exception e) {
+        Log.e(TAG, "Failed to start alarm activity", e);
+        e.printStackTrace();
+        return false;
     }
+}
+
+// ADD THIS NEW METHOD
+private void showFullScreenNotification(Context context, Intent fullScreenIntent, String alarmId, String label) {
+    try {
+        android.app.NotificationManager notificationManager = 
+            (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        
+        String channelId = "custom_alarm_channel";
+        
+        // Create notification channel for Android O+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            android.app.NotificationChannel channel = new android.app.NotificationChannel(
+                channelId,
+                "Custom Alarms",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Notifications for custom alarms");
+            channel.enableVibration(true);
+            channel.setSound(null, null);
+            channel.setBypassDnd(true);
+            notificationManager.createNotificationChannel(channel);
+        }
+        
+        // Create PendingIntent for full screen
+        android.app.PendingIntent fullScreenPendingIntent = android.app.PendingIntent.getActivity(
+            context,
+            Math.abs(alarmId.hashCode()),
+            fullScreenIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE
+        );
+        
+        // Build notification with full screen intent
+        android.app.Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder = new android.app.Notification.Builder(context, channelId);
+        } else {
+            builder = new android.app.Notification.Builder(context);
+        }
+        
+        builder.setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+               .setContentTitle(label != null ? label : "Alarm")
+               .setContentText("Alarm is ringing")
+               .setPriority(android.app.Notification.PRIORITY_MAX)
+               .setCategory(android.app.Notification.CATEGORY_ALARM)
+               .setFullScreenIntent(fullScreenPendingIntent, true)
+               .setAutoCancel(true);
+        
+        notificationManager.notify(Math.abs(alarmId.hashCode()), builder.build());
+        
+        Log.d(TAG, "Full screen notification shown");
+        
+    } catch (Exception e) {
+        Log.e(TAG, "Error showing full screen notification", e);
+    }
+}
     
     private void startCustomAlarmService(Context context, String alarmId, String time, String label, 
                                        String days, String userId, boolean isLocked, boolean isSnooze,

@@ -36,6 +36,10 @@ const RecurringTimerScreen = () => {
   const route = useRoute();
   const {user} = useAuth();
 
+  // Step tracking state
+  const [currentStep, setCurrentStep] = useState(route.params?.currentStep || 1);
+  const TOTAL_STEPS = 4;
+
   // Task form states
   const [habit, setHabit] = useState('');
   const [description, setDescription] = useState('');
@@ -46,17 +50,14 @@ const RecurringTimerScreen = () => {
     title: 'Work and Career',
     image: Icons.Work,
   };
-  const [selectedCategory, setSelectedCategory] = useState(
-    selectedCategoryParam,
-  );
+  const [selectedCategory, setSelectedCategory] = useState(selectedCategoryParam);
 
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
 
   // Dropdown and time states
-  const [selectedDropdownValue, setSelectedDropdownValue] =
-    useState('At Least');
+  const [selectedDropdownValue, setSelectedDropdownValue] = useState('At Least');
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedTime, setSelectedTime] = useState({
     hours: 0,
@@ -104,76 +105,138 @@ const RecurringTimerScreen = () => {
     },
   ];
 
-  // Check if habit label should be active
   const isHabitLabelActive = habitFocused || habit.length > 0;
-
-  // Since this is a timer task, always show Pomodoro option
   const isTimerEvaluation = true;
-
-  // Replace the existing useFocusEffect in RecurringTimerScreen with this:
 
   useFocusEffect(
     React.useCallback(() => {
       if (route.params) {
         const params = route.params;
 
-        // Restore all form data when returning from navigation
         if (params.habit !== undefined) setHabit(params.habit);
-        if (params.description !== undefined)
-          setDescription(params.description);
-        if (params.selectedCategory !== undefined)
-          setSelectedCategory(params.selectedCategory);
+        if (params.description !== undefined) setDescription(params.description);
+        if (params.selectedCategory !== undefined) setSelectedCategory(params.selectedCategory);
         if (params.priority !== undefined) setPriority(params.priority);
         if (params.note !== undefined) setNote(params.note);
-        if (params.isPendingTask !== undefined)
-          setIsPendingTask(params.isPendingTask);
-        if (params.selectedDropdownValue !== undefined)
-          setSelectedDropdownValue(params.selectedDropdownValue);
-        if (params.selectedTime !== undefined)
-          setSelectedTime(params.selectedTime);
-        if (params.addReminder !== undefined)
-          setAddReminder(params.addReminder);
-        if (params.addToGoogleCalendar !== undefined)
-          setAddToGoogleCalendar(params.addToGoogleCalendar);
+        if (params.isPendingTask !== undefined) setIsPendingTask(params.isPendingTask);
+        if (params.selectedDropdownValue !== undefined) setSelectedDropdownValue(params.selectedDropdownValue);
+        if (params.selectedTime !== undefined) setSelectedTime(params.selectedTime);
+        if (params.addReminder !== undefined) setAddReminder(params.addReminder);
+        if (params.addToGoogleCalendar !== undefined) setAddToGoogleCalendar(params.addToGoogleCalendar);
         if (params.reminderData) setReminderData(params.reminderData);
 
-        // Restore date data
         if (params.startDate) {
-          const date =
-            typeof params.startDate === 'string'
-              ? new Date(params.startDate)
-              : params.startDate;
+          const date = typeof params.startDate === 'string' ? new Date(params.startDate) : params.startDate;
           setStartDate(date);
         }
 
-        // Restore schedule data (block time and duration)
         if (params.scheduleData) {
-          if (params.scheduleData.blockTimeData) {
-            setBlockTimeData(params.scheduleData.blockTimeData);
-          }
-          if (params.scheduleData.durationData) {
-            setDurationData(params.scheduleData.durationData);
-          }
+          if (params.scheduleData.blockTimeData) setBlockTimeData(params.scheduleData.blockTimeData);
+          if (params.scheduleData.durationData) setDurationData(params.scheduleData.durationData);
         }
 
-        // Restore direct block time and duration data if available
         if (params.blockTimeData) setBlockTimeData(params.blockTimeData);
         if (params.durationData) setDurationData(params.durationData);
 
-        // Restore pomodoro settings and state
         if (params.pomodoroSettings) {
           setPomodoroSettings(params.pomodoroSettings);
-          setAddPomodoro(true); // Enable pomodoro when settings are available
+          setAddPomodoro(true);
         }
       }
     }, [route.params]),
   );
 
+  // Toast helper functions
+  const showToast = (message, type = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
+
+  // VALIDATION LOGIC
+  const validateCurrentStep = () => {
+    if (toastVisible) {
+      hideToast();
+    }
+
+    switch (currentStep) {
+      case 1:
+        // Step 1: Habit, Dropdown/Time, Description, Category, Start Date
+        if (!habit.trim()) {
+          showToast('Enter a name');
+          return false;
+        }
+        if (selectedDropdownValue === 'Less than') {
+          const {hours, minutes, seconds} = selectedTime;
+          const totalTime = hours + minutes + seconds;
+          if (totalTime === 0) {
+            showToast('Enter a value greater than zero');
+            return false;
+          }
+        }
+        return true;
+
+      case 2:
+        // Step 2: Duration, Block Time, Pomodoro
+        if (!durationData) {
+          showToast('Select a duration');
+          return false;
+        }
+        if (!blockTimeData) {
+          showToast('Select a block time');
+          return false;
+        }
+        if (isTimerEvaluation && !addPomodoro) {
+          showToast('Select a Pomodoro');
+          return false;
+        }
+        if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
+          showToast('Please configure Pomodoro settings');
+          return false;
+        }
+        return true;
+
+      case 3:
+        // Step 3: Priority, Note, Pending Task
+        return true;
+
+      case 4:
+        // Step 4: Link to Goal, Reminder, Google Calendar
+        return true;
+
+      default:
+        return true;
+    }
+  };
+
+  const handleNextPress = async () => {
+    if (!validateCurrentStep()) {
+      return;
+    }
+
+    if (currentStep === TOTAL_STEPS) {
+      await handleSaveTask();
+    } else {
+      setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
+    }
+  };
+
+  const handleBackPress = () => {
+    if (currentStep > 1) {
+      setCurrentStep(prev => prev - 1);
+    } else {
+      navigation.goBack();
+    }
+  };
+
   // Helper function to calculate duration from block time
   const calculateDuration = (startTime, endTime) => {
     if (!startTime || !endTime) return null;
 
-    // Parse time strings (assuming format like "10:00 AM" or "12:30 PM")
     const parseTime = timeStr => {
       const [time, period] = timeStr.split(' ');
       const [hours, minutes] = time.split(':').map(Number);
@@ -191,13 +254,11 @@ const RecurringTimerScreen = () => {
     const start = parseTime(startTime);
     const end = parseTime(endTime);
 
-    // Calculate duration in minutes
     const startMinutes = start.hours * 60 + start.minutes;
     let endMinutes = end.hours * 60 + end.minutes;
 
-    // Handle case where end time is next day
     if (endMinutes <= startMinutes) {
-      endMinutes += 24 * 60; // Add 24 hours
+      endMinutes += 24 * 60;
     }
 
     const durationMinutes = endMinutes - startMinutes;
@@ -208,73 +269,30 @@ const RecurringTimerScreen = () => {
       hours,
       minutes,
       totalMinutes: durationMinutes,
-      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
-        minutes,
-      ).padStart(2, '0')}`,
+      formattedDuration: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
     };
   };
-
-  // Helper function to calculate duration from selected time (for manual time input)
-  const calculateDurationFromTime = timeData => {
-    if (!timeData) return null;
-
-    const {hours, minutes} = timeData;
-    const totalMinutes = hours * 60 + minutes;
-
-    return {
-      hours,
-      minutes,
-      totalMinutes,
-      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
-        minutes,
-      ).padStart(2, '0')}`,
-    };
-  };
-
-  // Toast helper functions
-  const showToast = (message, type = 'error') => {
-    setToastMessage(message);
-    setToastType(type);
-    setToastVisible(true);
-  };
-
-  const hideToast = () => {
-    setToastVisible(false);
-  };
-
-  // Updated RecurringTimerScreen.js - Key changes to handlePomodoroToggle function
-
-  // Replace the existing handlePomodoroToggle function with this:
 
   const handlePomodoroToggle = () => {
     if (addPomodoro) {
-      // If turning off, just disable and clear settings
       setAddPomodoro(false);
       setPomodoroSettings(null);
     } else {
-      // Check if block time is available first
       if (!blockTimeData) {
         showToast('Please select a block time first to set up Pomodoro');
         return;
       }
 
-      // Calculate duration from block time for Pomodoro (not from manual duration)
       let calculatedDuration = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        calculatedDuration = calculateDuration(
-          blockTimeData.startTime,
-          blockTimeData.endTime,
-        );
+        calculatedDuration = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
       }
 
       if (!calculatedDuration) {
-        showToast(
-          'Please select a block time first to calculate duration for Pomodoro',
-        );
+        showToast('Please select a block time first to calculate duration for Pomodoro');
         return;
       }
 
-      // Prepare current data and navigate to PomodoroSettings - UPDATED WITHOUT CALLBACK
       const currentData = {
         ...route.params,
         habit,
@@ -289,8 +307,8 @@ const RecurringTimerScreen = () => {
         addToGoogleCalendar,
         reminderData,
         startDate: startDate.toISOString(),
+        currentStep,
         screenType: 'RecurringTimer',
-        // Pass duration data calculated from block time for pomodoro
         scheduleData: {
           durationData: calculatedDuration,
           blockTimeData: blockTimeData,
@@ -303,138 +321,40 @@ const RecurringTimerScreen = () => {
           reminderData,
           addToGoogleCalendar,
         },
-        // REMOVED: onPomodoroSave callback function
       };
 
-      // Navigate to PomodoroSettings screen
       navigation.navigate('PomodoroSettings', currentData);
     }
   };
 
-  // Validation function
-  const validateForm = () => {
-    if (!habit.trim()) {
-      showToast('Enter a name');
-      return false;
-    }
-
-    if (selectedDropdownValue === 'Less than') {
-      const {hours, minutes, seconds} = selectedTime;
-      const totalTime = hours + minutes + seconds;
-
-      if (totalTime === 0) {
-        showToast('Enter a value greater than zero');
-        return false;
-      }
-    }
-
-    if (!durationData) {
-      showToast('Select a Duration');
-      return false;
-    }
-
-    if (!blockTimeData) {
-      showToast('Select a block time');
-      return false;
-    }
-
-    // Validation for timer task - must have Pomodoro
-    if (isTimerEvaluation && !addPomodoro) {
-      showToast('Select a Pomodoro');
-      return false;
-    }
-
-    // Validate pomodoro settings if pomodoro is enabled
-    if (addPomodoro && (!pomodoroSettings || !pomodoroSettings.focusTime)) {
-      showToast('Please configure Pomodoro settings');
-      return false;
-    }
-
-    return true;
-  };
-
-  // Handle dropdown selection
-  const handleDropdownSelect = value => {
-    setSelectedDropdownValue(value);
-
-    if (toastVisible) {
-      hideToast();
-    }
-  };
-
-  // Handle time selection
-  const handleTimeSelect = time => {
-    setSelectedTime(time);
-
-    if (toastVisible && selectedDropdownValue === 'Less than') {
-      const {hours, minutes, seconds} = time;
-      const totalTime = hours + minutes + seconds;
-
-      if (totalTime > 0) {
-        hideToast();
-      }
-    }
-  };
-
-  // Handle habit input change
-  const handleHabitChange = text => {
-    setHabit(text);
-
-    if (toastVisible) {
-      hideToast();
-    }
-  };
-
-  // UPDATED Handle Next button press with ReminderScheduler
-  const handleNextPress = async () => {
-    if (!validateForm()) {
-      return;
-    }
-
-    // Hide any existing toast
-    if (toastVisible) {
-      hideToast();
-    }
-
-    // Check if user is authenticated
+  // SAVE TASK LOGIC
+  const handleSaveTask = async () => {
     if (!user) {
       Alert.alert('Error', 'Please log in to create tasks.');
       return;
     }
 
     try {
-      // Calculate duration from block time for pomodoro (not from manual duration)
       let finalDurationForPomodoro = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        finalDurationForPomodoro = calculateDuration(
-          blockTimeData.startTime,
-          blockTimeData.endTime,
-        );
+        finalDurationForPomodoro = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
       }
 
-      // Prepare task data for database
       const taskData = {
-        // Basic task information
         title: habit.trim(),
         description: description.trim(),
         category: selectedCategory.title || selectedCategory,
         taskType: 'Recurring',
         evaluationType: 'timer',
         userId: user.id,
-
-        // Visual and display properties
         time: blockTimeData?.startTime || null,
         timeColor: '#E4EBF3',
         tags: ['Recurring', priority || 'Important'],
         image: null,
         hasFlag: true,
         priority: priority || 'Important',
-
-        // Timer-specific data
         timerDuration: selectedTime,
         timerCondition: selectedDropdownValue,
-
-        // Repetition and frequency settings (default for recurring tasks)
         frequencyType: 'Every Day',
         selectedWeekdays: [],
         selectedMonthDates: [],
@@ -447,73 +367,43 @@ const RecurringTimerScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-
-        // Scheduling settings
-        startDate: startDate
-          ? new Date(startDate).toISOString().split('T')[0]
-          : null,
+        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
         endDate: null,
         isEndDateEnabled: false,
-
-        // Block time settings
         blockTimeEnabled: !!blockTimeData,
         blockTimeData: blockTimeData,
-
-        // Duration settings (now from DurationModal picker)
         durationEnabled: true,
-        durationData: durationData, // Use manual duration from picker
-
-        // Additional features
+        durationData: durationData,
         addToGoogleCalendar: addToGoogleCalendar,
         isPendingTask: isPendingTask,
-
-        // Goal linking
         linkedGoalId: null,
         linkedGoalTitle: null,
         linkedGoalType: null,
-
-        // Notes
         note: note,
-
-        // Progress tracking
         progress: null,
       };
 
-      // Add pomodoro settings if enabled - Use duration calculated from block time
       if (addPomodoro && pomodoroSettings) {
-        // Use duration calculated from block time for pomodoro, not manual duration
-        taskData.pomodoroDuration = finalDurationForPomodoro
-          ? finalDurationForPomodoro.totalMinutes
-          : null;
-
-        // Store pomodoro settings
+        taskData.pomodoroDuration = finalDurationForPomodoro ? finalDurationForPomodoro.totalMinutes : null;
         taskData.focusDuration = pomodoroSettings.focusTime;
         taskData.shortBreakDuration = pomodoroSettings.shortBreak;
         taskData.longBreakDuration = pomodoroSettings.longBreak;
         taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
-        taskData.autoStartShortBreaks =
-          pomodoroSettings.autoStartShortBreaks || false;
-        taskData.autoStartFocusSessions =
-          pomodoroSettings.autoStartFocusSessions || false;
-
-        // Initialize pomodoro progress fields
+        taskData.autoStartShortBreaks = pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions = pomodoroSettings.autoStartFocusSessions || false;
         taskData.pomodoroSessionsCompleted = 0;
-        taskData.pomodoroTotalSessions =
-          pomodoroSettings.focusSessionsPerRound || 4;
+        taskData.pomodoroTotalSessions = pomodoroSettings.focusSessionsPerRound || 4;
       }
 
-      // ADD THIS NEW SECTION - Prepare reminder data for task
       if (addReminder && reminderData) {
         taskData.reminderEnabled = true;
         taskData.reminderData = reminderData;
-
-        // Add schedule info needed for reminder calculations
         taskData.startDate = startDate;
-        taskData.endDate = null; // No end date for recurring timer
+        taskData.endDate = null;
         taskData.isEndDateEnabled = false;
         taskData.blockTimeData = blockTimeData;
         taskData.durationData = durationData;
-        taskData.frequencyType = 'Every Day'; // Default for recurring timer
+        taskData.frequencyType = 'Every Day';
         taskData.selectedWeekdays = [];
         taskData.everyDays = 1;
       } else {
@@ -521,79 +411,74 @@ const RecurringTimerScreen = () => {
         taskData.reminderData = null;
       }
 
-      console.log('Saving recurring task data:', taskData);
-
-      // Save to database
       const savedTask = await taskService.createTask(taskData);
 
-      console.log('Recurring task saved successfully:', savedTask);
-
-      // ADD THIS NEW SECTION - Schedule reminders after task is saved
       let reminderMessage = '';
       if (taskData.reminderEnabled && taskData.reminderData) {
         try {
-          // Get user profile for personalized TTS
           const userProfile = {
-            username:
-              user?.user_metadata?.display_name ||
-              user?.user_metadata?.username ||
-              user?.email?.split('@')[0],
+            username: user?.user_metadata?.display_name || user?.user_metadata?.username || user?.email?.split('@')[0],
             display_name: user?.user_metadata?.display_name,
             user_metadata: user?.user_metadata,
             email: user?.email,
           };
 
-          const scheduledReminders =
-            await ReminderScheduler.scheduleTaskReminders(
-              {
-                ...taskData,
-                userProfile: userProfile,
-              },
-              savedTask,
-            );
+          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
+            {...taskData, userProfile: userProfile},
+            savedTask,
+          );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
-            console.log('Scheduled reminders:', scheduledReminders);
           }
         } catch (reminderError) {
           console.error('Error scheduling reminders:', reminderError);
-          // Don't fail the entire task creation if reminder scheduling fails
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      // Update success alert to include reminder info
-      Alert.alert(
-        'Success',
-        `Recurring task created successfully!${reminderMessage}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: 'BottomTab',
-                    params: {newTaskCreated: true},
-                  },
-                ],
-              });
-            },
+      Alert.alert('Success', `Recurring task created successfully!${reminderMessage}`, [
+        {
+          text: 'OK',
+          onPress: () => {
+            navigation.reset({
+              index: 0,
+              routes: [{name: 'BottomTab', params: {newTaskCreated: true}}],
+            });
           },
-        ],
-      );
+        },
+      ]);
     } catch (error) {
       console.error('Error saving recurring task:', error);
-      Alert.alert(
-        'Error',
-        'Failed to create recurring task. Please try again.',
-      );
+      Alert.alert('Error', 'Failed to create recurring task. Please try again.');
     }
   };
 
-  // Date formatting
+  const handleDropdownSelect = value => {
+    setSelectedDropdownValue(value);
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
+  const handleTimeSelect = time => {
+    setSelectedTime(time);
+    if (toastVisible && selectedDropdownValue === 'Less than') {
+      const {hours, minutes, seconds} = time;
+      const totalTime = hours + minutes + seconds;
+      if (totalTime > 0) {
+        hideToast();
+      }
+    }
+  };
+
+  const handleHabitChange = text => {
+    setHabit(text);
+    if (toastVisible) {
+      hideToast();
+    }
+  };
+
   const formatDisplayDate = date => {
     const today = new Date();
     const isToday = date.toDateString() === today.toDateString();
@@ -603,20 +488,7 @@ const RecurringTimerScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -630,23 +502,18 @@ const RecurringTimerScreen = () => {
     if (hours === 0 && minutes === 0) {
       return '00:00';
     }
-    return `${hours.toString().padStart(2, '0')}:${minutes
-      .toString()
-      .padStart(2, '0')}`;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };
 
-  // Event handlers
   const handleStartDateSelect = date => {
     setStartDate(date);
     setShowStartDatePicker(false);
   };
 
-  // Handle Duration press - Now opens DurationModal
   const handleDurationPress = () => {
     setShowDurationModal(true);
   };
 
-  // Handle Duration save - Now saves from DurationModal
   const handleDurationSave = durationData => {
     setDurationData(durationData);
     if (toastVisible) {
@@ -660,9 +527,7 @@ const RecurringTimerScreen = () => {
 
   const handleBlockTimeSave = timeData => {
     setBlockTimeData(timeData);
-
-    // Hide toast if it was showing block time validation message
-    if (toastVisible && toastMessage === 'Select a block time') {
+    if (toastVisible) {
       hideToast();
     }
   };
@@ -684,7 +549,6 @@ const RecurringTimerScreen = () => {
     setNote(noteText);
   };
 
-  // UPDATED reminder handlers to match SchedulePreference pattern
   const handleReminderToggle = () => {
     if (addReminder) {
       setAddReminder(false);
@@ -704,124 +568,428 @@ const RecurringTimerScreen = () => {
   };
 
   const handleLinkToGoalPress = () => {
+    if (toastVisible) {
+      hideToast();
+    }
     navigation.navigate('LinkGoal');
   };
 
-  // Toggle component
   const renderToggle = (isEnabled, onToggle) => {
     return (
-      <TouchableOpacity
-        style={styles.toggleContainer}
-        onPress={onToggle}
-        activeOpacity={0.7}>
-        <View
-          style={[
-            styles.toggleTrack,
-            isEnabled ? styles.toggleTrackActive : styles.toggleTrackInactive,
-          ]}>
-          <View
-            style={[
-              styles.toggleSwitch,
-              isEnabled
-                ? styles.toggleSwitchActive
-                : styles.toggleSwitchInactive,
-            ]}
-          />
+      <TouchableOpacity style={styles.toggleContainer} onPress={onToggle} activeOpacity={0.7}>
+        <View style={[styles.toggleTrack, isEnabled ? styles.toggleTrackActive : styles.toggleTrackInactive]}>
+          <View style={[styles.toggleSwitch, isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive]} />
         </View>
       </TouchableOpacity>
     );
   };
 
-  // Render Duration section (Updated - Now with DurationModal picker)
-  const renderDurationSection = () => {
+  const renderOptionRow = (
+    iconSource,
+    title,
+    hasToggle = false,
+    toggleState = false,
+    onTogglePress = null,
+    hasPlus = false,
+    onPlusPress = null,
+    subtitle = null,
+    customRight = null,
+    onRowPress = null,
+  ) => {
     return (
       <View style={styles.optionContainer}>
         <TouchableOpacity
           style={styles.optionRow}
-          onPress={handleDurationPress}>
+          activeOpacity={onRowPress ? 0.7 : hasToggle || hasPlus ? 1 : 0.7}
+          onPress={onRowPress || (() => {})}>
           <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Clock}
-              style={styles.optionIcon}
-              resizeMode="contain"
-            />
+            <Image source={iconSource} style={styles.optionIcon} resizeMode="contain" />
             <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Duration</Text>
-              {durationData && (
-                <Text style={styles.optionSubtitle}>
-                  {durationData.formattedDuration ||
-                    `${durationData.hours}h ${durationData.minutes}m`}
-                </Text>
-              )}
+              <Text style={styles.optionTitle}>{title}</Text>
+              {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
             </View>
           </View>
 
-          <TouchableOpacity
-            onPress={handleDurationPress}
-            style={styles.plusButton}>
-            <Image
-              source={Icons.Plus}
-              style={styles.plusIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
+          <View style={styles.optionRight}>
+            {hasToggle && renderToggle(toggleState, onTogglePress)}
+            {hasPlus && (
+              <TouchableOpacity onPress={onPlusPress} style={styles.plusButton} activeOpacity={0.7}>
+                <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+              </TouchableOpacity>
+            )}
+            {customRight && customRight}
+          </View>
         </TouchableOpacity>
       </View>
     );
   };
 
-  // Render Pomodoro section
-  const renderPomodoroSection = () => {
-    // Format pomodoro settings display
-    const formatPomodoroDisplay = () => {
-      if (!pomodoroSettings) return null;
+  // RENDER STEP CONTENT
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        // Step 1: Habit, Dropdown/Time, Description, Category, Start Date
+        return (
+          <>
+            {/* Habit Input */}
+            <View style={styles.inputContainer}>
+              <Text
+                style={[
+                  styles.inputLabel,
+                  isHabitLabelActive ? styles.inputLabelActive : styles.inputLabelInactive,
+                ]}>
+                Habit
+              </Text>
+              <TextInput
+                style={styles.textInput}
+                value={habit}
+                onChangeText={handleHabitChange}
+                onFocus={() => setHabitFocused(true)}
+                onBlur={() => setHabitFocused(false)}
+                placeholder=""
+                placeholderTextColor="#575656"
+                maxLength={70}
+              />
+            </View>
 
-      const focusTime = pomodoroSettings.focusTime || 25;
-      const shortBreak = pomodoroSettings.shortBreak || 5;
-      const sessionsPerRound = pomodoroSettings.focusSessionsPerRound || 4;
-
-      return `${focusTime}min focus, ${shortBreak}min break, ${sessionsPerRound} sessions`;
-    };
-
-    // Calculate duration from block time for display (not from manual duration)
-    let blockTimeDuration = null;
-    if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-      blockTimeDuration = calculateDuration(
-        blockTimeData.startTime,
-        blockTimeData.endTime,
-      );
-    }
-
-    return (
-      <View style={styles.optionContainer}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
-          <View style={styles.optionLeft}>
-            <Image
-              source={Icons.Clock}
-              style={styles.optionIcon}
-              resizeMode="contain"
+            {/* Custom Dropdown */}
+            <CustomDropdown
+              options={dropdownOptions}
+              defaultValue="At Least"
+              onSelect={handleDropdownSelect}
+              placeholder="Select option"
             />
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>Add Pomodoro</Text>
-              {addPomodoro && pomodoroSettings && (
-                <Text style={styles.optionSubtitle}>
-                  {formatPomodoroDisplay()}
-                </Text>
-              )}
-              {addPomodoro && blockTimeDuration && (
-                <Text style={styles.pomodoroDuration}>
-                  Duration: {blockTimeDuration.formattedDuration}
-                </Text>
+
+            {/* Time Display Container */}
+            <View style={styles.timeMainContainer}>
+              <TouchableOpacity
+                style={styles.timeDisplayContainer}
+                onPress={() => setShowTimePicker(true)}>
+                <Text style={styles.timeDisplayText}>{formatDisplayTime(selectedTime)}</Text>
+              </TouchableOpacity>
+              <Text style={styles.dayText}>a day.</Text>
+            </View>
+
+            {/* Example Text */}
+            <Text style={styles.exampleText}>
+              e.g. Study for the exam. At least 2 chapters a day
+            </Text>
+
+            {/* Description Input */}
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.descriptionInput}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Description (optional)"
+                placeholderTextColor="#575656"
+                multiline={true}
+                maxLength={200}
+              />
+            </View>
+
+            {/* Category */}
+            <View style={styles.optionContainer}>
+              <View style={styles.optionRow}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Category} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Category</Text>
+                  </View>
+                </View>
+                <View style={styles.categoryRight}>
+                  <Text style={styles.categoryText}>
+                    {selectedCategory?.title || selectedCategory}
+                  </Text>
+                  <Image source={Icons.Taskhome} style={styles.categoryIcon} resizeMode="contain" />
+                </View>
+              </View>
+            </View>
+
+            {/* Start Date */}
+            {renderOptionRow(
+              Icons.Set,
+              'Start Date',
+              false,
+              false,
+              null,
+              false,
+              null,
+              null,
+              <View style={styles.dateContainer}>
+                <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+              </View>,
+              () => setShowStartDatePicker(true),
+            )}
+          </>
+        );
+
+      case 2:
+        // Step 2: Duration, Block Time, Pomodoro
+        return (
+          <>
+            {renderOptionRow(
+              Icons.Clock,
+              'Duration',
+              false,
+              false,
+              null,
+              true,
+              handleDurationPress,
+              durationData
+                ? durationData.formattedDuration || `${durationData.hours}h ${durationData.minutes}m`
+                : null,
+            )}
+
+            {renderOptionRow(
+              Icons.Alarm,
+              'Block Time',
+              false,
+              false,
+              null,
+              true,
+              handleBlockTimePress,
+              blockTimeData ? `${blockTimeData.startTime} - ${blockTimeData.endTime}` : null,
+            )}
+
+            {/* Add Pomodoro */}
+            <View style={styles.optionContainer}>
+              <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Clock} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Add Pomodoro</Text>
+                    {addPomodoro && pomodoroSettings && (
+                      <Text style={styles.optionSubtitle}>
+                        {`${pomodoroSettings.focusTime || 25}min focus, ${
+                          pomodoroSettings.shortBreak || 5
+                        }min break, ${pomodoroSettings.focusSessionsPerRound || 4} sessions`}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  {renderToggle(addPomodoro, handlePomodoroToggle)}
+                </View>
+              </TouchableOpacity>
+            </View>
+          </>
+        );
+
+      case 3:
+        // Step 3: Priority, Note, Pending Task
+        return (
+          <>
+            {/* Priority */}
+            <View
+              style={[
+                styles.optionContainer,
+                showPriorityDropdown && styles.priorityContainerExpanded,
+              ]}>
+              <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handlePriorityPress}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Flag} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Priority</Text>
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  <MaterialIcons
+                    name={showPriorityDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={WP(6)}
+                    color="#646464"
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {showPriorityDropdown && (
+                <View style={styles.priorityDropdown}>
+                  <View style={styles.priorityButtonsContainer}>
+                    {priorityOptions.map((option, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={[
+                          styles.priorityButton,
+                          {backgroundColor: option.backgroundColor},
+                          priority === option.value && styles.priorityButtonSelected,
+                        ]}
+                        onPress={() => handlePrioritySelect(option)}
+                        activeOpacity={0.8}>
+                        <Text style={[styles.priorityButtonText, {color: option.textColor}]}>
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
               )}
             </View>
-          </View>
 
-          <View style={styles.optionRight}>
-            {renderToggle(addPomodoro, handlePomodoroToggle)}
+            {/* Note */}
+            <View style={styles.optionContainer}>
+              <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handleNotePress}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Note} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Note</Text>
+                    {note && (
+                      <Text style={styles.optionSubtitle} numberOfLines={1}>
+                        {note}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Pending Task */}
+            <View style={styles.optionContainer}>
+              <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Pending} style={styles.optionIcon1} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Pending Task</Text>
+                    <Text style={styles.pendingSubtitle}>
+                      It will be shown each day until completed.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  <TouchableOpacity
+                    style={styles.radioButton}
+                    onPress={() => setIsPendingTask(!isPendingTask)}
+                    activeOpacity={0.7}>
+                    <View style={[styles.radioOuter, isPendingTask && styles.radioOuterSelected]}>
+                      {isPendingTask && <View style={styles.radioInner} />}
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </>
+        );
+
+      case 4:
+        // Step 4: Link to Goal, Reminder, Google Calendar
+        return (
+          <>
+            <View style={styles.optionContainer}>
+              <TouchableOpacity
+                style={styles.optionRow}
+                activeOpacity={0.7}
+                onPress={handleLinkToGoalPress}>
+                <View style={styles.optionLeft}>
+                  <Image source={Icons.Link} style={styles.optionIcon} resizeMode="contain" />
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionTitle}>Link To Goal</Text>
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  <TouchableOpacity
+                    style={styles.plusButton}
+                    activeOpacity={0.7}
+                    onPress={handleLinkToGoalPress}>
+                    <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionContainer}>
+              <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                <View style={styles.optionLeft}>
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.addTitle}>Add a Reminder</Text>
+                    {reminderData && addReminder && (
+                      <Text style={styles.optionSubtitle1}>
+                        {reminderData.type === 'notification'
+                          ? '🔔 Notification'
+                          : reminderData.type === 'alarm'
+                          ? '⏰ Alarm'
+                          : '🔕 No reminder'}{' '}
+                        at {reminderData.time}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.optionRight}>
+                  {renderToggle(addReminder, handleReminderToggle)}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.calendarContainer}>
+              <View
+                style={[
+                  styles.optionContainer,
+                  addToGoogleCalendar ? styles.noBottomBorder : null,
+                ]}>
+                <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
+                  <View style={styles.optionLeft}>
+                    <View style={styles.optionTextContainer}>
+                      <Text style={styles.optionTitle}>Add to Google Calendar</Text>
+                    </View>
+                  </View>
+                  <View>
+                    {renderToggle(addToGoogleCalendar, () =>
+                      setAddToGoogleCalendar(!addToGoogleCalendar),
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {addToGoogleCalendar && (
+                <View style={[styles.optionContainer, styles.connectedContainer]}>
+                  <TouchableOpacity style={styles.optionRow}>
+                    <View style={styles.optionLeft}>
+                      <View style={styles.optionTextContainer}>
+                        <Text style={styles.optionTitle1}>Select Calendar</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // RENDER PROGRESS INDICATOR
+  const renderProgressIndicator = () => {
+    const dots = [];
+    for (let i = 1; i <= TOTAL_STEPS; i++) {
+      if (i < currentStep) {
+        dots.push(
+          <View key={i} style={styles.progressDotCompleted}>
+            <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
           </View>
-        </TouchableOpacity>
-      </View>
-    );
+        );
+      } else if (i === currentStep) {
+        dots.push(
+          <View key={i} style={styles.progressDotActive}>
+            <View style={styles.progressDotActiveInner}>
+              <Text style={styles.progressDotTextActive}>{i}</Text>
+            </View>
+          </View>
+        );
+      } else {
+        dots.push(
+          <View key={i} style={styles.progressDotInactive}>
+            <Text style={styles.progressDotTextInactive}>{i}</Text>
+          </View>
+        );
+      }
+
+      if (i < TOTAL_STEPS) {
+        dots.push(<View key={`line-${i}`} style={styles.progressLine} />);
+      }
+    }
+
+    return <View style={styles.progressIndicator}>{dots}</View>;
   };
 
   return (
@@ -830,384 +998,29 @@ const RecurringTimerScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers
-          title="Define Your Task"
-          onBackPress={() => navigation.goBack()}>
-          <TouchableOpacity onPress={handleNextPress}>
-            <Text style={styles.nextText}>Next</Text>
-          </TouchableOpacity>
-        </Headers>
+        <Headers title="New Task" onBackPress={currentStep > 1 ? handleBackPress : null} />
       </View>
 
       {/* Content */}
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={{paddingBottom: HP(3)}}
-        showsVerticalScrollIndicator={false}>
-        {/* Habit Input with Floating Label */}
-        <View style={styles.inputContainer}>
-          <Text
-            style={[
-              styles.inputLabel,
-              isHabitLabelActive
-                ? styles.inputLabelActive
-                : styles.inputLabelInactive,
-            ]}>
-            Habit
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {renderStepContent()}
+
+        {/* Next/Done Button */}
+        <TouchableOpacity 
+          style={styles.nextButton} 
+          onPress={handleNextPress}
+          activeOpacity={0.8}>
+          <Text style={styles.nextButtonText}>
+            {currentStep === TOTAL_STEPS ? 'Done' : 'Next'}
           </Text>
-          <TextInput
-            style={styles.textInput}
-            value={habit}
-            onChangeText={handleHabitChange}
-            onFocus={() => setHabitFocused(true)}
-            onBlur={() => setHabitFocused(false)}
-            placeholder=""
-            placeholderTextColor="#575656"
-            maxLength={70}
-          />
-        </View>
+        </TouchableOpacity>
 
-        {/* Custom Dropdown */}
-        <CustomDropdown
-          options={dropdownOptions}
-          defaultValue="At Least"
-          onSelect={handleDropdownSelect}
-          placeholder="Select option"
-        />
-
-        {/* Time Display Container */}
-        <View style={styles.timeMainContainer}>
-          <TouchableOpacity
-            style={styles.timeDisplayContainer}
-            onPress={() => setShowTimePicker(true)}>
-            <Text style={styles.timeDisplayText}>
-              {formatDisplayTime(selectedTime)}
-            </Text>
-          </TouchableOpacity>
-          <Text style={styles.dayText}>a day.</Text>
-        </View>
-
-        {/* Example Text */}
-        <Text style={styles.exampleText}>
-          e.g. Study for the exam. At least 2 chapters a day
-        </Text>
-
-        {/* Description Input */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.descriptionInput}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Description (optional)"
-            placeholderTextColor="#575656"
-            multiline={true}
-            maxLength={200}
-          />
-        </View>
-
-        {/* Category */}
-        <View style={styles.optionContainer}>
-          <View style={styles.optionRow}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Category}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Category</Text>
-              </View>
-            </View>
-
-            <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>
-                {selectedCategory?.title || selectedCategory}
-              </Text>
-              <Image
-                source={Icons.Taskhome}
-                style={styles.categoryIcon}
-                resizeMode="contain"
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Start Date */}
-        <View style={styles.optionContainer}>
-          <TouchableOpacity
-            style={styles.optionRow}
-            onPress={() => setShowStartDatePicker(true)}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Set}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Start Date</Text>
-              </View>
-            </View>
-
-            <View style={styles.dateContainer}>
-              <Text style={styles.dateText}>
-                {formatDisplayDate(startDate)}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Duration - Now above Block Time and with DurationModal */}
-        {renderDurationSection()}
-
-        {/* Block Time - Now below Duration */}
-        <View style={styles.optionContainer}>
-          <TouchableOpacity
-            style={styles.optionRow}
-            onPress={handleBlockTimePress}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Alarm}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Block Time</Text>
-                {blockTimeData && (
-                  <Text style={styles.optionSubtitle}>
-                    {blockTimeData.startTime} - {blockTimeData.endTime}
-                  </Text>
-                )}
-              </View>
-            </View>
-
-            <TouchableOpacity
-              onPress={handleBlockTimePress}
-              style={styles.plusButton}>
-              <Image
-                source={Icons.Plus}
-                style={styles.plusIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </View>
-
-        {/* Add Pomodoro - Now uses block time duration for calculations */}
-        {renderPomodoroSection()}
-
-        {/* Priority */}
-        <View
-          style={[
-            styles.optionContainer,
-            showPriorityDropdown && styles.priorityContainerExpanded,
-          ]}>
-          <TouchableOpacity
-            style={styles.optionRow}
-            onPress={handlePriorityPress}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Flag}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Priority</Text>
-              </View>
-            </View>
-
-            <MaterialIcons
-              name={
-                showPriorityDropdown
-                  ? 'keyboard-arrow-up'
-                  : 'keyboard-arrow-down'
-              }
-              size={WP(6)}
-              color="#646464"
-            />
-          </TouchableOpacity>
-
-          {showPriorityDropdown && (
-            <View style={styles.priorityDropdown}>
-              <View style={styles.priorityButtonsContainer}>
-                {priorityOptions.map((option, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.priorityButton,
-                      {backgroundColor: option.backgroundColor},
-                      priority === option.value &&
-                        styles.priorityButtonSelected,
-                    ]}
-                    onPress={() => handlePrioritySelect(option)}>
-                    <Text
-                      style={[
-                        styles.priorityButtonText,
-                        {color: option.textColor},
-                      ]}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* Note */}
-        <View style={styles.optionContainer}>
-          <TouchableOpacity style={styles.optionRow} onPress={handleNotePress}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Note}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Note</Text>
-                {note && (
-                  <Text style={styles.optionSubtitle} numberOfLines={1}>
-                    {note}
-                  </Text>
-                )}
-              </View>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Pending Task */}
-        <View style={styles.optionContainer}>
-          <TouchableOpacity style={styles.optionRow}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Pending}
-                style={styles.optionIcon1}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Pending Task</Text>
-                <Text style={styles.pendingSubtitle}>
-                  It will be shown each day until completed.
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.radioButton}
-              onPress={() => setIsPendingTask(!isPendingTask)}>
-              <View
-                style={[
-                  styles.radioOuter,
-                  isPendingTask && styles.radioOuterSelected,
-                ]}>
-                {isPendingTask && <View style={styles.radioInner} />}
-              </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </View>
-
-        {/* Link To Goal */}
-        <View style={styles.optionContainer}>
-          <TouchableOpacity
-            style={styles.optionRow}
-            onPress={handleLinkToGoalPress}>
-            <View style={styles.optionLeft}>
-              <Image
-                source={Icons.Link}
-                style={styles.optionIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Link To Goal</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.plusButton}
-              onPress={handleLinkToGoalPress}>
-              <Image
-                source={Icons.Plus}
-                style={styles.plusIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </View>
-
-        {/* Add a Reminder */}
-        <View style={styles.optionContainer}>
-          <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
-            <View style={styles.optionLeft}>
-              <View style={styles.optionTextContainer}>
-                <Text style={styles.addTitle}>Add a Reminder</Text>
-                {reminderData && addReminder && (
-                  <Text style={styles.optionSubtitle1}>
-                    {reminderData.type === 'notification'
-                      ? '🔔 Notification'
-                      : reminderData.type === 'alarm'
-                      ? '⏰ Alarm'
-                      : '🔕 No reminder'}{' '}
-                    at {reminderData.time}
-                  </Text>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.optionRight}>
-              {renderToggle(addReminder, handleReminderToggle)}
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Add to Google Calendar */}
-        <View style={styles.calendarContainer}>
-          <View
-            style={[
-              styles.optionContainer,
-              addToGoogleCalendar ? styles.noBottomBorder : null,
-            ]}>
-            <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
-              <View style={styles.optionLeft}>
-                <View style={styles.optionTextContainer}>
-                  <Text style={styles.optionTitle}>Add to Google Calendar</Text>
-                </View>
-              </View>
-
-              <View style={styles.optionRight}>
-                {renderToggle(addToGoogleCalendar, () =>
-                  setAddToGoogleCalendar(!addToGoogleCalendar),
-                )}
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {addToGoogleCalendar && (
-            <View style={[styles.optionContainer, styles.connectedContainer]}>
-              <TouchableOpacity style={styles.optionRow}>
-                <View style={styles.optionLeft}>
-                  <View style={styles.optionTextContainer}>
-                    <Text style={styles.optionTitle1}>Select Calendar</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
+        {/* Spacer for bottom content */}
         <View style={styles.bottomSpacer} />
-
-        {/* Progress Indicator */}
-        <View style={styles.progressIndicator}>
-          <View style={styles.progressDotCompleted}>
-            <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
-          </View>
-          <View style={styles.progressLine} />
-          <View style={styles.progressDotActive}>
-            <View style={styles.progressDotActiveInner}>
-              <Text style={styles.progressDotTextActive}>2</Text>
-            </View>
-          </View>
-        </View>
       </ScrollView>
+
+      {/* Progress Indicator */}
+      {renderProgressIndicator()}
 
       {/* Modals */}
       <TimePicker
@@ -1225,7 +1038,6 @@ const RecurringTimerScreen = () => {
         title="Select Start Date"
       />
 
-      {/* Duration Modal - Now implemented */}
       <DurationModal
         visible={showDurationModal}
         onClose={() => setShowDurationModal(false)}
@@ -1254,7 +1066,6 @@ const RecurringTimerScreen = () => {
         initialNote={note}
       />
 
-      {/* Custom Toast */}
       <CustomToast
         visible={toastVisible}
         message={toastMessage}
@@ -1277,28 +1088,19 @@ const styles = StyleSheet.create({
     marginTop: HP(2.5),
     paddingBottom: HP(0.625),
   },
-  nextText: {
-    fontSize: FS(1.8),
-    color: '#0059FF',
-    fontFamily: 'OpenSans-Bold',
-    marginTop: HP(0.5),
-  },
   content: {
     flex: 1,
-    paddingHorizontal: WP(4.533),
-    paddingTop: HP(2.8),
+    paddingHorizontal: WP(3.5),
+    paddingTop: HP(2),
   },
   inputContainer: {
     backgroundColor: colors.White,
-    borderRadius: WP(2.133),
+    borderRadius: WP(1.8),
     padding: WP(2.133),
-    marginBottom: HP(2.3),
+    marginBottom: HP(1.7),
     elevation: 3,
     shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: HP(0.25),
-    },
+    shadowOffset: {width: 0, height: HP(0.25)},
     shadowOpacity: 0.08,
     shadowRadius: WP(2.133),
     position: 'relative',
@@ -1312,7 +1114,7 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Bold',
     position: 'absolute',
     backgroundColor: colors.White,
-    paddingHorizontal: WP(1.7),
+    paddingHorizontal: WP(1.4),
     zIndex: 1,
   },
   inputLabelActive: {
@@ -1349,10 +1151,7 @@ const styles = StyleSheet.create({
     marginRight: WP(4.0),
     elevation: 3,
     shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: HP(0.125),
-    },
+    shadowOffset: {width: 0, height: HP(0.125)},
     shadowOpacity: 0.05,
     shadowRadius: WP(0.533),
     borderWidth: 1,
@@ -1370,7 +1169,7 @@ const styles = StyleSheet.create({
     color: '#929292',
   },
   exampleText: {
-    fontSize: FS(1.25),
+    fontSize: FS(1.5),
     fontFamily: 'OpenSans-SemiBold',
     color: '#A3A3A3',
     marginBottom: HP(2.0),
@@ -1378,11 +1177,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   descriptionInput: {
-    fontSize: FS(1.75),
+    fontSize: FS(1.8),
     fontFamily: 'OpenSans-Regular',
     color: '#575656',
     minHeight: HP(2.0),
-    paddingVertical: HP(0.4375),
+    paddingVertical: HP(0.3),
     paddingHorizontal: WP(2.667),
   },
   optionContainer: {
@@ -1392,10 +1191,7 @@ const styles = StyleSheet.create({
     marginBottom: HP(0.9),
     elevation: 3,
     shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: HP(0.25),
-    },
+    shadowOffset: {width: 0, height: HP(0.25)},
     shadowOpacity: 0.08,
     shadowRadius: WP(2.133),
     borderWidth: 1,
@@ -1417,6 +1213,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
     marginTop: 0,
+    position: 'relative',
     borderTopWidth: 0,
     height: HP(5.5),
   },
@@ -1435,6 +1232,7 @@ const styles = StyleSheet.create({
   optionRight: {
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
   },
   categoryRight: {
     alignItems: 'center',
@@ -1488,13 +1286,7 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(-0.4),
-    marginLeft: WP(3),
-  },
-  pomodoroDuration: {
-    fontSize: FS(1.3),
-    fontFamily: 'OpenSans-Regular',
-    color: '#888888',
-    marginTop: HP(0.2),
+    marginLeft: WP(3.5),
   },
   pendingSubtitle: {
     fontSize: FS(1.28),
@@ -1593,12 +1385,31 @@ const styles = StyleSheet.create({
     borderRadius: WP(1.25),
     backgroundColor: colors.Primary,
   },
+  nextButton: {
+    backgroundColor: colors.Primary,
+    paddingVertical: HP(1.4),
+    paddingHorizontal: WP(7),
+    borderRadius: WP(3),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: HP(3),
+    marginBottom: HP(1),
+    alignSelf: 'center',
+    elevation: 2,
+    shadowColor: colors.Shadow,
+    shadowOffset: {width: 0, height: HP(0.25)},
+    shadowOpacity: 0.1,
+    shadowRadius: WP(1.5),
+  },
+  nextButtonText: {
+    fontSize: FS(1.8),
+    color: colors.White,
+    fontFamily: 'OpenSans-Bold',
+  },
   bottomSpacer: {
     height: HP(3),
   },
-  calendarContainer: {
-    // Container for calendar sections
-  },
+  calendarContainer: {},
   priorityDropdown: {
     paddingTop: HP(1),
     paddingHorizontal: WP(10),
@@ -1626,7 +1437,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: HP(2),
+    marginBottom: HP(2.5),
   },
   progressDotCompleted: {
     width: WP(5.3),

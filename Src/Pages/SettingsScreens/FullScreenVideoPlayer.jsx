@@ -14,15 +14,71 @@ import {HP, WP, FS} from '../../utils/dimentions';
 import {colors} from '../../Helper/Contants';
 
 const FullScreenVideoPlayer = ({route, navigation}) => {
-  const {video, videoDetails} = route.params;
+  const {video, videoDetails, timerData} = route.params;
   const [isPlaying, setIsPlaying] = useState(true);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [shouldNavigateBack, setShouldNavigateBack] = useState(false);
+
   const playerRef = useRef(null);
   const controlsOpacity = useRef(new Animated.Value(1)).current;
   const hideControlsTimer = useRef(null);
+  const timerIntervalRef = useRef(null);
 
   const details = videoDetails || {};
+  const {sessionStartTime, voiceSettings, isSessionExpired} = timerData || {};
+
+  // Timer tick effect
+  useEffect(() => {
+    if (
+      !sessionStartTime ||
+      !voiceSettings ||
+      !voiceSettings.enabled ||
+      isSessionExpired
+    ) {
+      return;
+    }
+
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+
+    // Update immediately
+    const now = Date.now();
+    const elapsed = Math.floor((now - sessionStartTime) / 1000);
+    setElapsedSeconds(elapsed);
+
+    timerIntervalRef.current = setInterval(() => {
+      const now = Date.now();
+      const elapsed = Math.floor((now - sessionStartTime) / 1000);
+      setElapsedSeconds(elapsed);
+
+      // Fixed 1 hour duration (3600 seconds)
+      const durationSeconds = 60 * 60;
+
+      if (elapsed >= durationSeconds && !shouldNavigateBack) {
+        console.log('⏰ Session expired in video player - navigating back');
+        setShouldNavigateBack(true);
+      }
+    }, 1000);
+
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, [sessionStartTime, voiceSettings, isSessionExpired, shouldNavigateBack]);
+
+  // Navigate back when session expires
+  useEffect(() => {
+    if (shouldNavigateBack) {
+      // Small delay to ensure state is updated
+      setTimeout(() => {
+        navigation.goBack();
+      }, 500);
+    }
+  }, [shouldNavigateBack, navigation]);
 
   // Auto-hide controls after 3 seconds
   useEffect(() => {
@@ -87,6 +143,31 @@ const FullScreenVideoPlayer = ({route, navigation}) => {
     }
   };
 
+  // Format time for display
+  const formatTimeDisplay = seconds => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs
+        .toString()
+        .padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Get remaining time
+  const getRemainingTime = () => {
+    if (!voiceSettings || !voiceSettings.enabled) return null;
+
+    const durationSeconds = 60 * 60; // Fixed 1 hour
+    const remaining = Math.max(0, durationSeconds - elapsedSeconds);
+    return remaining;
+  };
+
+  const remainingTime = getRemainingTime();
+
   return (
     <View style={styles.container}>
       <StatusBar
@@ -95,7 +176,7 @@ const FullScreenVideoPlayer = ({route, navigation}) => {
         hidden={false}
       />
 
-      {/* Top Header with Back Button */}
+      {/* Top Header with Back Button and Timer */}
       <View style={styles.topHeader}>
         <TouchableOpacity
           style={styles.backButton}
@@ -103,6 +184,15 @@ const FullScreenVideoPlayer = ({route, navigation}) => {
           activeOpacity={0.7}>
           <MaterialIcons name="arrow-back" size={WP(7)} color="#FFFFFF" />
         </TouchableOpacity>
+
+        {voiceSettings && voiceSettings.enabled && remainingTime !== null && (
+          <View style={styles.timerContainer}>
+            <MaterialIcons name="access-time" size={WP(4.5)} color="#FFFFFF" />
+            <Text style={styles.timerText}>
+              {formatTimeDisplay(remainingTime)}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Video Player */}
@@ -192,6 +282,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: WP(4),
     paddingTop: HP(2),
     paddingBottom: HP(1),
@@ -209,6 +302,20 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.3,
     shadowRadius: 3,
+  },
+  timerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',    
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: WP(3),
+    paddingVertical: HP(0.8),
+    borderRadius: WP(5),
+  },
+  timerText: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#FFFFFF',
+    marginLeft: WP(1.5),
   },
   playerWrapper: {
     backgroundColor: '#000000',
@@ -229,7 +336,6 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    //marginBottom: HP(1.5),
   },
   viewCount: {
     fontSize: FS(1.3),

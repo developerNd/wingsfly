@@ -245,7 +245,7 @@ const PomodoroSettings = () => {
           });
           break;
           
-        case 'GoalScreen':
+        case 'TaskScreen':
           // Return to GoalScreen with pomodoro settings
           navigation.navigate('TaskScreen', {
             ...routeParams,

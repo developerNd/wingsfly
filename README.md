@@ -771,6 +771,219 @@ Gamified intensive digital wellness challenges with video-based motivation and s
 
 ---
 
+# YouTube Integration & Automated Modes
+
+## 🎥 YouTube Integration
+
+### **Personalized Content Feed**
+- **AI-powered recommendations** based on viewing history  
+- **Category-based filtering** for positive, educational, and motivational videos  
+- **Real-time video search** with content quality filtering  
+- **YouTube Shorts integration** with vertical scrolling  
+- **Smart caching system** to minimize API calls and improve performance  
+
+### **Content Discovery**
+- **Home Feed**: Personalized mix of recommended videos (70%) and general content (30%)  
+- **Shorts Feed**: Curated short-form content with swipe navigation  
+- **Search**: Real-time search with positive content filtering  
+- **Categories**: Automatic categorization based on viewing patterns  
+
+### **Viewing Experience**
+- Full-screen video player with YouTube API integration  
+- Background playback support for audio tracks  
+- Watch time tracking for personalized recommendations  
+- Offline caching for faster content loading  
+- Pull-to-refresh for latest content  
+
+### **Smart Content Filtering**
+- Automatic filtering of negative or harmful content  
+- Safe search enabled by default  
+- Positive content prioritization  
+- Age-appropriate content filtering  
+- Real-time content quality assessment  
+
+---
+
+## 🌙 Night Mode (Automated Evening Routine)
+
+### **Automatic Trigger System**
+Night Mode automatically activates **1 hour before your scheduled bedtime** to help you wind down for sleep.
+
+#### **Key Features**
+- **Auto-trigger**: Launches exactly 1 hour before bedtime  
+- **Fixed Duration**: 1-hour session for evening relaxation  
+- **Smart Lock**: Full app lock mode prevents distractions  
+- **Content Access**: Pre-configured calming videos and audio  
+- **Voice Command**: Custom voice message at session end  
+
+---
+
+### **How It Works**
+
+#### 1. **Setup (via Sleep Schedule)**
+- Set your desired wake-up time  
+- Define sleep duration (e.g., 8 hours)  
+- Bedtime is automatically calculated  
+- Night Mode trigger scheduled for 1 hour before bed  
+
+**Example:**
+- Wake-up Time: 7:00 AM
+- Sleep Duration: 8 hours
+- Calculated Bedtime: 11:00 PM
+- Night Mode Trigger: 10:00 PM (1 hour before bed)
+
+#### 2. **Auto-Launch**
+- At trigger time (e.g., 10:00 PM), app automatically opens  
+- Night Mode screen launches in full lock mode  
+- Pre-selected calming content becomes available  
+- Timer starts for 1-hour session  
+
+#### 3. **During Session**
+- Watch curated relaxing videos (meditation, nature, calm music)  
+- Listen to sleep audio tracks  
+- App remains locked — no external distractions  
+- Countdown timer shows remaining session time  
+- Can exit only through confirmation prompt  
+
+#### 4. **Session End (1 hour later)**
+- Custom voice message plays (e.g., “Time to sleep - Good night!”)  
+- Session expired screen displays  
+- Gentle reminder to go to bed  
+- App unlock available after confirmation  
+
+#### 5. **Background Behavior**
+- Works even if app was killed  
+- Reliable system-level scheduling  
+- Re-triggers properly after device restart  
+- Persists across app updates  
+
+---
+
+### **Night Mode Content**
+- Pre-configured calming YouTube videos  
+- Relaxing audio tracks (sleep sounds, meditation)  
+- No ads or interruptions during session  
+- Offline playback support for saved content  
+- Customizable content library  
+
+---
+
+### **Session Management**
+- Real-time countdown timer display  
+- Elapsed time tracking  
+- Background time synchronization  
+- Session persistence across app restarts  
+- Manual exit with confirmation (emergency only)  
+
+---
+
+## ☀️ Morning Mode (Automated Wake-Up Routine)
+
+### **Automatic Trigger System**
+Morning Mode automatically activates **at your exact scheduled wake-up time** to energize your start of the day.
+
+#### **Key Features**
+- **Auto-trigger**: Launches at exact wake-up time  
+- **Fixed Duration**: 1-hour session for morning motivation  
+- **Smart Lock**: Full app lock mode for focused morning routine  
+- **Content Access**: Pre-configured energizing videos and audio  
+- **Voice Command**: Custom motivational voice message at session end  
+
+---
+
+### **How It Works**
+
+#### 1. **Setup (via Sleep Schedule)**
+- Set your desired wake-up time (e.g., 7:00 AM)  
+- Morning Mode automatically scheduled — no extra setup needed  
+
+**Example:**
+-Wake-up Time: 7:00 AM
+-Morning Mode Trigger: 7:00 AM (exact time)
+-Session Duration: 1 hour (7:00 AM - 8:00 AM)
+
+
+#### 2. **Auto-Launch**
+- At wake-up time, app automatically opens  
+- Morning Mode screen launches in full lock mode  
+- Pre-selected energizing content becomes available  
+- Timer starts for 1-hour session  
+
+#### 3. **During Session**
+- Watch curated motivational videos (morning routines, productivity, exercise)  
+- Listen to energizing audio tracks (upbeat music, podcasts)  
+- App remains locked — focused morning routine  
+- Countdown timer shows remaining session time  
+- Can exit only through confirmation prompt  
+
+#### 4. **Session End (1 hour later)**
+- Custom voice message plays (e.g., “Ready to conquer the day!”)  
+- Session completion screen displays  
+- Motivational message to start your day  
+- App unlock available after confirmation  
+
+#### 5. **Background Behavior**
+- Works even if app was killed  
+- Reliable system-level scheduling  
+- Re-triggers properly after device restart  
+- Persists across app updates  
+
+---
+
+### **Morning Mode Content**
+- Pre-configured energizing YouTube videos  
+- Motivational audio tracks (podcasts, upbeat music)  
+- No ads or interruptions during session  
+- Offline playback support for saved content  
+- Customizable content library  
+
+---
+
+### **Session Management**
+- Real-time countdown timer display  
+- Elapsed time tracking  
+- Background time synchronization  
+- Session persistence across app restarts  
+- Manual exit with confirmation (emergency only)  
+
+---
+
+## 🔄 Integration with Sleep Schedule
+
+### **One-Time Setup**
+1. Navigate to **Sleep Schedule** screen  
+2. Set your **wake-up time** (e.g., 7:00 AM)  
+3. Set desired **sleep duration** (e.g., 8 hours)  
+4. Both modes automatically configured:  
+   - **Night Mode**: 1 hour before calculated bedtime  
+   - **Morning Mode**: At exact wake-up time  
+
+### **Automatic Scheduling**
+- **Night Mode**: Triggers 1 hour before bed (e.g., 10:00 PM if bed is 11:00 PM)  
+- **Morning Mode**: Triggers at wake-up time (e.g., 7:00 AM)  
+- **Both modes**: Fixed 1-hour duration  
+- **System-level scheduling** ensures reliability  
+- **Works across** device restarts and app updates  
+
+**Example Full Cycle:**
+Sleep Schedule Setup:
+├─ Wake-up Time: 7:00 AM
+├─ Sleep Duration: 8 hours
+└─ Calculated Bedtime: 11:00 PM
+
+Automated Triggers:
+├─ Night Mode: 10:00 PM - 11:00 PM (1 hour before bed)
+└─ Morning Mode: 7:00 AM - 8:00 AM (at wake-up time)
+
+### **Voice Commands**
+- **Night Mode End**: “Good night! Time to sleep well.”  
+- **Morning Mode End**: “Great morning! Ready to conquer the day!”  
+- Customizable messages
+- **ElevenLabs voice synthesis** for natural speech  
+- Plays automatically at session end  
+
+---
+
 ## 🎵 Audio & Voice Features (ElevenLabs Integration)
 
 ### **Task Creation Music**

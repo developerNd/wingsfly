@@ -897,6 +897,12 @@ private fun setupFullScreenLockMode() {
     
     window.addFlags(flags)
     
+    // ✅ NEW: Hide navigation bar completely
+    window.setFlags(
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+    )
+    
     // Initial system UI hiding
     hideSystemUIMaximum()
     
@@ -907,19 +913,26 @@ private fun setupFullScreenLockMode() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
         window.statusBarColor = 0xFF6366F1.toInt()
+        
+        // ✅ CRITICAL: Set navigation bar color to transparent AND hide it
         window.navigationBarColor = Color.TRANSPARENT
+        
+        // ✅ NEW: For Android 10+ hide the gesture indicator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         
         window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
             if (isLockActive && !isHiddenForAppUnlock && !isDestroying) {
                 Handler(Looper.getMainLooper()).postDelayed({
-                    hideSystemUIMaximum()
-                }, 100)
+                    hideSystemUIMaximum()    
+                }, 50) // Reduced delay for faster response
                 collapseStatusBar()
             }
         }
     }
     
-    // ✅ Start continuous system UI hiding
+    // ✅ Start continuous system UI hiding with aggressive frequency
     startContinuousSystemUIHiding()
     
     // Create bottom blocker after delay
@@ -943,7 +956,7 @@ private fun startContinuousSystemUIHiding() {
         override fun run() {
             if (isLockActive && !isHiddenForAppUnlock && !isDestroying) {
                 hideSystemUIMaximum()
-                systemUIHandler?.postDelayed(this, 300) // Every 300ms
+                systemUIHandler?.postDelayed(this, 100) // Every 100ms
             }
         }
     }
@@ -958,7 +971,8 @@ private fun hideSystemUIMaximum() {
                 controller.hide(
                     android.view.WindowInsets.Type.statusBars() or 
                     android.view.WindowInsets.Type.navigationBars() or
-                    android.view.WindowInsets.Type.systemBars()
+                    android.view.WindowInsets.Type.systemBars() or
+                    android.view.WindowInsets.Type.systemGestures()
                 )
                 controller.systemBarsBehavior = 
                     android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -1424,8 +1438,15 @@ private fun hideSystemUIMaximum() {
     }
     
     if (hasFocus && isLockActive && !isHiddenForAppUnlock) {
-        // Re-apply system UI hiding
-        hideSystemUIMaximum()
+        // ✅ Immediately re-hide everything including gesture indicator
+        Handler(Looper.getMainLooper()).post {
+            hideSystemUIMaximum()
+        }
+        
+        // ✅ Double-check after a short delay
+        Handler(Looper.getMainLooper()).postDelayed({
+            hideSystemUIMaximum()
+        }, 100)
     }
 }
     

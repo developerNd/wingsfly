@@ -7,7 +7,6 @@ import {
   Modal,
   ActivityIndicator,
   ScrollView,
-  TouchableWithoutFeedback,
   Alert,
   Switch,
 } from 'react-native';
@@ -50,7 +49,7 @@ const Schedule = ({
   // Default day names fallback
   const defaultDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  // NEW: Function to find existing schedules from other apps
+  // Function to find existing schedules from other apps
   const findExistingSchedules = () => {
     if (!allInstalledApps || allInstalledApps.length === 0) return [];
 
@@ -58,10 +57,8 @@ const Schedule = ({
 
     try {
       allInstalledApps.forEach(app => {
-        // Skip current app
         if (!app || !selectedApp || app.packageName === selectedApp.packageName) return;
 
-        // Check if app has schedules
         if (app.schedules && Array.isArray(app.schedules) && app.schedules.length > 0) {
           app.schedules.forEach(schedule => {
             if (schedule && schedule.timeRanges && Array.isArray(schedule.timeRanges) && schedule.timeRanges.length > 0) {
@@ -72,7 +69,6 @@ const Schedule = ({
                   const daysCopy = [...range.days];
                   const scheduleKey = `${range.startHour}:${range.startMinute}-${range.endHour}:${range.endMinute}-${daysCopy.sort((a, b) => a - b).join(',')}`;
                   
-                  // Check if this exact schedule already exists in suggestions
                   const existingIndex = existingSchedules.findIndex(s => s && s.key === scheduleKey);
                   
                   if (existingIndex === -1) {
@@ -88,7 +84,6 @@ const Schedule = ({
                       count: 1
                     });
                   } else {
-                    // Add app name to existing schedule and increment count
                     if (existingSchedules[existingIndex] && 
                         existingSchedules[existingIndex].appNames && 
                         !existingSchedules[existingIndex].appNames.includes(app.name)) {
@@ -105,7 +100,6 @@ const Schedule = ({
         }
       });
 
-      // Sort by count (most used schedules first)
       return existingSchedules.sort((a, b) => (b?.count || 0) - (a?.count || 0));
     } catch (error) {
       console.error('Error in findExistingSchedules:', error);
@@ -115,14 +109,12 @@ const Schedule = ({
 
   useEffect(() => {
     if (visible && selectedApp) {
-      // Reset states when modal opens
       setLockTimeSlots([]);
       setUnlockTimeSlots([]);
       setEditingTimeSlot(null);
       setSelectedAppsForLocking(selectedApp.selectedAppsForLocking || []);
       setExcludeFromPomodoro(selectedApp.excludeFromPomodoro || false);
       
-      // Load existing schedules if available
       let hasLoadedExistingSchedule = false;
       
       if (selectedApp.schedules && Array.isArray(selectedApp.schedules)) {
@@ -156,12 +148,10 @@ const Schedule = ({
         }
       }
       
-      // NEW: If no existing schedules, try to pre-fill from other apps' schedules
       if (!hasLoadedExistingSchedule) {
         try {
           const suggestions = findExistingSchedules();
           if (suggestions && suggestions.length > 0) {
-            // Pre-fill with the most popular schedule (don't add it automatically)
             const topSuggestion = suggestions[0];
             setStartHour(topSuggestion.startHour);
             setStartMinute(topSuggestion.startMinute);
@@ -170,7 +160,6 @@ const Schedule = ({
             setSelectedDays(Array.isArray(topSuggestion.days) ? [...topSuggestion.days] : []);
             setTimerType(topSuggestion.type);
           } else {
-            // No suggestions, use default values
             setStartHour(8);
             setStartMinute(0);
             setEndHour(9);
@@ -180,7 +169,6 @@ const Schedule = ({
           }
         } catch (error) {
           console.error('Error loading suggestions:', error);
-          // Fallback to defaults
           setStartHour(8);
           setStartMinute(0);
           setEndHour(9);
@@ -189,7 +177,6 @@ const Schedule = ({
           setTimerType('lock');
         }
       } else {
-        // Has existing schedules, reset to defaults
         setStartHour(8);
         setStartMinute(0);
         setEndHour(9);
@@ -200,57 +187,10 @@ const Schedule = ({
     }
   }, [visible, selectedApp, allInstalledApps]);
 
-  // NEW: Function to apply suggested schedule
-  const applySuggestedSchedule = (suggestion) => {
-    try {
-      if (!suggestion) return;
-      
-      // Set the timer type first
-      setTimerType(suggestion.type);
-      
-      // Create the new time slot directly with safe copies of data
-      const newSlot = {
-        id: Date.now().toString() + Math.random().toString(),
-        startTime: formatTimeForStorage(suggestion.startHour, suggestion.startMinute),
-        endTime: formatTimeForStorage(suggestion.endHour, suggestion.endMinute),
-        days: Array.isArray(suggestion.days) ? [...suggestion.days] : [],
-        isEnabled: true,
-        type: suggestion.type
-      };
-      
-      // Add to appropriate list
-      if (suggestion.type === 'lock') {
-        setLockTimeSlots(prev => [...prev, newSlot]);
-      } else {
-        setUnlockTimeSlots(prev => [...prev, newSlot]);
-      }
-      
-      // Also update the input fields so user can see what was added
-      setStartHour(suggestion.startHour);
-      setStartMinute(suggestion.startMinute);
-      setEndHour(suggestion.endHour);
-      setEndMinute(suggestion.endMinute);
-      setSelectedDays([]);
-      
-      const appNamesText = Array.isArray(suggestion.appNames) ? suggestion.appNames.join(', ') : 'other apps';
-      
-      Alert.alert(
-        'Schedule Added',
-        `Time slot from ${appNamesText} has been added successfully!`,
-        [{ text: 'OK' }]
-      );
-    } catch (error) {
-      console.error('Error applying suggested schedule:', error);
-      Alert.alert('Error', 'Failed to apply suggested schedule. Please try manually.');
-    }
-  };
-
-  // Format time for storage (HH:MM format)
   const formatTimeForStorage = (hour, minute) => {
     return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
   };
 
-  // Format time display (12hr format)
   const formatTimeDisplay = (hour, minute) => {
     const date = new Date();
     date.setHours(hour);
@@ -268,7 +208,6 @@ const Schedule = ({
     return `${hours}:${minutesStr} ${ampm}`;
   };
 
-  // Get day name helper with fallback
   const getDayName = (day) => {
     try {
       if (typeof day === 'string') {
@@ -293,7 +232,6 @@ const Schedule = ({
     }
   };
 
-  // Get available days
   const getAvailableDays = () => {
     try {
       return [0, 1, 2, 3, 4, 5, 6];
@@ -303,12 +241,10 @@ const Schedule = ({
     }
   };
 
-  // Handle exclude from Pomodoro toggle
   const handleExcludeFromPomodoroToggle = (value) => {
     setExcludeFromPomodoro(value);
   };
 
-  // Day selector component
   const DaySelector = () => {
     const availableDays = getAvailableDays();
     
@@ -371,7 +307,6 @@ const Schedule = ({
     );
   };
 
-  // Start editing a time slot
   const startEditTimeSlot = (slot) => {
     const startTimeParts = slot.startTime.split(':');
     const endTimeParts = slot.endTime.split(':');
@@ -385,7 +320,6 @@ const Schedule = ({
     setEditingTimeSlot(slot);
   };
 
-  // Delete a time slot
   const deleteTimeSlot = (slotToDelete) => {
     Alert.alert(
       'Delete Time Slot',
@@ -411,7 +345,6 @@ const Schedule = ({
     );
   };
 
-  // Cancel editing
   const cancelEdit = () => {
     setEditingTimeSlot(null);
     setSelectedDays([]);
@@ -421,7 +354,6 @@ const Schedule = ({
     setEndMinute(0);
   };
 
-  // Add or update time slot
   const addTimeSlot = () => {
     if (!selectedDays || selectedDays.length === 0) {
       Alert.alert('Error', 'Please select at least one day');
@@ -459,7 +391,6 @@ const Schedule = ({
     setSelectedDays([]);
   };
 
-  // Format days display for time slots
   const formatDaysDisplay = (days) => {
     if (!days || days.length === 0) {
       return 'No days selected';
@@ -476,7 +407,6 @@ const Schedule = ({
     }
   };
 
-  // Save schedules
   const saveSchedules = async () => {
     if (!selectedApp) return;
     
@@ -557,253 +487,253 @@ const Schedule = ({
     }
   };
 
-  // NEW: Render suggested schedules
-  const renderSuggestedSchedules = () => {
-    return null; // Removed UI, logic handled in useEffect
-  };
-
   return (
     <>
       <Modal
-        transparent={true}
+        transparent={false}
         visible={visible}
         animationType="slide"
+        presentationStyle="fullScreen"
         onRequestClose={onClose}
       >
-        <TouchableWithoutFeedback onPress={() => {}}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Set Time Restrictions</Text>
-                {selectedApp && (
-                  <Text style={styles.modalSubtitle}>{selectedApp.name}</Text>
-                )}
-              </View>
+        <View style={styles.fullScreenContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Icon name="close" size={28} color="#666" />
+            </TouchableOpacity>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.modalTitle}>Set Time Restrictions</Text>
+              {selectedApp && (
+                <Text style={styles.modalSubtitle}>{selectedApp.name}</Text>
+              )}
+            </View>
+            <View style={styles.headerSpacer} />
+          </View>
 
-              <View style={styles.tabContainer}>
-                <TouchableOpacity 
-                  style={[
-                    styles.tabButton, 
-                    timerType === 'lock' && styles.activeTabButton
-                  ]}
-                  onPress={() => setTimerType('lock')}
-                >
-                  <Text style={[
-                    styles.tabButtonText,
-                    timerType === 'lock' && styles.activeTabButtonText
-                  ]}>Lock Time</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[
-                    styles.tabButton, 
-                    timerType === 'unlock' && styles.activeTabButton
-                  ]}
-                  onPress={() => setTimerType('unlock')}
-                >
-                  <Text style={[
-                    styles.tabButtonText,
-                    timerType === 'unlock' && styles.activeTabButtonText
-                  ]}>Unlock Time</Text>
-                </TouchableOpacity>
-              </View>
+          <View style={styles.tabContainer}>
+            <TouchableOpacity 
+              style={[
+                styles.tabButton, 
+                timerType === 'lock' && styles.activeTabButton
+              ]}
+              onPress={() => setTimerType('lock')}
+            >
+              <Text style={[
+                styles.tabButtonText,
+                timerType === 'lock' && styles.activeTabButtonText
+              ]}>Lock Time</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.tabButton, 
+                timerType === 'unlock' && styles.activeTabButton
+              ]}
+              onPress={() => setTimerType('unlock')}
+            >
+              <Text style={[
+                styles.tabButtonText,
+                timerType === 'unlock' && styles.activeTabButtonText
+              ]}>Unlock Time</Text>
+            </TouchableOpacity>
+          </View>
 
-              {loadingSchedules ? (
-                <View style={styles.modalLoadingContainer}>
-                  <ActivityIndicator size="large" color="#2196F3" />
-                  <Text style={styles.modalLoadingText}>Loading schedules...</Text>
+          {loadingSchedules ? (
+            <View style={styles.modalLoadingContainer}>
+              <ActivityIndicator size="large" color="#2196F3" />
+              <Text style={styles.modalLoadingText}>Loading schedules...</Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.timeSlotsContainer} showsVerticalScrollIndicator={false}>
+              <View style={styles.pomodoroExcludeSection}>
+                <View style={styles.pomodoroExcludeInfo}>
+                  <Text style={styles.pomodoroExcludeLabel}>Exclude from Pomodoro</Text>
+                  <Text style={styles.pomodoroExcludeDescription}>
+                    Don't block this app during Pomodoro focus sessions
+                  </Text>
                 </View>
-              ) : (
-                <ScrollView style={styles.timeSlotsContainer}>
-                  <View style={styles.pomodoroExcludeSection}>
-                    <View style={styles.pomodoroExcludeInfo}>
-                      <Text style={styles.pomodoroExcludeLabel}>Exclude from Pomodoro</Text>
-                      <Text style={styles.pomodoroExcludeDescription}>
-                        Don't block this app during Pomodoro focus sessions
-                      </Text>
-                    </View>
-                    <Switch
-                      value={excludeFromPomodoro}
-                      onValueChange={handleExcludeFromPomodoroToggle}
-                      trackColor={{ false: '#E0E0E0', true: '#C8E6C9' }}
-                      thumbColor={excludeFromPomodoro ? '#2E7D32' : '#FFFFFF'}
-                    />
-                  </View>
+                <Switch
+                  value={excludeFromPomodoro}
+                  onValueChange={handleExcludeFromPomodoroToggle}
+                  trackColor={{ false: '#E0E0E0', true: '#C8E6C9' }}
+                  thumbColor={excludeFromPomodoro ? '#2E7D32' : '#FFFFFF'}
+                />
+              </View>
 
-                  {selectedAppsForLocking.length > 0 && (
-                    <View style={styles.selectedAppsPreview}>
-                      <Text style={styles.selectedAppsTitle}>Selected Apps:</Text>
-                      <Text style={styles.selectedAppsText}>
-                        {selectedAppsForLocking.length} apps selected for this schedule
-                      </Text>
-                    </View>
+              {selectedAppsForLocking.length > 0 && (
+                <View style={styles.selectedAppsPreview}>
+                  <Text style={styles.selectedAppsTitle}>Selected Apps:</Text>
+                  <Text style={styles.selectedAppsText}>
+                    {selectedAppsForLocking.length} apps selected for this schedule
+                  </Text>
+                </View>
+              )}
+              
+              <DaySelector />
+              
+              <View style={styles.timePickerContainerMain}>
+                <View style={styles.timePickerRow}>
+                  <TouchableOpacity 
+                    style={styles.timeDisplay} 
+                    onPress={() => setShowStartTimePicker(true)}
+                  >
+                    <Text style={styles.timeText}>
+                      {formatTimeDisplay(startHour, startMinute)}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={styles.timeSeperator}>to</Text>
+                  <TouchableOpacity 
+                    style={styles.timeDisplay} 
+                    onPress={() => setShowEndTimePicker(true)}
+                  >
+                    <Text style={styles.timeText}>
+                      {formatTimeDisplay(endHour, endMinute)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {showStartTimePicker && (
+                  <DateTimePicker
+                    value={(() => {
+                      const date = new Date();
+                      date.setHours(startHour);
+                      date.setMinutes(startMinute);
+                      return date;
+                    })()}
+                    mode="time"
+                    is24Hour={false}
+                    display="default"
+                    onChange={(event, selectedDate) => {
+                      setShowStartTimePicker(false);
+                      if (selectedDate) {
+                        setStartHour(selectedDate.getHours());
+                        setStartMinute(selectedDate.getMinutes());
+                      }
+                    }}
+                  />
+                )}
+
+                {showEndTimePicker && (
+                  <DateTimePicker
+                    value={(() => {
+                      const date = new Date();
+                      date.setHours(endHour);
+                      date.setMinutes(endMinute);
+                      return date;
+                    })()}
+                    mode="time"
+                    is24Hour={false}
+                    display="default"
+                    onChange={(event, selectedDate) => {
+                      setShowEndTimePicker(false);
+                      if (selectedDate) {
+                        setEndHour(selectedDate.getHours());
+                        setEndMinute(selectedDate.getMinutes());
+                      }
+                    }}
+                  />
+                )}
+
+                <View style={styles.addButtonContainer}>
+                  <TouchableOpacity
+                    style={[styles.addButton, editingTimeSlot && styles.updateButton]}
+                    onPress={addTimeSlot}
+                  >
+                    <Text style={styles.addButtonText}>
+                      {editingTimeSlot ? 'Update Time Slot' : 'Add Time Slot'}
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  {editingTimeSlot && (
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={cancelEdit}
+                    >
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
                   )}
-                  
-                  <DaySelector />
-                  
-                  <View style={styles.timePickerContainerMain}>
-                    <View style={styles.timePickerRow}>
+                </View>
+              </View>
+
+              <View style={styles.timeSlotsList}>
+                {(timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).length > 0 ? (
+                  (timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).map(slot => (
+                    <View key={slot.id} style={[
+                      styles.timeSlotItem,
+                      editingTimeSlot?.id === slot.id && styles.editingTimeSlot
+                    ]}>
                       <TouchableOpacity 
-                        style={styles.timeDisplay} 
-                        onPress={() => setShowStartTimePicker(true)}
+                        style={styles.timeSlotContent}
+                        onPress={() => startEditTimeSlot(slot)}
+                        activeOpacity={0.7}
                       >
-                        <Text style={styles.timeText}>
-                          {formatTimeDisplay(startHour, startMinute)}
-                        </Text>
-                      </TouchableOpacity>
-                      <Text style={styles.timeSeperator}>to</Text>
-                      <TouchableOpacity 
-                        style={styles.timeDisplay} 
-                        onPress={() => setShowEndTimePicker(true)}
-                      >
-                        <Text style={styles.timeText}>
-                          {formatTimeDisplay(endHour, endMinute)}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {showStartTimePicker && (
-                      <DateTimePicker
-                        value={(() => {
-                          const date = new Date();
-                          date.setHours(startHour);
-                          date.setMinutes(startMinute);
-                          return date;
-                        })()}
-                        mode="time"
-                        is24Hour={false}
-                        display="default"
-                        onChange={(event, selectedDate) => {
-                          setShowStartTimePicker(false);
-                          if (selectedDate) {
-                            setStartHour(selectedDate.getHours());
-                            setStartMinute(selectedDate.getMinutes());
-                          }
-                        }}
-                      />
-                    )}
-
-                    {showEndTimePicker && (
-                      <DateTimePicker
-                        value={(() => {
-                          const date = new Date();
-                          date.setHours(endHour);
-                          date.setMinutes(endMinute);
-                          return date;
-                        })()}
-                        mode="time"
-                        is24Hour={false}
-                        display="default"
-                        onChange={(event, selectedDate) => {
-                          setShowEndTimePicker(false);
-                          if (selectedDate) {
-                            setEndHour(selectedDate.getHours());
-                            setEndMinute(selectedDate.getMinutes());
-                          }
-                        }}
-                      />
-                    )}
-
-                    <View style={styles.addButtonContainer}>
-                      <TouchableOpacity
-                        style={[styles.addButton, editingTimeSlot && styles.updateButton]}
-                        onPress={addTimeSlot}
-                      >
-                        <Text style={styles.addButtonText}>
-                          {editingTimeSlot ? 'Update Time Slot' : 'Add Time Slot'}
-                        </Text>
-                      </TouchableOpacity>
-                      
-                      {editingTimeSlot && (
-                        <TouchableOpacity
-                          style={styles.cancelButton}
-                          onPress={cancelEdit}
-                        >
-                          <Text style={styles.cancelButtonText}>Cancel</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-
-                  <View style={styles.timeSlotsList}>
-                    {(timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).length > 0 ? (
-                      (timerType === 'lock' ? lockTimeSlots : unlockTimeSlots).map(slot => (
-                        <View key={slot.id} style={[
-                          styles.timeSlotItem,
-                          editingTimeSlot?.id === slot.id && styles.editingTimeSlot
-                        ]}>
-                          <TouchableOpacity 
-                            style={styles.timeSlotContent}
+                        <View style={styles.timeSlotInfo}>
+                          <Text style={styles.timeSlotText}>
+                            {formatTimeDisplay(
+                              parseInt(slot.startTime.split(':')[0]),
+                              parseInt(slot.startTime.split(':')[1])
+                            )} to {formatTimeDisplay(
+                              parseInt(slot.endTime.split(':')[0]),
+                              parseInt(slot.endTime.split(':')[1])
+                            )}
+                          </Text>
+                          <Text style={styles.daysText}>
+                            {formatDaysDisplay(slot.days)}
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.timeSlotActions}>
+                          <TouchableOpacity
+                            style={styles.editButton}
                             onPress={() => startEditTimeSlot(slot)}
-                            activeOpacity={0.7}
                           >
-                            <View style={styles.timeSlotInfo}>
-                              <Text style={styles.timeSlotText}>
-                                {formatTimeDisplay(
-                                  parseInt(slot.startTime.split(':')[0]),
-                                  parseInt(slot.startTime.split(':')[1])
-                                )} to {formatTimeDisplay(
-                                  parseInt(slot.endTime.split(':')[0]),
-                                  parseInt(slot.endTime.split(':')[1])
-                                )}
-                              </Text>
-                              <Text style={styles.daysText}>
-                                {formatDaysDisplay(slot.days)}
-                              </Text>
-                            </View>
-                            
-                            <View style={styles.timeSlotActions}>
-                              <TouchableOpacity
-                                style={styles.editButton}
-                                onPress={() => startEditTimeSlot(slot)}
-                              >
-                                <Icon name="edit" size={18} color="#2E7D32" />
-                              </TouchableOpacity>
-                              
-                              <TouchableOpacity
-                                style={styles.deleteButton}
-                                onPress={() => deleteTimeSlot(slot)}
-                              >
-                                <Icon name="delete" size={18} color="#F44336" />
-                              </TouchableOpacity>
-                            </View>
+                            <Icon name="edit" size={18} color="#2E7D32" />
+                          </TouchableOpacity>
+                          
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={() => deleteTimeSlot(slot)}
+                          >
+                            <Icon name="delete" size={18} color="#F44336" />
                           </TouchableOpacity>
                         </View>
-                      ))
-                    ) : (
-                      <Text style={styles.noTimeSlotsText}>
-                        No time slots added. Add one above.
-                      </Text>
-                    )}
-                  </View>
-                </ScrollView>
-              )}
-
-              <View style={styles.modalButtonsContainer}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelModalButton]}
-                  onPress={onClose}
-                >
-                  <Text style={styles.cancelModalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.modalButton, 
-                    styles.saveButton,
-                    savingSchedules && { opacity: 0.7 }
-                  ]}
-                  onPress={saveSchedules}
-                  disabled={savingSchedules}
-                >
-                  {savingSchedules ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Save</Text>
-                  )}
-                </TouchableOpacity>
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.noTimeSlotsText}>
+                    No time slots added. Add one above.
+                  </Text>
+                )}
               </View>
-            </View>
+              
+              <View style={styles.bottomSpacing} />
+            </ScrollView>
+          )}
+
+          <View style={styles.modalButtonsContainer}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelModalButton]}
+              onPress={onClose}
+            >
+              <Text style={styles.cancelModalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.modalButton, 
+                styles.saveButton,
+                savingSchedules && { opacity: 0.7 }
+              ]}
+              onPress={saveSchedules}
+              disabled={savingSchedules}
+            >
+              {savingSchedules ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.saveButtonText}>Save</Text>
+              )}
+            </TouchableOpacity>
           </View>
-        </TouchableWithoutFeedback>
+        </View>
       </Modal>
 
       <Modal
@@ -812,59 +742,72 @@ const Schedule = ({
         animationType="fade"
         onRequestClose={() => setShowSuccessModal(false)}
       >
-        <TouchableWithoutFeedback onPress={() => setShowSuccessModal(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.successModalContainer}>
-              <View style={styles.successIconContainer}>
-                <Icon name="check-circle" size={48} color="#2E7D32" />
-              </View>
-              <Text style={styles.successTitle}>Success!</Text>
-              <Text style={styles.successMessage}>{successMessage}</Text>
+        <View style={styles.successOverlay}>
+          <View style={styles.successModalContainer}>
+            <View style={styles.successIconContainer}>
+              <Icon name="check-circle" size={48} color="#2E7D32" />
             </View>
+            <Text style={styles.successTitle}>Success!</Text>
+            <Text style={styles.successMessage}>{successMessage}</Text>
           </View>
-        </TouchableWithoutFeedback>
+        </View>
       </Modal>
     </>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
+  fullScreenContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    width: '90%',
-    maxHeight: '80%',
+    backgroundColor: '#f5f5f5',
   },
   modalHeader: {
-    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingTop: 48,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  headerTextContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerSpacer: {
+    width: 44,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 8,
   },
   modalSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
+    marginTop: 4,
   },
   tabContainer: {
     flexDirection: 'row',
-    marginBottom: 20,
-    backgroundColor: '#f5f5f5',
+    marginHorizontal: 16,
+    marginVertical: 16,
+    backgroundColor: '#fff',
     borderRadius: 8,
     padding: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 12,
     alignItems: 'center',
     borderRadius: 6,
   },
@@ -872,7 +815,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2E7D32',
   },
   tabButtonText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
     color: '#666',
   },
@@ -881,13 +824,19 @@ const styles = StyleSheet.create({
   },
   pomodoroExcludeSection: {
     flexDirection: 'row',
-    backgroundColor: '#f5f5f5',
-    paddingHorizontal: 12,
+    backgroundColor: 'white',
+    paddingHorizontal: 16,
     borderRadius: 10,
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 5,
+    paddingVertical: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   pomodoroExcludeInfo: {
     flex: 1,
@@ -906,9 +855,10 @@ const styles = StyleSheet.create({
   },
   selectedAppsPreview: {
     backgroundColor: '#e8f5e9',
-    padding: 12,
+    padding: 16,
     borderRadius: 8,
-    marginTop: 12,
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   selectedAppsTitle: {
     fontSize: 14,
@@ -921,10 +871,16 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
   },
   timePickerContainerMain: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'white',
     padding: 16,
     borderRadius: 8,
+    marginHorizontal: 16,
     marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   timePickerRow: {
     flexDirection: 'row',
@@ -932,21 +888,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   timeDisplay: {
-    backgroundColor: 'white',
-    padding: 12,
+    backgroundColor: '#f5f5f5',
+    padding: 16,
     borderRadius: 8,
-    minWidth: 100,
+    minWidth: 120,
     alignItems: 'center',
   },
   timeText: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 18,
+    fontWeight: '600',
     color: '#333',
   },
   timeSeperator: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#666',
     marginHorizontal: 8,
+    fontWeight: '500',
   },
   addButtonContainer: {
     marginTop: 16,
@@ -954,7 +911,7 @@ const styles = StyleSheet.create({
   },
   addButton: {
     backgroundColor: '#2E7D32',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
   },
@@ -968,7 +925,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     backgroundColor: '#f5f5f5',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
@@ -982,21 +939,33 @@ const styles = StyleSheet.create({
   modalButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
     marginHorizontal: 8,
   },
   cancelModalButton: {
     backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   cancelModalButtonText: {
     color: '#666',
-    fontWeight: '500',
+    fontWeight: '600',
+    fontSize: 16,
   },
   saveButton: {
     backgroundColor: '#2E7D32',
@@ -1004,6 +973,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
+    fontSize: 16,
   },
   modalLoadingContainer: {
     flex: 1,
@@ -1018,9 +988,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   timeSlotsContainer: {
-    marginBottom: 20,
+    flex: 1,
   },
   timeSlotsList: {
+    marginHorizontal: 16,
     marginTop: 10,
   },
   timeSlotItem: {
@@ -1075,6 +1046,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
     marginBottom: 20,
+    fontSize: 14,
+  },
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   successModalContainer: {
     backgroundColor: 'white',
@@ -1114,28 +1092,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginVertical: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
     gap: 8,
   },
   dayButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#2E7D32',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'white',
     marginHorizontal: 4,
+    marginVertical: 4,
   },
   dayButtonSelected: {
     backgroundColor: '#2E7D32',
   },
   dayButtonText: {
-    color: '#666',
+    color: '#2E7D32',
     fontSize: 14,
     fontWeight: '500',
   },
   dayButtonTextSelected: {
     color: 'white',
+  },
+  bottomSpacing: {
+    height: 20,
   },
 });
 
