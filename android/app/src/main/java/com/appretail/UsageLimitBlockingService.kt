@@ -506,42 +506,55 @@ class UsageLimitBlockingService : Service() {
         Log.d(TAG, "Marked limit reached for $packageName")
     }
 
-    // ✅ UPDATED: Show video only when limit is reached during active usage
-    private fun blockAppForUsageLimit(packageName: String, showVideo: Boolean) {
-        try {
-            Log.d(TAG, "Blocking app: $packageName, Show video: $showVideo")
-            
-            forceCloseApp(packageName)
-            
-            if (showVideo) {
-                // App was being actively used when limit was reached - show video
-                val videoPrefs = getSharedPreferences("UsageLimitVideo", Context.MODE_PRIVATE)
-                val videoPath = videoPrefs.getString("video_file_path", "") ?: ""
-                val youtubeLink = videoPrefs.getString("youtube_link", "") ?: ""
-                
-                val hasVideoConfigured = videoPath.isNotEmpty() || youtubeLink.isNotEmpty()
-                
-                if (hasVideoConfigured) {
-                    Log.d(TAG, "Limit reached during usage - showing video")
-                    launchVideoLockActivity(packageName, videoPath, youtubeLink)
-                } else {
-                    Log.d(TAG, "Limit reached during usage - no video, showing lock screen")
-                    showUsageLimitLockScreen(packageName)
-                }
-            } else {
-                // App was already blocked, user tried to open it - just close
-                Log.d(TAG, "App already blocked - just closing without video")
-            }
-            
-            // Force close multiple times to ensure app stays closed
-            mainHandler.postDelayed({ forceCloseApp(packageName) }, 100)
-            mainHandler.postDelayed({ forceCloseApp(packageName) }, 300)
-            mainHandler.postDelayed({ forceCloseApp(packageName) }, 500)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error blocking app: ${e.message}", e)
+    private fun getVideoUrlFromSupabase(): String? {
+    return try {
+        val videoPrefs = getSharedPreferences("UsageLimitVideo", Context.MODE_PRIVATE)
+        val videoUrl = videoPrefs.getString("video_url", "") ?: ""
+        
+        if (videoUrl.isEmpty()) {
+            Log.w(TAG, "No video URL found in cache")
+            null
+        } else {
+            videoUrl
         }
+    } catch (e: Exception) {
+        Log.e(TAG, "Error getting video URL: ${e.message}", e)
+        null
     }
+}
+
+// Update the blockAppForUsageLimit method
+private fun blockAppForUsageLimit(packageName: String, showVideo: Boolean) {
+    try {
+        Log.d(TAG, "Blocking app: $packageName, Show video: $showVideo")
+        
+        forceCloseApp(packageName)
+        
+        if (showVideo) {
+            // Get video URL from Supabase cache
+            val videoUrl = getVideoUrlFromSupabase()
+            
+            if (!videoUrl.isNullOrEmpty()) {
+                Log.d(TAG, "Limit reached during usage - showing video from Supabase")
+                launchVideoLockActivity(packageName, videoUrl)
+            } else {
+                Log.d(TAG, "Limit reached during usage - no video, showing lock screen")
+                showUsageLimitLockScreen(packageName)
+            }
+        } else {
+            // App was already blocked, user tried to open it - just close
+            Log.d(TAG, "App already blocked - just closing without video")
+        }
+        
+        // Force close multiple times to ensure app stays closed
+        mainHandler.postDelayed({ forceCloseApp(packageName) }, 100)
+        mainHandler.postDelayed({ forceCloseApp(packageName) }, 300)
+        mainHandler.postDelayed({ forceCloseApp(packageName) }, 500)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error blocking app: ${e.message}", e)
+    }
+}
 
     private fun forceCloseApp(packageName: String) {
         try {
@@ -626,34 +639,32 @@ class UsageLimitBlockingService : Service() {
         }
     }
 
-    private fun launchVideoLockActivity(packageName: String, videoPath: String, youtubeLink: String) {
-        try {
-            val packageManager = applicationContext.packageManager
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            val appName = packageManager.getApplicationLabel(appInfo).toString()
-            
-            val intent = Intent(this, UsageLimitVideoLockActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                putExtra("package_name", packageName)
-                putExtra("app_name", appName)
-                
-                if (videoPath.isNotEmpty()) {
-                    putExtra("video_path", videoPath)
-                }
-                
-                if (youtubeLink.isNotEmpty()) {
-                    putExtra("youtube_link", youtubeLink)
-                }
-            }
-            
-            startActivity(intent)
-            Log.d(TAG, "Launched video lock activity for $packageName")
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error launching video activity: ${e.message}", e)
-            showUsageLimitLockScreen(packageName)
+private fun launchVideoLockActivity(packageName: String, videoUrl: String) {
+    try {
+        val packageManager = applicationContext.packageManager
+        val appInfo = packageManager.getApplicationInfo(packageName, 0)
+        val appName = packageManager.getApplicationLabel(appInfo).toString()
+        
+        Log.d(TAG, "🎬 Launching video lock activity")
+        Log.d(TAG, "📦 Package: $packageName")
+        Log.d(TAG, "📱 App: $appName")
+        Log.d(TAG, "🎥 Video URL: $videoUrl")
+        
+        val intent = Intent(this, UsageLimitVideoLockActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra("package_name", packageName)
+            putExtra("app_name", appName)
+            putExtra("video_url", videoUrl) // Make sure this key matches
         }
+        
+        startActivity(intent)
+        Log.d(TAG, "✅ Video lock activity launched")
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Error launching video activity: ${e.message}", e)
+        showUsageLimitLockScreen(packageName)
     }
+}
 
     private fun removeUsageLimitLockScreen() {
         try {

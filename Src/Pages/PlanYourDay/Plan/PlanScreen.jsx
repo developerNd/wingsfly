@@ -28,23 +28,17 @@ import {colors, Icons} from '../../../Helper/Contants';
 import {planYourDayService} from '../../../services/api/planYourDayService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
-import {useMusic} from '../../../contexts/MusicContext';
 import taskConfirmationAlarmManager from '../../../services/TaskConfirmation/taskConfirmationAlarmManager';
 
 const PlanScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const {user} = useAuth();
-  const {
-    stopPlanMusic,
-    forceStopPlanMusic,
-    isPlanFlowActive,
-    isPlanMusicActive,
-    isPlaying,
-  } = useMusic();
 
   // Step tracking state - Initialize from route params or default to 1
-  const [currentStep, setCurrentStep] = useState(route.params?.currentStep || 1);
+  const [currentStep, setCurrentStep] = useState(
+    route.params?.currentStep || 1,
+  );
   const TOTAL_STEPS = 4;
 
   // Get category from route params
@@ -54,6 +48,9 @@ const PlanScreen = () => {
 
   const evaluationType = route.params?.evaluationType || null;
   const checklistData = route.params?.checklistData || null;
+
+  // NEW: Check if coming from Night Mode flow
+  const fromNightMode = route.params?.fromNightMode || false;
 
   // Helper function to get category icon
   const getCategoryIcon = categoryName => {
@@ -133,12 +130,12 @@ const PlanScreen = () => {
     React.useCallback(() => {
       if (route.params) {
         const params = route.params;
-        
+
         // Restore current step if coming back from another screen
         if (params.currentStep !== undefined) {
           setCurrentStep(params.currentStep);
         }
-        
+
         if (params.taskTitle !== undefined) setTaskTitle(params.taskTitle);
         if (params.priority !== undefined) setPriority(params.priority);
         if (params.note !== undefined) setNote(params.note);
@@ -291,6 +288,7 @@ const PlanScreen = () => {
         checklistData,
         screenType: 'PlanScreen',
         currentStep: currentStep, // Pass current step so we can return to it
+        fromNightMode: fromNightMode, // Pass along Night Mode flag
         scheduleData: {
           startDate: startDate.toISOString(),
           blockTimeData,
@@ -401,9 +399,10 @@ const PlanScreen = () => {
     }
   };
 
-  // SAVE TASK LOGIC
+  // SAVE TASK LOGIC - UPDATED for Night Mode flow
   const handleSaveTask = async () => {
-    console.log('🎵 PlanScreen: handleSaveTask called');
+    console.log('💾 PlanScreen: handleSaveTask called');
+    console.log('💾 PlanScreen: fromNightMode:', fromNightMode);
 
     if (!user) {
       Alert.alert('Error', 'Please log in to create Plan Your Day.');
@@ -411,28 +410,6 @@ const PlanScreen = () => {
     }
 
     try {
-      console.log('🎵 PlanScreen: Stopping background music...');
-
-      try {
-        await forceStopPlanMusic();
-        console.log('🎵 PlanScreen: Force stop completed');
-      } catch (musicError) {
-        console.error('🎵 PlanScreen: Force stop failed:', musicError);
-        try {
-          await stopPlanMusic();
-        } catch (regularStopError) {
-          console.error('🎵 PlanScreen: Regular stop failed:', regularStopError);
-        }
-      }
-
-      setTimeout(async () => {
-        try {
-          await stopPlanMusic();
-        } catch (verificationError) {
-          console.error('🎵 PlanScreen: Verification stop failed:', verificationError);
-        }
-      }, 100);
-
       let finalDurationForPomodoro = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
         finalDurationForPomodoro = calculateDuration(
@@ -453,10 +430,18 @@ const PlanScreen = () => {
         tags: ['Plan', priority || 'Must'],
         priority: priority || 'Important',
         timerDuration: finalDurationForPomodoro || durationData,
-        checklistItems: isChecklistEvaluation ? checklistData.checklistItems : null,
-        successCondition: isChecklistEvaluation ? checklistData.successCondition : null,
-        customItemsCount: isChecklistEvaluation ? checklistData.customItemsCount : null,
-        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        checklistItems: isChecklistEvaluation
+          ? checklistData.checklistItems
+          : null,
+        successCondition: isChecklistEvaluation
+          ? checklistData.successCondition
+          : null,
+        customItemsCount: isChecklistEvaluation
+          ? checklistData.customItemsCount
+          : null,
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
         blockTimeEnabled: !!blockTimeData,
@@ -478,8 +463,10 @@ const PlanScreen = () => {
         planData.shortBreakDuration = pomodoroSettings.shortBreak;
         planData.longBreakDuration = pomodoroSettings.longBreak;
         planData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
-        planData.autoStartShortBreaks = pomodoroSettings.autoStartShortBreaks || false;
-        planData.autoStartFocusSessions = pomodoroSettings.autoStartFocusSessions || false;
+        planData.autoStartShortBreaks =
+          pomodoroSettings.autoStartShortBreaks || false;
+        planData.autoStartFocusSessions =
+          pomodoroSettings.autoStartFocusSessions || false;
       }
 
       if (addReminder && reminderData) {
@@ -491,23 +478,27 @@ const PlanScreen = () => {
       }
 
       const newPlan = await planYourDayService.createPlanYourDay(planData);
-      console.log('🎵 PlanScreen: Plan created successfully:', newPlan);
+      console.log('✅ PlanScreen: Plan created successfully:', newPlan);
 
       if (blockTimeData && blockTimeData.startTime && startDate) {
         try {
           const time24h = convertTo24Hour(blockTimeData.startTime);
-          const confirmationResult = await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
-            id: newPlan.id,
-            title: taskTitle.trim(),
-            description: note || '',
-            start_date: new Date(startDate).toISOString().split('T')[0],
-            start_time: time24h,
-            category: selectedCategory?.title || 'Work and Career',
-            evaluationType: planData.evaluationType,
-          });
+          const confirmationResult =
+            await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
+              id: newPlan.id,
+              title: taskTitle.trim(),
+              description: note || '',
+              start_date: new Date(startDate).toISOString().split('T')[0],
+              start_time: time24h,
+              category: selectedCategory?.title || 'Work and Career',
+              evaluationType: planData.evaluationType,
+            });
 
           if (confirmationResult.success) {
-            console.log('Task confirmation alarm scheduled:', confirmationResult.data);
+            console.log(
+              'Task confirmation alarm scheduled:',
+              confirmationResult.data,
+            );
           }
         } catch (confirmError) {
           console.error('Error scheduling task confirmation:', confirmError);
@@ -527,67 +518,78 @@ const PlanScreen = () => {
             email: user?.email,
           };
 
-          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
-            {...planData, userProfile: userProfile},
-            newPlan,
-          );
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {...planData, userProfile: userProfile},
+              newPlan,
+            );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
           }
         } catch (reminderError) {
-          console.error('🎵 PlanScreen: Error scheduling reminders:', reminderError);
+          console.error(
+            '❌ PlanScreen: Error scheduling reminders:',
+            reminderError,
+          );
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      try {
-        await forceStopPlanMusic();
-      } catch (finalMusicError) {
-        console.error('🎵 PlanScreen: Final music stop failed:', finalMusicError);
-      }
-
       const taskType = isChecklistEvaluation ? 'checklist' : 'task';
-      Alert.alert(
-        'Success',
-        `Plan Your Day ${taskType} created successfully!${reminderMessage}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              forceStopPlanMusic()
-                .then(() => {
-                  console.log('🎵 PlanScreen: Pre-navigation music stop completed');
-                })
-                .catch(error => {
-                  console.error('🎵 PlanScreen: Pre-navigation music stop failed:', error);
+
+      // UPDATED: Different navigation based on Night Mode flow
+      if (fromNightMode) {
+        console.log(
+          '🌙 PlanScreen: Coming from Night Mode - navigating back to Night Mode',
+        );
+        Alert.alert(
+          'Success',
+          `Plan Your Day ${taskType} created successfully!${reminderMessage}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Navigate back to Night Mode with task created flag
+                navigation.navigate('YouTubeVideosScreen', {
+                  taskCreated: true,
+                  refresh: true,
                 });
-
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: 'PlanYourDayScreen',
-                    params: {
-                      newPlanCreated: true,
-                      refresh: true,
-                    },
-                  },
-                ],
-              });
+              },
             },
-          },
-        ],
-      );
-    } catch (error) {
-      console.error('🎵 PlanScreen: Error creating Plan Your Day:', error);
-
-      try {
-        await forceStopPlanMusic();
-      } catch (errorMusicStop) {
-        console.error('🎵 PlanScreen: Error case music stop failed:', errorMusicStop);
+          ],
+        );
+      } else {
+        console.log(
+          '📱 PlanScreen: Regular flow - navigating to PlanYourDayScreen',
+        );
+        Alert.alert(
+          'Success',
+          `Plan Your Day ${taskType} created successfully!${reminderMessage}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                navigation.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: 'PlanYourDayScreen',
+                      params: {
+                        newPlanCreated: true,
+                        fromPlanCreation: true,
+                        refresh: true,
+                      },
+                    },
+                  ],
+                });
+              },
+            },
+          ],
+        );
       }
-
+    } catch (error) {
+      console.error('❌ PlanScreen: Error creating Plan Your Day:', error);
       Alert.alert('Error', 'Failed to create plan. Please try again.');
     }
   };
@@ -608,7 +610,20 @@ const PlanScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -641,7 +656,10 @@ const PlanScreen = () => {
     setBlockTimeData(timeData);
 
     if (timeData && timeData.startTime && timeData.endTime) {
-      const calculatedDuration = calculateDuration(timeData.startTime, timeData.endTime);
+      const calculatedDuration = calculateDuration(
+        timeData.startTime,
+        timeData.endTime,
+      );
       if (!durationData) {
         setDurationData(calculatedDuration);
       }
@@ -689,7 +707,10 @@ const PlanScreen = () => {
 
   const renderToggle = (isEnabled, onToggle) => {
     return (
-      <TouchableOpacity style={styles.toggleContainer} onPress={onToggle} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.toggleContainer}
+        onPress={onToggle}
+        activeOpacity={0.7}>
         <View
           style={[
             styles.toggleTrack,
@@ -698,7 +719,9 @@ const PlanScreen = () => {
           <View
             style={[
               styles.toggleSwitch,
-              isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
+              isEnabled
+                ? styles.toggleSwitchActive
+                : styles.toggleSwitchInactive,
             ]}
           />
         </View>
@@ -726,22 +749,39 @@ const PlanScreen = () => {
           activeOpacity={onRowPress ? 0.7 : hasToggle || hasPlus ? 1 : 0.7}
           onPress={onRowPress || (() => {})}>
           <View style={styles.optionLeft}>
-            <Image source={iconSource} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={iconSource}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>{title}</Text>
-              {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
+              {subtitle && (
+                <Text style={styles.optionSubtitle}>{subtitle}</Text>
+              )}
             </View>
           </View>
 
           <View style={styles.optionRight}>
             {hasToggle && renderToggle(toggleState, onTogglePress)}
             {hasPlus && (
-              <TouchableOpacity onPress={onPlusPress} style={styles.plusButton} activeOpacity={0.7}>
-                <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+              <TouchableOpacity
+                onPress={onPlusPress}
+                style={styles.plusButton}
+                activeOpacity={0.7}>
+                <Image
+                  source={Icons.Plus}
+                  style={styles.plusIcon}
+                  resizeMode="contain"
+                />
               </TouchableOpacity>
             )}
             {hasDropdown && (
-              <MaterialIcons name="keyboard-arrow-down" size={WP(6)} color="#646464" />
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={WP(6)}
+                color="#646464"
+              />
             )}
             {customRight && customRight}
           </View>
@@ -761,7 +801,9 @@ const PlanScreen = () => {
               <Text
                 style={[
                   styles.inputLabel,
-                  isTaskLabelActive ? styles.inputLabelActive : styles.inputLabelInactive,
+                  isTaskLabelActive
+                    ? styles.inputLabelActive
+                    : styles.inputLabelInactive,
                 ]}>
                 Task
               </Text>
@@ -780,7 +822,11 @@ const PlanScreen = () => {
             <View style={styles.optionContainer}>
               <View style={styles.optionRow}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Category} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Category}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Category</Text>
                   </View>
@@ -790,7 +836,9 @@ const PlanScreen = () => {
                     {selectedCategory?.title || 'Work and Career'}
                   </Text>
                   <Image
-                    source={getCategoryIcon(selectedCategory?.title || 'Work and Career')}
+                    source={getCategoryIcon(
+                      selectedCategory?.title || 'Work and Career',
+                    )}
                     style={styles.categoryIcon}
                     resizeMode="contain"
                   />
@@ -808,7 +856,9 @@ const PlanScreen = () => {
               null,
               null,
               <View style={styles.dateContainer}>
-                <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+                <Text style={styles.dateText}>
+                  {formatDisplayDate(startDate)}
+                </Text>
               </View>,
               () => setShowStartDatePicker(true),
             )}
@@ -829,7 +879,7 @@ const PlanScreen = () => {
               handleDurationPress,
               durationData
                 ? durationData.formattedDuration ||
-                  `${durationData.hours}h ${durationData.minutes}m`
+                    `${durationData.hours}h ${durationData.minutes}m`
                 : null,
             )}
 
@@ -841,7 +891,9 @@ const PlanScreen = () => {
               null,
               true,
               handleBlockTimePress,
-              blockTimeData ? `${blockTimeData.startTime} - ${blockTimeData.endTime}` : null,
+              blockTimeData
+                ? `${blockTimeData.startTime} - ${blockTimeData.endTime}`
+                : null,
             )}
 
             <View
@@ -854,14 +906,22 @@ const PlanScreen = () => {
                 activeOpacity={0.7}
                 onPress={handlePriorityPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Flag} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Flag}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Priority</Text>
                   </View>
                 </View>
                 <View style={styles.optionRight}>
                   <MaterialIcons
-                    name={showPriorityDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    name={
+                      showPriorityDropdown
+                        ? 'keyboard-arrow-up'
+                        : 'keyboard-arrow-down'
+                    }
                     size={WP(6)}
                     color="#646464"
                   />
@@ -877,11 +937,16 @@ const PlanScreen = () => {
                         style={[
                           styles.priorityButton,
                           {backgroundColor: option.backgroundColor},
-                          priority === option.value && styles.priorityButtonSelected,
+                          priority === option.value &&
+                            styles.priorityButtonSelected,
                         ]}
                         onPress={() => handlePrioritySelect(option)}
                         activeOpacity={0.8}>
-                        <Text style={[styles.priorityButtonText, {color: option.textColor}]}>
+                        <Text
+                          style={[
+                            styles.priorityButtonText,
+                            {color: option.textColor},
+                          ]}>
                           {option.label}
                         </Text>
                       </TouchableOpacity>
@@ -903,7 +968,11 @@ const PlanScreen = () => {
                 activeOpacity={0.7}
                 onPress={handleNotePress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Note} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Note}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Note</Text>
                     {note && (
@@ -919,7 +988,11 @@ const PlanScreen = () => {
             <View style={styles.optionContainer}>
               <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Pending} style={styles.optionIcon1} resizeMode="contain" />
+                  <Image
+                    source={Icons.Pending}
+                    style={styles.optionIcon1}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Pending Task</Text>
                     <Text style={styles.pendingSubtitle}>
@@ -948,7 +1021,11 @@ const PlanScreen = () => {
               <View style={styles.optionContainer}>
                 <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                   <View style={styles.optionLeft}>
-                    <Image source={Icons.Clock} style={styles.optionIcon} resizeMode="contain" />
+                    <Image
+                      source={Icons.Clock}
+                      style={styles.optionIcon}
+                      resizeMode="contain"
+                    />
                     <View style={styles.optionTextContainer}>
                       <Text style={styles.optionTitle}>Add Pomodoro</Text>
                       {addPomodoro && pomodoroSettings && (
@@ -956,17 +1033,28 @@ const PlanScreen = () => {
                           <Text style={styles.optionSubtitle}>
                             {`${pomodoroSettings.focusTime || 25}min focus, ${
                               pomodoroSettings.shortBreak || 5
-                            }min break, ${pomodoroSettings.focusSessionsPerRound || 4} sessions`}
+                            }min break, ${
+                              pomodoroSettings.focusSessionsPerRound || 4
+                            } sessions`}
                           </Text>
                           {(blockTimeData?.startTime && blockTimeData?.endTime
-                            ? calculateDuration(blockTimeData.startTime, blockTimeData.endTime)
+                            ? calculateDuration(
+                                blockTimeData.startTime,
+                                blockTimeData.endTime,
+                              )
                             : durationData) && (
                             <Text style={styles.pomodoroDuration}>
                               Duration:{' '}
-                              {(blockTimeData?.startTime && blockTimeData?.endTime
-                                ? calculateDuration(blockTimeData.startTime, blockTimeData.endTime)
-                                : durationData
-                              )?.formattedDuration}
+                              {
+                                (blockTimeData?.startTime &&
+                                blockTimeData?.endTime
+                                  ? calculateDuration(
+                                      blockTimeData.startTime,
+                                      blockTimeData.endTime,
+                                    )
+                                  : durationData
+                                )?.formattedDuration
+                              }
                             </Text>
                           )}
                         </>
@@ -992,7 +1080,11 @@ const PlanScreen = () => {
                 activeOpacity={0.7}
                 onPress={handleLinkToGoalPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Link} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Link}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Link To Goal</Text>
                   </View>
@@ -1002,7 +1094,11 @@ const PlanScreen = () => {
                     style={styles.plusButton}
                     activeOpacity={0.7}
                     onPress={handleLinkToGoalPress}>
-                    <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+                    <Image
+                      source={Icons.Plus}
+                      style={styles.plusIcon}
+                      resizeMode="contain"
+                    />
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -1040,7 +1136,9 @@ const PlanScreen = () => {
                 <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                   <View style={styles.optionLeft}>
                     <View style={styles.optionTextContainer}>
-                      <Text style={styles.optionTitle}>Add to Google Calendar</Text>
+                      <Text style={styles.optionTitle}>
+                        Add to Google Calendar
+                      </Text>
                     </View>
                   </View>
                   <View>
@@ -1052,7 +1150,8 @@ const PlanScreen = () => {
               </View>
 
               {addToGoogleCalendar && (
-                <View style={[styles.optionContainer, styles.connectedContainer]}>
+                <View
+                  style={[styles.optionContainer, styles.connectedContainer]}>
                   <TouchableOpacity style={styles.optionRow}>
                     <View style={styles.optionLeft}>
                       <View style={styles.optionTextContainer}>
@@ -1080,7 +1179,7 @@ const PlanScreen = () => {
         dots.push(
           <View key={i} style={styles.progressDotCompleted}>
             <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
-          </View>
+          </View>,
         );
       } else if (i === currentStep) {
         // Current active step
@@ -1089,14 +1188,14 @@ const PlanScreen = () => {
             <View style={styles.progressDotActiveInner}>
               <Text style={styles.progressDotTextActive}>{i}</Text>
             </View>
-          </View>
+          </View>,
         );
       } else {
         // Future steps
         dots.push(
           <View key={i} style={styles.progressDotInactive}>
             <Text style={styles.progressDotTextInactive}>{i}</Text>
-          </View>
+          </View>,
         );
       }
 
@@ -1115,7 +1214,10 @@ const PlanScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="Plan Your Day" onBackPress={currentStep > 1 ? handleBackPress : null} />
+        <Headers
+          title="Plan Your Day"
+          onBackPress={currentStep > 1 ? handleBackPress : null}
+        />
       </View>
 
       {/* Content */}
@@ -1123,8 +1225,8 @@ const PlanScreen = () => {
         {renderStepContent()}
 
         {/* Next/Done Button */}
-        <TouchableOpacity 
-          style={styles.nextButton} 
+        <TouchableOpacity
+          style={styles.nextButton}
           onPress={handleNextPress}
           activeOpacity={0.8}>
           <Text style={styles.nextButtonText}>

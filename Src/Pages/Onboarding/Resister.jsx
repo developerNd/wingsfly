@@ -168,6 +168,20 @@ const Register = () => {
       );
 
       if (data.user) {
+        try {
+          await supabase
+            .from('profiles')
+            .update({
+              username: username,
+              phone: formattedPhone, // or mobile
+            })
+            .eq('id', data.user.id);
+
+          console.log('✅ Profile updated with username & phone');
+        } catch (updateError) {
+          console.error('❌ Failed to update profile:', updateError);
+        }
+
         // NEW: Track signup session (since user is automatically logged in after signup)
         try {
           console.log('=== TRACKING SIGNUP SESSION ===');

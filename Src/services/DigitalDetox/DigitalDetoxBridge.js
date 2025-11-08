@@ -1,10 +1,11 @@
 import { NativeModules, Alert } from 'react-native';
-import detoxMediaStorageService from './detoxMediaStorageService';
+import detoxMediaSupabaseService from './detoxMediaSupabaseService';
 
 const { DigitalDetoxModule } = NativeModules;
 
 /**
  * Digital Detox Bridge - Interface to native Android functionality
+ * Updated to work with Supabase media URLs
  */
 class DigitalDetoxBridge {
   /**
@@ -46,45 +47,63 @@ class DigitalDetoxBridge {
 
   /**
    * Start the digital detox lock with given duration
-   * First checks if a detox is already active
-   * Then checks if silent mode is enabled, prompts user if not
+   * Fetches media from Supabase and passes URL to native code
    * @param {number} durationInMinutes - Lock duration in minutes
+   * @param {string} mediaUrl - Optional: Media URL (will fetch if not provided)
+   * @param {string} mediaType - Optional: Media type (will fetch if not provided)
    * @returns {Promise<boolean>} Success status
    */
-  static async startDetoxLock(durationInMinutes) {
+  static async startDetoxLock(durationInMinutes, mediaUrl = null, mediaType = null) {
     try {
       if (!DigitalDetoxModule) {
         console.warn('DigitalDetoxModule not available - native implementation required');
         return false;
       }
       
-      // CRITICAL: Check if detox is already active
+      // Check if detox is already active
       const isActive = await this.isDetoxActive();
       if (isActive) {
         Alert.alert(
           'Detox Already Active',
-          'A digital detox session is already in progress. Please wait for it to complete or use emergency exit (press volume buttons 5 times).',
+          'A digital detox session is already in progress.',
           [{ text: 'OK' }]
         );
         return false;
       }
       
-      // Get media file path if configured
-      const mediaData = await detoxMediaStorageService.getDetoxMedia();
-      const mediaFilePath = mediaData ? mediaData.filePath : null;
-      const mediaType = mediaData ? mediaData.type : null;
+      // If media URL/type not provided, fetch from Supabase
+      let finalMediaUrl = mediaUrl;
+      let finalMediaType = mediaType;
       
-      console.log('Starting detox with media:', { mediaType, mediaFilePath });
+      if (!mediaUrl || !mediaType) {
+        console.log('📥 Fetching media from Supabase...');
+        const mediaResult = await detoxMediaSupabaseService.fetchLatestDetoxMedia();
+        
+        if (mediaResult.success && mediaResult.hasMedia) {
+          finalMediaUrl = mediaResult.data.fileUrl;
+          finalMediaType = mediaResult.data.type;
+          console.log('✅ Media fetched:', { type: finalMediaType, url: finalMediaUrl });
+        } else {
+          console.log('ℹ️ No media available, starting without media');
+          finalMediaUrl = null;
+          finalMediaType = null;
+        }
+      }
+      
+      console.log('🎬 Starting detox with:', {
+        duration: durationInMinutes,
+        hasMedia: !!finalMediaUrl,
+        mediaType: finalMediaType
+      });
       
       // Check if silent mode is enabled
       const isSilent = await this.isSilentModeEnabled();
       
       if (!isSilent) {
-        // Return a promise that resolves based on user choice
         return new Promise((resolve) => {
           Alert.alert(
             'Enable Silent Mode',
-            'For the best Digital Detox experience, please enable Silent Mode to minimize distractions.',
+            'For the best Digital Detox experience, please enable Silent Mode.',
             [
               {
                 text: 'Cancel',
@@ -96,7 +115,6 @@ class DigitalDetoxBridge {
                 onPress: async () => {
                   await this.requestSilentMode();
                   
-                  // Wait for user to enable and come back
                   setTimeout(() => {
                     Alert.alert(
                       'Ready to Start?',
@@ -110,13 +128,12 @@ class DigitalDetoxBridge {
                         {
                           text: 'Yes, Start Detox',
                           onPress: async () => {
-                            // Verify silent mode is now enabled
                             const isNowSilent = await this.isSilentModeEnabled();
                             if (isNowSilent) {
                               const result = await DigitalDetoxModule.startDetoxLock(
                                 durationInMinutes,
-                                mediaFilePath,
-                                mediaType
+                                finalMediaUrl,
+                                finalMediaType
                               );
                               resolve(result);
                             } else {
@@ -138,11 +155,11 @@ class DigitalDetoxBridge {
         });
       }
       
-      // Silent mode is already enabled, proceed
+      // Silent mode is enabled, proceed
       const result = await DigitalDetoxModule.startDetoxLock(
         durationInMinutes,
-        mediaFilePath,
-        mediaType
+        finalMediaUrl,
+        finalMediaType
       );
       return result;
     } catch (error) {
@@ -152,7 +169,7 @@ class DigitalDetoxBridge {
   }
 
   /**
-   * Stop the digital detox lock (emergency exit - use cautiously)
+   * Stop the digital detox lock (emergency exit)
    * @returns {Promise<boolean>} Success status
    */
   static async stopDetoxLock() {

@@ -26,13 +26,12 @@ import {HP, WP, FS} from '../../utils/dimentions';
 import AudioPlayer from '../../Components/Audioplayer';
 import VideoPlayer from '../../Components/Videoplayer';
 import nightModeVoiceService from '../../services/NightModeVoiceService';
+import {supabase} from '../../../supabase';
 import {YOUTUBE_API_KEY} from '@env';
 
 const {YouTubeNightModeModule} = NativeModules;
 
 const YOUTUBE_KEY = YOUTUBE_API_KEY;
-const STORAGE_KEY = '@morning_admin_content';
-const VOICE_SETTINGS_KEY = '@morning_voice_settings'; 
 const SESSION_TIMER_KEY = '@morning_session_timer';
 
 let isServiceRegistered = false;
@@ -45,7 +44,34 @@ if (!isServiceRegistered) {
   }
 }
 
+/**
+ * @typedef {Object} MorningModeSettings
+ * @property {string} id
+ * @property {string|null} voice_command_text
+ * @property {string} created_at
+ * @property {string} updated_at
+ */
+
+/**
+ * @typedef {Object} MorningModeMedia
+ * @property {string} id
+ * @property {string} type - 'audio' or 'youtube'
+ * @property {string|null} audio_file_url
+ * @property {string|null} audio_file_name
+ * @property {string|null} audio_title
+ * @property {number|null} audio_size
+ * @property {string|null} thumbnail_url
+ * @property {string|null} thumbnail_name
+ * @property {string|null} youtube_video_id
+ * @property {string|null} youtube_url
+ * @property {number} display_order
+ * @property {boolean} is_active
+ * @property {string} created_at
+ * @property {string} updated_at
+ */
+
 const MorningVideosScreen = ({navigation, route}) => {
+  const [settings, setSettings] = useState(null);
   const [content, setContent] = useState({videos: [], audios: []});
   const [videoDetails, setVideoDetails] = useState({});
   const [loading, setLoading] = useState(true);
@@ -58,7 +84,6 @@ const MorningVideosScreen = ({navigation, route}) => {
   const [currentPlayingAudio, setCurrentPlayingAudio] = useState(null);
 
   // Timer and Voice Command States
-  const [voiceSettings, setVoiceSettings] = useState(null);
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
@@ -115,20 +140,80 @@ const MorningVideosScreen = ({navigation, route}) => {
     }
   };
 
-  // Load voice settings and initialize timer
-  const loadVoiceSettings = useCallback(async () => {
+  // Load settings and media from Supabase database
+  const loadSettings = useCallback(async () => {
     try {
-      const savedSettings = await AsyncStorage.getItem(VOICE_SETTINGS_KEY);
-      if (savedSettings) {
-        const settings = JSON.parse(savedSettings);
-        setVoiceSettings(settings);
-        console.log('📢 Voice settings loaded:', settings);
-        return settings;
+      setLoading(true);
+      setError(null);
+
+      console.log('📡 Fetching morning mode settings from database...');
+
+      // Load voice command settings
+      const {data: settingsData, error: settingsError} = await supabase
+        .from('morning_mode_settings')
+        .select('*')
+        .order('created_at', {ascending: false})
+        .limit(1)
+        .single();
+
+      if (settingsError && settingsError.code !== 'PGRST116') {
+        throw settingsError;
       }
-      return null;
-    } catch (error) {
-      console.error('Error loading voice settings:', error);
-      return null;
+
+      if (settingsData) {
+        console.log('✅ Settings loaded from database:', settingsData);
+        setSettings(settingsData);
+      }
+
+      // Load media items (videos and audio)
+      const {data: mediaData, error: mediaError} = await supabase
+        .from('morning_mode_media')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', {ascending: true});
+
+      if (mediaError) {
+        throw mediaError;
+      }
+
+      console.log('✅ Media items loaded:', mediaData);
+
+      if (!mediaData || mediaData.length === 0) {
+        setError('No content available. Please add videos or audio in settings.');
+        setLoading(false);
+        return;
+      }
+
+      // Transform media data into videos and audios arrays
+      const videos = mediaData
+        .filter(item => item.type === 'youtube')
+        .map(item => ({
+          id: item.id,
+          videoId: item.youtube_video_id,
+          url: item.youtube_url,
+          type: 'video',
+        }));
+
+      const audios = mediaData
+        .filter(item => item.type === 'audio')
+        .map(item => ({
+          id: item.id,
+          title: item.audio_title || item.audio_file_name || 'Audio',
+          url: item.audio_file_url,
+          uri: item.audio_file_url,
+          name: item.audio_file_name || 'audio',
+          thumbnail: item.thumbnail_url,
+          size: item.audio_size,
+          type: 'audio',
+        }));
+
+      setContent({videos, audios});
+
+      setLoading(false);
+    } catch (err) {
+      console.error('❌ Error loading settings:', err);
+      setError('Failed to load content. Please try again.');
+      setLoading(false);
     }
   }, []);
 
@@ -173,19 +258,26 @@ const MorningVideosScreen = ({navigation, route}) => {
     }
   }, []);
 
-  // Initialize timer and voice settings
+  // Initialize settings and timer
   useEffect(() => {
     const initializeSession = async () => {
-      const settings = await loadVoiceSettings();
+      await loadSettings();
       await loadSessionTimer();
     };
 
     initializeSession();
-  }, [loadVoiceSettings, loadSessionTimer]);
+  }, [loadSettings, loadSessionTimer]);
+
+  // Fetch video details if YouTube videos exist
+  useEffect(() => {
+    if (content.videos && content.videos.length > 0) {
+      fetchVideoDetails();
+    }
+  }, [content.videos]);
 
   // Timer tick effect - Fixed 1 hour duration
   useEffect(() => {
-    if (!sessionStartTime || !voiceSettings || !voiceSettings.enabled) {
+    if (!sessionStartTime || !settings?.voice_command_text) {
       return;
     }
 
@@ -218,7 +310,7 @@ const MorningVideosScreen = ({navigation, route}) => {
     };
   }, [
     sessionStartTime,
-    voiceSettings,
+    settings?.voice_command_text,
     isSessionExpired,
     hasPlayedVoiceCommand,
   ]);
@@ -238,19 +330,21 @@ const MorningVideosScreen = ({navigation, route}) => {
     }
 
     // Play voice command if enabled and message exists
-    if (voiceSettings && voiceSettings.enabled && voiceSettings.text) {
-      console.log('🔊 Playing voice command:', voiceSettings.text);
+    if (settings?.voice_command_text) {
+      console.log('🔊 Playing voice command:', settings.voice_command_text);
 
       setTimeout(async () => {
         try {
-          await nightModeVoiceService.playSessionEndVoice(voiceSettings.text);
+          await nightModeVoiceService.playSessionEndVoice(
+            settings.voice_command_text,
+          );
           console.log('✅ Voice command played successfully');
         } catch (error) {
           console.error('❌ Error playing voice command:', error);
         }
       }, 500);
     }
-  }, [voiceSettings]);
+  }, [settings?.voice_command_text]);
 
   // Background time handling
   useEffect(() => {
@@ -275,7 +369,7 @@ const MorningVideosScreen = ({navigation, route}) => {
             setElapsedSeconds(newElapsed);
 
             // Check if session expired while in background (1 hour = 3600 seconds)
-            if (voiceSettings && voiceSettings.enabled) {
+            if (settings?.voice_command_text) {
               const durationSeconds = 60 * 60; // Fixed 1 hour
               if (newElapsed >= durationSeconds && !isSessionExpired) {
                 handleSessionExpiry();
@@ -293,15 +387,20 @@ const MorningVideosScreen = ({navigation, route}) => {
       handleAppStateChange,
     );
     return () => subscription?.remove();
-  }, [sessionStartTime, voiceSettings, isSessionExpired, handleSessionExpiry]);
+  }, [
+    sessionStartTime,
+    settings?.voice_command_text,
+    isSessionExpired,
+    handleSessionExpiry,
+  ]);
 
-  // Listen for navigation from child screens
+  // Listen for navigation focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      loadContent();
+      loadSettings();
 
       // Check if session expired while away
-      if (sessionStartTime && voiceSettings && voiceSettings.enabled) {
+      if (sessionStartTime && settings?.voice_command_text) {
         const now = Date.now();
         const elapsed = Math.floor((now - sessionStartTime) / 1000);
         const durationSeconds = 60 * 60; // 1 hour
@@ -316,20 +415,11 @@ const MorningVideosScreen = ({navigation, route}) => {
   }, [
     navigation,
     sessionStartTime,
-    voiceSettings,
+    settings?.voice_command_text,
     isSessionExpired,
     handleSessionExpiry,
+    loadSettings,
   ]);
-
-  useEffect(() => {
-    loadContent();
-  }, []);
-
-  useEffect(() => {
-    if (content.videos.length > 0) {
-      fetchVideoDetails();
-    }
-  }, [content.videos]);
 
   useEffect(() => {
     let mounted = true;
@@ -382,47 +472,11 @@ const MorningVideosScreen = ({navigation, route}) => {
     return () => backHandler.remove();
   }, [isLocked]);
 
-  const loadContent = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const savedContent = await AsyncStorage.getItem(STORAGE_KEY);
-
-      if (savedContent) {
-        const parsedContent = JSON.parse(savedContent);
-        setContent({
-          videos: parsedContent.videos || [],
-          audios: parsedContent.audios || [],
-        });
-
-        if (
-          (parsedContent.videos || []).length === 0 &&
-          (parsedContent.audios || []).length === 0
-        ) {
-          setError(
-            'No content available. Please add videos or audio files in settings.',
-          );
-        }
-      } else {
-        setError(
-          'No content available. Please add videos or audio files in settings.',
-        );
-      }
-
-      setLoading(false);
-    } catch (err) {
-      console.error('Error loading content:', err);
-      setError('Failed to load content');
-      setLoading(false);
-    }
-  };
-
   const fetchVideoDetails = async () => {
     try {
+      if (!content.videos || content.videos.length === 0) return;
+
       const videoIds = content.videos.map(v => v.videoId).join(',');
-
-      if (!videoIds) return;
-
       const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoIds}&key=${YOUTUBE_KEY}`;
 
       const response = await fetch(detailsUrl);
@@ -433,21 +487,23 @@ const MorningVideosScreen = ({navigation, route}) => {
         return;
       }
 
-      const details = {};
-      data.items.forEach(item => {
-        details[item.id] = {
-          title: item.snippet.title,
-          description: item.snippet.description,
-          channelName: item.snippet.channelTitle,
-          thumbnailUrl:
-            item.snippet.thumbnails.maxres?.url ||
-            item.snippet.thumbnails.high?.url ||
-            item.snippet.thumbnails.medium?.url,
-          duration: formatDuration(item.contentDetails.duration),
-        };
-      });
+      if (data.items && data.items.length > 0) {
+        const details = {};
+        data.items.forEach(item => {
+          details[item.id] = {
+            title: item.snippet.title,
+            description: item.snippet.description,
+            channelName: item.snippet.channelTitle,
+            thumbnailUrl:
+              item.snippet.thumbnails.maxres?.url ||
+              item.snippet.thumbnails.high?.url ||
+              item.snippet.thumbnails.medium?.url,
+            duration: formatDuration(item.contentDetails.duration),
+          };
+        });
 
-      setVideoDetails(details);
+        setVideoDetails(details);
+      }
     } catch (err) {
       console.error('Error fetching video details:', err);
     }
@@ -471,7 +527,12 @@ const MorningVideosScreen = ({navigation, route}) => {
   // Get timer data to pass to child screens
   const getTimerData = () => ({
     sessionStartTime,
-    voiceSettings,
+    voiceSettings: settings?.voice_command_text
+      ? {
+          enabled: true,
+          text: settings.voice_command_text,
+        }
+      : null,
     isSessionExpired,
   });
 
@@ -503,7 +564,7 @@ const MorningVideosScreen = ({navigation, route}) => {
       videoDetails,
       isSessionExpired,
       sessionStartTime,
-      voiceSettings,
+      settings?.voice_command_text,
     ],
   );
 
@@ -569,13 +630,9 @@ const MorningVideosScreen = ({navigation, route}) => {
       isSessionExpired,
       setupPlayer,
       sessionStartTime,
-      voiceSettings,
+      settings?.voice_command_text,
     ],
   );
-
-  const handleSettingsPress = () => {
-    navigation.navigate('MorningModeSettings');
-  };
 
   const handleExitPress = () => {
     Alert.alert(
@@ -632,7 +689,7 @@ const MorningVideosScreen = ({navigation, route}) => {
 
   // Get remaining time (fixed 1 hour)
   const getRemainingTime = () => {
-    if (!voiceSettings || !voiceSettings.enabled) return null;
+    if (!settings?.voice_command_text) return null;
 
     const durationSeconds = 60 * 60; // Fixed 1 hour
     const remaining = Math.max(0, durationSeconds - elapsedSeconds);
@@ -666,12 +723,6 @@ const MorningVideosScreen = ({navigation, route}) => {
         <View style={styles.errorContainer}>
           <MaterialIcons name="error-outline" size={WP(15)} color="#606060" />
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            style={styles.settingsButtonLarge}
-            onPress={handleSettingsPress}>
-            <MaterialIcons name="settings" size={WP(5)} color="#FFFFFF" />
-            <Text style={styles.settingsButtonLargeText}>Go to Settings</Text>
-          </TouchableOpacity>
         </View>
       </View>
     );
@@ -703,15 +754,13 @@ const MorningVideosScreen = ({navigation, route}) => {
             />
             <View style={styles.headerTextContainer}>
               <Text style={styles.lockedTitle}>Morning Mode</Text>
-              {voiceSettings &&
-                voiceSettings.enabled &&
-                remainingTime !== null && (
-                  <Text style={styles.timerText}>
-                    {isSessionExpired
-                      ? 'Session Ended'
-                      : `Time: ${formatTimeDisplay(remainingTime)}`}
-                  </Text>
-                )}
+              {settings?.voice_command_text && remainingTime !== null && (
+                <Text style={styles.timerText}>
+                  {isSessionExpired
+                    ? 'Session Ended'
+                    : `Time: ${formatTimeDisplay(remainingTime)}`}
+                </Text>
+              )}
             </View>
           </View>
           <TouchableOpacity style={styles.exitButton} onPress={handleExitPress}>
@@ -730,19 +779,13 @@ const MorningVideosScreen = ({navigation, route}) => {
         {isSessionExpired && (
           <View style={styles.expiredContainer}>
             <View style={styles.sunIconContainer}>
-              <Ionicons
-                name="sunny"
-                size={WP(17)}
-                color={colors.Primary}
-              />
+              <Ionicons name="sunny" size={WP(17)} color={colors.Primary} />
             </View>
 
             <Text style={styles.expiredTitle}>Great Morning! 🌅</Text>
 
             <Text style={styles.expiredMessage}>
-              {voiceSettings && voiceSettings.text
-                ? voiceSettings.text
-                : 'Ready to conquer the day!'}
+              {settings?.voice_command_text || 'Ready to conquer the day!'}
             </Text>
           </View>
         )}
@@ -870,26 +913,6 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-Medium',
     color: '#606060',
     textAlign: 'center',
-  },
-  settingsButtonLarge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: HP(3),
-    backgroundColor: colors.Primary || '#FF0000',
-    paddingHorizontal: WP(8),
-    paddingVertical: HP(1.8),
-    borderRadius: WP(3),
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  settingsButtonLargeText: {
-    fontSize: FS(1.6),
-    fontFamily: 'OpenSans-SemiBold',
-    color: '#FFFFFF',
-    marginLeft: WP(2),
   },
   expiredContainer: {
     backgroundColor: '#FFFFFF',

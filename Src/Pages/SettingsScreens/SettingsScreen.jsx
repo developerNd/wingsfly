@@ -50,10 +50,6 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('DigitalDetoxScreen');
   };
 
-  const handleDetoxMediaSettingsPress = () => {
-    navigation.navigate('DetoxMediaSettingsScreen');
-  };
-
   const handleDateReminderPress = () => {
     navigation.navigate('DateReminderSettingsScreen');
   };
@@ -67,10 +63,6 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('GetBackSettingsScreen');
   };
 
-  const handleUsageLimitVideoPress = () => {
-    navigation.navigate('UsageLimitVideoSettingsScreen');
-  };
-
   // NEW: YouTube Videos
   const handleYouTubeVideosPress = () => {
     navigation.navigate('YouTubeVideosScreen', {
@@ -82,12 +74,12 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('YouTubeIntegrationScreen');
   };
 
-  const handleYouTubeSettingsPress = () => {
-    navigation.navigate('YouTubeSettingsScreen');
-  };
-
   const handleNightRoutinePress = () => {
     navigation.navigate('NightRoutineScreen');
+  };
+
+  const handleMorningRoutinePress = () => {
+    navigation.navigate('MorningRoutineScreen');
   };
 
   const handleMorningVideosScreen = () => {
@@ -96,8 +88,14 @@ const SettingsScreen = ({navigation}) => {
     });
   };
 
-  const handleMorningModeSettingsScreen = () => {
-    navigation.navigate('MorningModeSettingsScreen');
+  // NEW: Leaderboard
+  const handleLeaderboardPress = () => {
+    navigation.navigate('LeaderboardScreen');
+  };
+
+  // NEW: Audio Files
+  const handleAudioPress = () => {
+    navigation.navigate('AudioFilesScreen');
   };
 
   const handleLogout = () => {
@@ -174,6 +172,14 @@ const SettingsScreen = ({navigation}) => {
       <ScrollView
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}>
+        {/* Leaderboard Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Competition</Text>
+          <View style={styles.sectionContent}>
+            <SettingItem title="Leaderboard" onPress={handleLeaderboardPress} />
+          </View>
+        </View>
+
         {/* Apps Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Apps</Text>
@@ -203,6 +209,11 @@ const SettingsScreen = ({navigation}) => {
           <Text style={styles.sectionTitle}>Sleep & Routine</Text>
           <View style={styles.sectionContent}>
             <SettingItem
+              title="Morning Routine"
+              onPress={handleMorningRoutinePress}
+            />
+            <View style={styles.separator} />
+            <SettingItem
               title="Night Routine"
               onPress={handleNightRoutinePress}
             />
@@ -216,11 +227,6 @@ const SettingsScreen = ({navigation}) => {
             <SettingItem
               title="Digital Detox"
               onPress={handleDigitalDetoxPress}
-            />
-            <View style={styles.separator} />
-            <SettingItem
-              title="Detox Media Settings"
-              onPress={handleDetoxMediaSettingsPress}
             />
             <View style={styles.separator} />
             <SettingItem title="Get Back" onPress={handleGetBackPress} />
@@ -275,36 +281,25 @@ const SettingsScreen = ({navigation}) => {
           <Text style={styles.sectionTitle}>Videos</Text>
           <View style={styles.sectionContent}>
             <SettingItem
-              title="Night Mode"
-              onPress={handleYouTubeVideosPress}
-            />
-            <View style={styles.separator} />
-            <SettingItem
               title="Morning Mode"
               onPress={handleMorningVideosScreen}
             />
             <View style={styles.separator} />
+            <SettingItem
+              title="Night Mode"
+              onPress={handleYouTubeVideosPress}
+            />
+
+            <View style={styles.separator} />
             <SettingItem title="YouTube" onPress={handleYouTubePress} />
-            <View style={styles.separator} />
-            <SettingItem
-              title="YouTube Settings"
-              onPress={handleYouTubeSettingsPress}
-            />
-            <View style={styles.separator} />
-            <SettingItem
-              title="Morning Settings"
-              onPress={handleMorningModeSettingsScreen}
-            />
           </View>
         </View>
 
-        {/* Usage Limit Video Section */}
+        {/* NEW: Audio Section */}
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Media</Text>
           <View style={styles.sectionContent}>
-            <SettingItem
-              title="Usage Limit Video"
-              onPress={handleUsageLimitVideoPress}
-            />
+            <SettingItem title="Audio Files" onPress={handleAudioPress} />
           </View>
         </View>
 

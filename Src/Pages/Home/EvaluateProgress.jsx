@@ -16,7 +16,8 @@ const EvaluateProgress = () => {
   const navigation = useNavigation();
   const route = useRoute();
 
-  const {selectedCategory, type} = route.params || {};
+  // FIXED: Extract fromNightMode from route params
+  const {selectedCategory, type, fromNightMode} = route.params || {};
 
   const getProgressSteps = () => {
     if (type === 'Habit') {
@@ -62,11 +63,17 @@ const EvaluateProgress = () => {
   };
 
   const handleOptionPress = optionType => {
+    // Base navigation data
     const navigationData = {
       selectedCategory,
       evaluationType: optionType,
       type,
     };
+
+    // Only pass fromNightMode flag for Plan type
+    if (type === 'Plan') {
+      navigationData.fromNightMode = fromNightMode;
+    }
 
     // Navigation flow based on type
     if (type === 'Habit') {

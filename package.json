@@ -20,6 +20,7 @@
     "@react-native-community/slider": "^5.0.1",
     "@react-native-masked-view/masked-view": "^0.3.2",
     "@react-native-picker/picker": "^2.11.1",
+    "@react-native-voice/voice": "^3.2.4",
     "@react-native/gradle-plugin": "^0.76.5",
     "@react-navigation/bottom-tabs": "^7.3.10",
     "@react-navigation/elements": "^2.3.8",

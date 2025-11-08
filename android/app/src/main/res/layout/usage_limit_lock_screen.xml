@@ -1,76 +1,157 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:background="#E53935"
-    android:padding="32dp">
+    android:background="#FFFFFF"
+    android:clickable="true"
+    android:focusable="true"
+    android:fitsSystemWindows="false">
 
-    <!-- App Icon -->
-    <ImageView
-        android:id="@+id/appIcon"
-        android:layout_width="80dp"
-        android:layout_height="80dp"
-        android:layout_marginBottom="24dp"
-        android:scaleType="fitCenter" />
+    <!-- Full screen touch blocker -->
+    <View
+        android:id="@+id/fullscreenBlocker"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="true" />
 
-    <!-- App Name -->
-    <TextView
-        android:id="@+id/appName"
-        android:layout_width="wrap_content"
+    <!-- Bottom gesture blocker -->
+    <View
+        android:id="@+id/bottomGestureBlocker"
+        android:layout_width="match_parent"
+        android:layout_height="100dp"
+        android:layout_alignParentBottom="true"
+        android:background="#F5F5F5"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="App Name"
-        android:textSize="24sp"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="16dp" />
+        android:layout_centerInParent="true"
+        android:layout_margin="32dp"
+        android:background="@drawable/popup_background"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center">
 
-    <!-- Lock Message -->
-    <TextView
-        android:id="@+id/lockMessage"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Daily Usage Limit Reached!"
-        android:textSize="20sp"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="16dp" />
+        <!-- Lock icon -->
+        <ImageView
+            android:id="@+id/lockIcon"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="24dp"
+            android:src="@drawable/ic_lock" />
 
-    <!-- Usage Info -->
-    <TextView
-        android:id="@+id/usageInfo"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="You've reached your daily limit for this app."
-        android:textSize="16sp"
-        android:textColor="#FFFFFF"
-        android:gravity="center"
-        android:layout_marginBottom="32dp"
-        android:lineSpacingExtra="4dp" />
+        <!-- App Icon -->
+        <ImageView
+            android:id="@+id/appIcon"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:padding="8dp"
+            android:background="@drawable/app_icon_background"
+            android:scaleType="centerCrop" />
 
-    <!-- Timer Icon (optional, for visual appeal) -->
-    <ImageView
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_marginBottom="24dp"
-        android:src="@android:drawable/ic_lock_idle_alarm"
-        android:tint="#FFFFFF" />
+        <!-- App Name -->
+        <TextView
+            android:id="@+id/appName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:text="App Name"
+            android:textColor="#1A1A1A"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:gravity="center" />
 
-    <!-- Close Button -->
-    <Button
-        android:id="@+id/closeButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="OK"
-        android:textSize="16sp"
-        android:textColor="#E53935"
-        android:background="#FFFFFF"
-        android:paddingHorizontal="32dp"
-        android:paddingVertical="12dp"
-        android:layout_marginTop="16dp"
-        android:elevation="4dp" />
+        <!-- Lock Message -->
+        <TextView
+            android:id="@+id/lockMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:gravity="center"
+            android:text="Daily Usage Limit Reached!"
+            android:textColor="#666666"
+            android:textSize="16sp"
+            android:textAlignment="center"
+            android:layout_marginBottom="8dp" />
 
-</LinearLayout>
+        <!-- Usage Info -->
+        <TextView
+            android:id="@+id/usageInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:gravity="center"
+            android:text="You've reached your daily limit for this app."
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:textAlignment="center"
+            android:lineSpacingExtra="4dp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Timer text -->
+        <TextView
+            android:id="@+id/timerText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="16dp"
+            android:textSize="32sp"
+            android:textColor="#FF5722"
+            android:textStyle="bold"
+            android:text="1"
+            android:gravity="center"
+            android:visibility="visible" />
+
+        <!-- Auto-close message -->
+        <TextView
+            android:id="@+id/autoCloseMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:text="Closing automatically in a second..."
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:gravity="center" />
+
+        <!-- Motivational message -->
+        <TextView
+            android:id="@+id/motivationalMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:text="Focus on what matters most\nBecause you are the greatest personality in this world."
+            android:textColor="#888888"
+            android:textSize="14sp"
+            android:textStyle="italic"
+            android:textAlignment="center" />
+
+        <!-- Close Button -->
+        <Button
+            android:id="@+id/closeButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/button_background"
+            android:paddingHorizontal="32dp"
+            android:paddingVertical="12dp"
+            android:text="OK"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:minWidth="120dp" />
+
+    </LinearLayout>
+
+</RelativeLayout>

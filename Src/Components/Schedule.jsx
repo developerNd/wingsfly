@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import CustomToast from './CustomToast';
 
 const Schedule = ({ 
   visible, 
@@ -46,8 +47,37 @@ const Schedule = ({
   // Update states
   const [editingTimeSlot, setEditingTimeSlot] = useState(null);
 
+  // Toast state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
   // Default day names fallback
   const defaultDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  // Function to show toast
+  const showToast = (message) => {
+    setToastMessage(message);
+    setToastVisible(true);
+  };
+
+  // Function to check if two time ranges overlap on any common day
+  const checkTimeOverlap = (slot1, slot2) => {
+    // Check if they have any common days
+    const commonDays = slot1.days.filter(day => slot2.days.includes(day));
+    if (commonDays.length === 0) {
+      return false; // No overlap if no common days
+    }
+
+    // Convert time to minutes for easier comparison
+    const slot1Start = parseInt(slot1.startTime.split(':')[0]) * 60 + parseInt(slot1.startTime.split(':')[1]);
+    const slot1End = parseInt(slot1.endTime.split(':')[0]) * 60 + parseInt(slot1.endTime.split(':')[1]);
+    const slot2Start = parseInt(slot2.startTime.split(':')[0]) * 60 + parseInt(slot2.startTime.split(':')[1]);
+    const slot2End = parseInt(slot2.endTime.split(':')[0]) * 60 + parseInt(slot2.endTime.split(':')[1]);
+
+    // Check if time ranges overlap
+    // Two ranges overlap if one starts before the other ends
+    return (slot1Start < slot2End && slot2Start < slot1End);
+  };
 
   // Function to find existing schedules from other apps
   const findExistingSchedules = () => {
@@ -356,7 +386,7 @@ const Schedule = ({
 
   const addTimeSlot = () => {
     if (!selectedDays || selectedDays.length === 0) {
-      Alert.alert('Error', 'Please select at least one day');
+      showToast('Please select at least one day');
       return;
     }
 
@@ -368,6 +398,42 @@ const Schedule = ({
       isEnabled: true,
       type: timerType
     };
+
+    // Get current type slots to check for duplicates (same type overlaps)
+    const currentTypeSlots = timerType === 'lock' ? lockTimeSlots : unlockTimeSlots;
+    
+    // Get the opposite type slots to check for conflicts
+    const oppositeSlots = timerType === 'lock' ? unlockTimeSlots : lockTimeSlots;
+    
+    // Filter out the current editing slot if we're editing
+    const slotsToCheckSameType = editingTimeSlot 
+      ? currentTypeSlots.filter(slot => slot.id !== editingTimeSlot.id)
+      : currentTypeSlots;
+    
+    const slotsToCheckOppositeType = editingTimeSlot 
+      ? oppositeSlots.filter(slot => slot.id !== editingTimeSlot.id)
+      : oppositeSlots;
+
+    // Check for overlaps with SAME type (duplicate validation)
+    const hasSameTypeOverlap = slotsToCheckSameType.some(existingSlot => 
+      checkTimeOverlap(newSlot, existingSlot)
+    );
+
+    if (hasSameTypeOverlap) {
+      showToast(`Time slot overlaps with existing ${timerType} time`);
+      return;
+    }
+
+    // Check for overlaps with opposite type
+    const hasOppositeTypeOverlap = slotsToCheckOppositeType.some(existingSlot => 
+      checkTimeOverlap(newSlot, existingSlot)
+    );
+
+    if (hasOppositeTypeOverlap) {
+      const oppositeType = timerType === 'lock' ? 'unlock' : 'lock';
+      showToast(`Time slot overlaps with existing ${oppositeType} time`);
+      return;
+    }
     
     if (editingTimeSlot) {
       if (timerType === 'lock') {
@@ -481,7 +547,7 @@ const Schedule = ({
       }, 3000);
     } catch (error) {
       console.error('Error saving schedules:', error);
-      Alert.alert('Error', 'Failed to save schedules');
+      showToast('Failed to save schedules');
     } finally {
       setSavingSchedules(false);
     }
@@ -750,6 +816,26 @@ const Schedule = ({
             <Text style={styles.successTitle}>Success!</Text>
             <Text style={styles.successMessage}>{successMessage}</Text>
           </View>
+        </View>
+      </Modal>
+
+      {/* Toast Component - Rendered outside modals */}
+      <Modal
+        transparent={true}
+        visible={visible && toastVisible}
+        animationType="none"
+        onRequestClose={() => setToastVisible(false)}
+      >
+        <View style={styles.toastContainer}>
+          <CustomToast
+            visible={toastVisible}
+            message={toastMessage}
+            type="error"
+            duration={3000}
+            onHide={() => setToastVisible(false)}
+            position="bottom"
+            showIcon={true}
+          />
         </View>
       </Modal>
     </>
@@ -1119,6 +1205,11 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 20,
+  },
+  toastContainer: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    pointerEvents: 'box-none',
   },
 });
 

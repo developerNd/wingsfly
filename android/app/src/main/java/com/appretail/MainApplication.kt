@@ -47,7 +47,7 @@ class MainApplication : Application(), ReactApplication {
               add(DateReminderModulePackage())
               add(YouTubeNightModePackage())
               add(NightModeSchedulerPackage())
-              add(MorningModeSchedulerPackage())
+              add(MorningRoutineAlarmModulePackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

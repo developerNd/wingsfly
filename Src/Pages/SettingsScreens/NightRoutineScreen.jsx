@@ -19,7 +19,6 @@ import CustomToast from '../../Components/CustomToast';
 import {useAuth} from '../../contexts/AuthContext';
 import {nightRoutineService} from '../../services/api/nightRoutineService';
 import NightModeScheduler from '../../services/NightModeScheduler';
-import MorningModeScheduler from '../../services/MorningModeScheduler';
 
 const NightRoutineScreen = ({navigation}) => {
   const {user} = useAuth();
@@ -208,15 +207,11 @@ const NightRoutineScreen = ({navigation}) => {
 
       await nightRoutineService.saveNightRoutine(routineData);
 
-      // Update the Night Mode Scheduler (for bedtime)
+      // Update the Night Mode Scheduler
       console.log('🌙 Updating Night Mode Scheduler...');
       await NightModeScheduler.updateNightRoutine(user?.id);
 
-      // ✅ NEW: Update the Morning Mode Scheduler (for wake-up time)
-      console.log('☀️ Updating Morning Mode Scheduler...');
-      await MorningModeScheduler.updateNightRoutine(user?.id);
-
-      showToast('Sleep schedule saved successfully!', 'success');
+      showToast('Night routine saved successfully!', 'success');
 
       // Navigate back after a short delay
       setTimeout(() => {
@@ -224,7 +219,7 @@ const NightRoutineScreen = ({navigation}) => {
       }, 1500);
     } catch (error) {
       console.error('Error saving night routine:', error);
-      showToast('Failed to save sleep schedule', 'error');
+      showToast('Failed to save night routine', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -238,11 +233,11 @@ const NightRoutineScreen = ({navigation}) => {
       <View style={styles.container}>
         <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
         <View style={styles.headerWrapper}>
-          <Headers title="Sleep Schedule" />
+          <Headers title="Night Routine" />
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.Primary} />
-          <Text style={styles.loadingText}>Loading schedule...</Text>
+          <Text style={styles.loadingText}>Loading routine...</Text>
         </View>
       </View>
     );
@@ -253,7 +248,7 @@ const NightRoutineScreen = ({navigation}) => {
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
 
       <View style={styles.headerWrapper}>
-        <Headers title="Sleep Schedule" />
+        <Headers title="Night Routine" />
       </View>
 
       <ScrollView
@@ -270,8 +265,7 @@ const NightRoutineScreen = ({navigation}) => {
             <Text style={styles.infoTitle}>Set Your Sleep Schedule</Text>
             <Text style={styles.infoDescription}>
               Set your wake-up time and desired sleep duration. We'll calculate
-              your bedtime and schedule both Night Mode and Morning Mode alarms
-              automatically.
+              your ideal bedtime automatically.
             </Text>
           </View>
 
@@ -291,12 +285,7 @@ const NightRoutineScreen = ({navigation}) => {
                     color={colors.White}
                   />
                 </View>
-                <View style={styles.timeTextContainer}>
-                  <Text style={styles.timeCardTitle}>Wake-up Time</Text>
-                  <Text style={styles.timeCardSubtitle}>
-                    Morning Mode triggers here
-                  </Text>
-                </View>
+                <Text style={styles.timeCardTitle}>Wake-up Time</Text>
               </View>
               <View style={styles.timeCardRight}>
                 <Text style={styles.timeText}>{formatTime(wakeUpTime)}</Text>
@@ -378,58 +367,10 @@ const NightRoutineScreen = ({navigation}) => {
                 </View>
                 <View style={styles.bedtimeTextContainer}>
                   <Text style={styles.bedtimeLabel}>Bedtime</Text>
-                  <Text style={styles.bedtimeSubtitle}>
-                    Night Mode triggers 1hr before
-                  </Text>
                 </View>
               </View>
               <View style={styles.bedtimeRight}>
                 <Text style={styles.bedtimeValue}>{formatTime(bedTime)}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Schedule Summary Card */}
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryHeader}>
-              <MaterialIcons
-                name="event-note"
-                size={WP(5)}
-                color={colors.Primary}
-              />
-              <Text style={styles.summaryTitle}>Alarm Schedule</Text>
-            </View>
-            <View style={styles.summaryContent}>
-              <View style={styles.summaryItem}>
-                <View style={styles.summaryIconContainer}>
-                  <MaterialIcons name="bedtime" size={WP(4)} color="#5C6BC0" />
-                </View>
-                <View style={styles.summaryTextContainer}>
-                  <Text style={styles.summaryLabel}>Night Mode</Text>
-                  <Text style={styles.summaryValue}>
-                    {formatTime(
-                      new Date(
-                        bedTime.getTime() - 60 * 60 * 1000, // 1 hour before bed
-                      ),
-                    )}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.summaryDivider} />
-              <View style={styles.summaryItem}>
-                <View style={styles.summaryIconContainer}>
-                  <MaterialIcons
-                    name="wb-sunny"
-                    size={WP(4)}
-                    color="#FFA726"
-                  />
-                </View>
-                <View style={styles.summaryTextContainer}>
-                  <Text style={styles.summaryLabel}>Morning Mode</Text>
-                  <Text style={styles.summaryValue}>
-                    {formatTime(wakeUpTime)}
-                  </Text>
-                </View>
               </View>
             </View>
           </View>
@@ -449,7 +390,7 @@ const NightRoutineScreen = ({navigation}) => {
                   size={WP(5)}
                   color={colors.White}
                 />
-                <Text style={styles.saveButtonText}>Save Sleep Schedule</Text>
+                <Text style={styles.saveButtonText}>Save Night Routine</Text>
               </>
             )}
           </TouchableOpacity>
@@ -472,13 +413,7 @@ const NightRoutineScreen = ({navigation}) => {
             <View style={styles.tipItem}>
               <Text style={styles.tipBullet}>•</Text>
               <Text style={styles.tipText}>
-                Night Mode helps you wind down before bed
-              </Text>
-            </View>
-            <View style={styles.tipItem}>
-              <Text style={styles.tipBullet}>•</Text>
-              <Text style={styles.tipText}>
-                Morning Mode helps you wake up energized
+                Avoid screens 30 minutes before bedtime
               </Text>
             </View>
           </View>
@@ -595,19 +530,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: WP(3),
   },
-  timeTextContainer: {
-    flex: 1,
-  },
   timeCardTitle: {
     fontSize: FS(1.7),
     fontFamily: 'OpenSans-SemiBold',
     color: colors.Black,
-  },
-  timeCardSubtitle: {
-    fontSize: FS(1.2),
-    fontFamily: 'OpenSans-Regular',
-    color: colors.Shadow,
-    marginTop: HP(0.3),
   },
   timeCardRight: {
     flexDirection: 'row',
@@ -701,7 +627,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.White,
     borderRadius: WP(3),
     padding: WP(4),
-    marginBottom: HP(2),
+    marginBottom: HP(3),
     elevation: 3,
     shadowColor: colors.Shadow,
     shadowOffset: {
@@ -728,12 +654,22 @@ const styles = StyleSheet.create({
     fontSize: FS(1.7),
     fontFamily: 'OpenSans-SemiBold',
     color: colors.Black,
+    marginBottom: HP(0.4),
   },
-  bedtimeSubtitle: {
-    fontSize: FS(1.2),
-    fontFamily: 'OpenSans-Regular',
-    color: colors.Shadow,
-    marginTop: HP(0.3),
+  autoCalcBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3E5F5',
+    paddingVertical: HP(0.3),
+    paddingHorizontal: WP(2),
+    borderRadius: WP(1.5),
+    alignSelf: 'flex-start',
+  },
+  autoCalcText: {
+    fontSize: FS(1.1),
+    fontFamily: 'OpenSans-Medium',
+    color: '#9C27B0',
+    marginLeft: WP(1),
   },
   bedtimeRight: {
     alignItems: 'flex-end',
@@ -742,61 +678,6 @@ const styles = StyleSheet.create({
     fontSize: FS(1.8),
     fontFamily: 'OpenSans-Bold',
     color: colors.Primary,
-  },
-  summaryCard: {
-    backgroundColor: '#FFF9E6',
-    borderRadius: WP(3),
-    padding: WP(4),
-    marginBottom: HP(3),
-    borderWidth: 1,
-    borderColor: '#FFE8A3',
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: HP(1.5),
-  },
-  summaryTitle: {
-    fontSize: FS(1.6),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.Black,
-    marginLeft: WP(2),
-  },
-  summaryContent: {
-    marginTop: HP(1),
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: HP(1),
-  },
-  summaryIconContainer: {
-    width: WP(9),
-    height: WP(9),
-    borderRadius: WP(4.5),
-    backgroundColor: colors.White,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: WP(3),
-  },
-  summaryTextContainer: {
-    flex: 1,
-  },
-  summaryLabel: {
-    fontSize: FS(1.4),
-    fontFamily: 'OpenSans-Medium',
-    color: colors.Shadow,
-  },
-  summaryValue: {
-    fontSize: FS(1.6),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.Black,
-    marginTop: HP(0.2),
-  },
-  summaryDivider: {
-    height: 1,
-    backgroundColor: '#FFE8A3',
-    marginVertical: HP(0.5),
   },
   saveButton: {
     backgroundColor: colors.Primary,

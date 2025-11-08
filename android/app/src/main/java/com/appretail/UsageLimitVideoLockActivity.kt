@@ -91,60 +91,150 @@ class UsageLimitVideoLockActivity : Activity() {
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        
-        Log.d(TAG, "========================================")
-        Log.d(TAG, "Usage Limit Video Lock Activity Created")
-        Log.d(TAG, "========================================")
-        
-        isDestroying = false
-        
-        // Get data from intent
-        packageName = intent.getStringExtra("package_name")
-        appName = intent.getStringExtra("app_name")
-        videoPath = intent.getStringExtra("video_path")
-        youtubeLink = intent.getStringExtra("youtube_link")
-        
-        Log.d(TAG, "Package: $packageName")
-        Log.d(TAG, "App Name: $appName")
-        Log.d(TAG, "Video Path: $videoPath")
-        Log.d(TAG, "YouTube Link: $youtubeLink")
-        
-        // Determine video type
-        isYouTubeVideo = !youtubeLink.isNullOrEmpty()
-        
-        // Validate video source
-        if (isYouTubeVideo) {
-            Log.d(TAG, "YouTube video mode")
-        } else if (videoPath != null && File(videoPath!!).exists()) {
-            Log.d(TAG, "Local video mode")
-        } else {
-            Log.e(TAG, "No valid video source found")
-            Toast.makeText(this, "No video configured", Toast.LENGTH_SHORT).show()
-            finish()
-            return
-        }
-        
-        setupKioskMode()
-        setupFullScreenLockMode()
-        setContentView(R.layout.activity_usage_video_lock)
-        initializeViews()
-        
-        // Setup appropriate video player
-        if (isYouTubeVideo) {
-            setupYouTubePlayer()
-        } else {
-            setupVideoPlayer()
-        }
-        
-        registerReceivers()
-        createMaximumStatusBarBlock()
-        startAggressiveMonitoring()
-        
-        isLockActive = true
-        
-        Log.d(TAG, "Usage limit video lock active")
+    super.onCreate(savedInstanceState)
+    
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "Usage Limit Video Lock Activity Created")
+    Log.d(TAG, "========================================")
+    
+    isDestroying = false
+    
+    // Get data from intent
+    packageName = intent.getStringExtra("package_name")
+    appName = intent.getStringExtra("app_name")
+    val videoUrl = intent.getStringExtra("video_url") // Get video URL instead of path
+    
+    Log.d(TAG, "Package: $packageName")
+    Log.d(TAG, "App Name: $appName")
+    Log.d(TAG, "Video URL: $videoUrl")
+    
+    // Determine if it's a YouTube video or direct video URL
+    isYouTubeVideo = videoUrl?.contains("youtube.com") == true || videoUrl?.contains("youtu.be") == true
+    
+    if (isYouTubeVideo) {
+        youtubeLink = videoUrl
+    } else {
+        videoPath = videoUrl
     }
+    
+    // Validate video source
+    if (videoUrl.isNullOrEmpty()) {
+        Log.e(TAG, "No video URL provided")
+        Toast.makeText(this, "No video configured", Toast.LENGTH_SHORT).show()
+        finish()
+        return
+    }
+    
+    setupKioskMode()
+    setupFullScreenLockMode()
+    setContentView(R.layout.activity_usage_video_lock)
+    initializeViews()
+    
+    // Setup appropriate video player
+    if (isYouTubeVideo) {
+        setupYouTubePlayer()
+    } else {
+        setupVideoPlayerFromUrl(videoUrl)
+    }
+    
+    registerReceivers()
+    createMaximumStatusBarBlock()
+    startAggressiveMonitoring()
+    
+    isLockActive = true
+    
+    Log.d(TAG, "Usage limit video lock active")
+}
+
+// New method to setup video player from URL
+private fun setupVideoPlayerFromUrl(videoUrl: String) {
+    try {
+        Log.d(TAG, "Setting up video from URL: $videoUrl")
+        
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        
+        val displayMetrics = resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels
+        val videoHeight16x9 = (screenWidth * 9) / 16
+        
+        val containerParams = videoContainer?.layoutParams as FrameLayout.LayoutParams
+        containerParams.width = screenWidth
+        containerParams.height = videoHeight16x9
+        containerParams.gravity = Gravity.CENTER
+        videoContainer?.layoutParams = containerParams
+        
+        videoContainer?.removeAllViews()
+        videoContainer?.visibility = View.VISIBLE
+        
+        videoView = VideoView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+            setBackgroundColor(Color.TRANSPARENT)
+            visibility = View.VISIBLE
+        }
+        
+        videoContainer?.addView(videoView)
+        
+        videoView?.apply {
+            val uri = Uri.parse(videoUrl)
+            
+            setOnPreparedListener { mp ->
+                try {
+                    mp.isLooping = false
+                    mp.setVolume(1.0f, 1.0f)
+                    
+                    videoDuration = mp.duration
+                    progressBar?.max = videoDuration
+                    
+                    videoContainer?.visibility = View.VISIBLE
+                    visibility = View.VISIBLE
+                    
+                    start()
+                    startProgressTracking()
+                    
+                    Log.d(TAG, "Video playback started from URL")
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in onPrepared: ${e.message}", e)
+                }
+            }
+            
+            setOnCompletionListener {
+                Log.d(TAG, "Video completed!")
+                finishVideoLock()
+            }
+            
+            setOnErrorListener { mp, what, extra ->
+                Log.e(TAG, "Video error: what=$what, extra=$extra")
+                Toast.makeText(this@UsageLimitVideoLockActivity, 
+                    "Error playing video from server", Toast.LENGTH_SHORT).show()
+                
+                // If error, close after 3 seconds
+                Handler(Looper.getMainLooper()).postDelayed({
+                    finishVideoLock()
+                }, 3000)
+                true
+            }
+            
+            // Set video URI from Supabase
+            setVideoURI(uri)
+        }
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error in setupVideoPlayerFromUrl: ${e.message}", e)
+        Toast.makeText(this, "Error loading video from server", Toast.LENGTH_SHORT).show()
+        
+        // Close after error
+        Handler(Looper.getMainLooper()).postDelayed({
+            finishVideoLock()
+        }, 3000)
+    }
+}
+
     
     private fun initializeViews() {
         titleTextView = findViewById(R.id.usageVideoTitle)

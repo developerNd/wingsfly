@@ -19,16 +19,17 @@ import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import DigitalDetoxBridge from '../../services/DigitalDetox/DigitalDetoxBridge';
-import detoxMediaStorageService from '../../services/DigitalDetox/detoxMediaStorageService';
+import detoxMediaSupabaseService from '../../services/DigitalDetox/detoxMediaSupabaseService';
 
-// ✅ NEW: Get native module for event listening
 const { DigitalDetoxModule } = NativeModules;
 
 const DigitalDetoxScreen = ({navigation}) => {
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [hasMedia, setHasMedia] = useState(false);
   const [mediaType, setMediaType] = useState(null);
+  const [mediaUrl, setMediaUrl] = useState(null);
   const [isDetoxActive, setIsDetoxActive] = useState(false);
+  const [loadingMedia, setLoadingMedia] = useState(true);
   const sliderWidth = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
   const statusCheckInterval = useRef(null);
@@ -37,7 +38,6 @@ const DigitalDetoxScreen = ({navigation}) => {
   const isCheckingStatus = useRef(false);
   const lastCheckTime = useRef(0);
   
-  // ✅ NEW: Add event subscription ref
   const eventSubscription = useRef(null);
 
   const MIN_DURATION = 1;
@@ -54,7 +54,7 @@ const DigitalDetoxScreen = ({navigation}) => {
 
     const now = Date.now();
     if (now - lastCheckTime.current < MIN_CHECK_DELAY) {
-      console.log('⏭️ Skipping check - too soon (only ' + (now - lastCheckTime.current) + 'ms since last check)');
+      console.log('⏭️ Skipping check - too soon');
       return;
     }
 
@@ -67,7 +67,6 @@ const DigitalDetoxScreen = ({navigation}) => {
       isCheckingStatus.current = true;
       lastCheckTime.current = now;
       
-      console.log('========================================');
       console.log('🔍 Checking detox status...');
       
       const active = await Promise.race([
@@ -79,10 +78,7 @@ const DigitalDetoxScreen = ({navigation}) => {
       
       if (isMounted.current) {
         console.log('📊 Detox status result:', active);
-        console.log('🔄 Current UI state (before update):', isDetoxActive);
         setIsDetoxActive(active);
-        console.log('✅ Updated UI state to:', active);
-        console.log('========================================');
       }
     } catch (error) {
       if (error.message === 'Timeout') {
@@ -98,47 +94,62 @@ const DigitalDetoxScreen = ({navigation}) => {
     }
   }, [isDetoxActive]);
 
+  // ✅ NEW: Fetch media from Supabase instead of local storage
   const checkMediaStatus = useCallback(async () => {
     if (!isMounted.current) return;
     
     try {
-      const [hasConfiguredMedia, type] = await Promise.race([
-        Promise.all([
-          detoxMediaStorageService.hasDetoxMedia(),
-          detoxMediaStorageService.getMediaType()
-        ]),
+      setLoadingMedia(true);
+      console.log('📥 Fetching media from Supabase...');
+      
+      const result = await Promise.race([
+        detoxMediaSupabaseService.fetchLatestDetoxMedia(),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 5000)
+          setTimeout(() => reject(new Error('Timeout')), 10000)
         )
       ]);
       
       if (isMounted.current) {
-        setHasMedia(hasConfiguredMedia);
-        setMediaType(type);
+        if (result.success && result.hasMedia) {
+          console.log('✅ Media found:', result.data);
+          setHasMedia(true);
+          setMediaType(result.data.type);
+          setMediaUrl(result.data.fileUrl);
+        } else {
+          console.log('❌ No media available');
+          setHasMedia(false);
+          setMediaType(null);
+          setMediaUrl(null);
+        }
       }
     } catch (error) {
       if (error.message !== 'Timeout') {
-        console.error('❌ Error checking media status:', error);
+        console.error('❌ Error fetching media:', error);
+      }
+      if (isMounted.current) {
+        setHasMedia(false);
+        setMediaType(null);
+        setMediaUrl(null);
+      }
+    } finally {
+      if (isMounted.current) {
+        setLoadingMedia(false);
       }
     }
   }, []);
 
-  // ✅ NEW: Setup detox completion listener
   const setupDetoxCompletionListener = useCallback(() => {
     try {
       console.log('📢 Setting up detox completion listener');
       
-      // Create event emitter
       const eventEmitter = new NativeEventEmitter(DigitalDetoxModule);
       
-      // Listen for detox completion
       eventSubscription.current = eventEmitter.addListener(
         'DETOX_COMPLETED',
         () => {
           console.log('📢 DETOX_COMPLETED event received!');
           if (isMounted.current) {
             setIsDetoxActive(false);
-            // Small delay to ensure UI updates smoothly
             setTimeout(() => {
               if (isMounted.current) {
                 Alert.alert(
@@ -157,15 +168,13 @@ const DigitalDetoxScreen = ({navigation}) => {
     }
   }, []);
 
-  // ✅ UPDATED: Initial mount with event listener setup
   useEffect(() => {
     console.log('📱 DigitalDetoxScreen mounted');
     isMounted.current = true;
     
-    // Setup detox completion listener
     setupDetoxCompletionListener();
     
-    // Single initial check
+    // Fetch media on mount
     checkMediaStatus();
     checkDetoxStatus();
 
@@ -173,11 +182,9 @@ const DigitalDetoxScreen = ({navigation}) => {
       console.log('📱 DigitalDetoxScreen unmounting');
       isMounted.current = false;
       
-      // ✅ NEW: Clean up event listener
       if (eventSubscription.current) {
         eventSubscription.current.remove();
         eventSubscription.current = null;
-        console.log('✅ Event listener cleaned up');
       }
       
       if (statusCheckInterval.current) {
@@ -189,15 +196,16 @@ const DigitalDetoxScreen = ({navigation}) => {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('🎯 Screen focused - setting up interval check');
+      console.log('🎯 Screen focused - refreshing media and status');
       
       if (statusCheckInterval.current) {
         clearInterval(statusCheckInterval.current);
         statusCheckInterval.current = null;
       }
 
-      checkDetoxStatus();
+      // Refresh media from Supabase on focus
       checkMediaStatus();
+      checkDetoxStatus();
 
       statusCheckInterval.current = setInterval(() => {
         if (isMounted.current) {
@@ -206,7 +214,7 @@ const DigitalDetoxScreen = ({navigation}) => {
       }, CHECK_INTERVAL);
 
       return () => {
-        console.log('👋 Screen blurred - cleaning up interval');
+        console.log('👋 Screen blurred');
         if (statusCheckInterval.current) {
           clearInterval(statusCheckInterval.current);
           statusCheckInterval.current = null;
@@ -222,10 +230,11 @@ const DigitalDetoxScreen = ({navigation}) => {
         appState.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        console.log('📱 App came to foreground - checking status');
+        console.log('📱 App came to foreground - refreshing');
         if (isMounted.current) {
           setTimeout(() => {
             if (isMounted.current) {
+              checkMediaStatus(); // Refresh media
               checkDetoxStatus();
             }
           }, 1000);
@@ -237,20 +246,38 @@ const DigitalDetoxScreen = ({navigation}) => {
     return () => {
       subscription.remove();
     };
-  }, [checkDetoxStatus]);
+  }, [checkDetoxStatus, checkMediaStatus]);
 
   const handleStartDetox = async () => {
     try {
       if (isDetoxActive) {
         Alert.alert(
           'Detox Already Active',
-          'A digital detox session is already running. Please wait for it to complete or use emergency exit (press volume buttons 5 times).',
+          'A digital detox session is already running.',
           [{ text: 'OK' }]
         );
         return;
       }
 
-      const success = await DigitalDetoxBridge.startDetoxLock(durationMinutes);
+      // ✅ Fetch fresh media before starting detox
+      console.log('🔄 Fetching fresh media before starting detox...');
+      const mediaResult = await detoxMediaSupabaseService.fetchLatestDetoxMedia();
+      
+      const mediaFilePath = mediaResult.hasMedia ? mediaResult.data.fileUrl : null;
+      const mediaTypeToPass = mediaResult.hasMedia ? mediaResult.data.type : null;
+      
+      console.log('🎬 Starting detox with media:', { 
+        hasMedia: mediaResult.hasMedia,
+        type: mediaTypeToPass,
+        url: mediaFilePath 
+      });
+
+      const success = await DigitalDetoxBridge.startDetoxLock(
+        durationMinutes,
+        mediaFilePath,
+        mediaTypeToPass
+      );
+      
       if (success) {
         console.log('✅ Digital Detox lock started successfully');
         setIsDetoxActive(true);
@@ -456,39 +483,45 @@ const DigitalDetoxScreen = ({navigation}) => {
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.mediaSettingsButton, isDetoxActive && styles.buttonDisabled]}
-            onPress={() => {
-              if (isDetoxActive) {
-                Alert.alert(
-                  'Detox Active',
-                  'Cannot change media settings while detox is active'
-                );
-                return;
-              }
-              navigation.navigate('DetoxMediaSettingsScreen');
-            }}
-            activeOpacity={isDetoxActive ? 1 : 0.7}
-            disabled={isDetoxActive}>
+          {/* ✅ UPDATED: Show media status from Supabase */}
+          <View style={styles.mediaInfoContainer}>
             <View style={styles.mediaSettingsContent}>
               <View style={styles.mediaSettingsLeft}>
                 <Icon 
-                  name={hasMedia ? (mediaType === 'video' ? 'videocam' : 'music-note') : 'add-circle-outline'} 
+                  name={
+                    loadingMedia ? 'hourglass-empty' : 
+                    hasMedia ? (mediaType === 'video' ? 'videocam' : 'music-note') : 
+                    'cloud-off'
+                  } 
                   size={WP(6)} 
-                  color={isDetoxActive ? '#ccc' : (hasMedia ? colors.Primary : '#999')} 
+                  color={
+                    loadingMedia ? '#999' :
+                    hasMedia ? colors.Primary : '#ccc'
+                  } 
                 />
                 <View style={styles.mediaSettingsTextContainer}>
                   <Text style={[styles.mediaSettingsTitle, isDetoxActive && styles.textDisabled]}>
-                    {hasMedia ? `${mediaType === 'video' ? 'Video' : 'Audio'} configured` : 'Add Media'}
+                    {loadingMedia ? 'Loading media...' :
+                     hasMedia ? `${mediaType === 'video' ? 'Video' : 'Audio'} ready` : 
+                     'No media available'}
                   </Text>
                   <Text style={[styles.mediaSettingsSubtitle, isDetoxActive && styles.textDisabled]}>
-                    {hasMedia ? 'Tap to change or remove' : 'Play video/audio during detox'}
+                    {loadingMedia ? 'Checking Supabase...' :
+                     hasMedia ? 'Will play during detox session' : 
+                     'Admin can upload from dashboard'}
                   </Text>
                 </View>
               </View>
-              <Icon name="chevron-right" size={WP(6)} color={isDetoxActive ? '#ccc' : '#999'} />
+              {!loadingMedia && (
+                <TouchableOpacity 
+                  onPress={checkMediaStatus}
+                  style={styles.refreshButton}
+                >
+                  <Icon name="refresh" size={WP(5)} color="#999" />
+                </TouchableOpacity>
+              )}
             </View>
-          </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.meditationSection}>
@@ -692,16 +725,13 @@ const styles = StyleSheet.create({
     color: '#999',
     marginLeft: WP(2),
   },
-  mediaSettingsButton: {
+  mediaInfoContainer: {
     backgroundColor: '#F5F5F5',
     borderRadius: WP(3),
     padding: WP(4),
     marginTop: HP(1),
     borderWidth: 1,
     borderColor: '#E0E0E0',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
   },
   mediaSettingsContent: {
     flexDirection: 'row',
@@ -727,6 +757,9 @@ const styles = StyleSheet.create({
     fontSize: FS(1.3),
     fontFamily: 'OpenSans-Regular',
     color: '#999',
+  },
+  refreshButton: {
+    padding: WP(2),
   },
   meditationSection: {
     marginTop: HP(3),

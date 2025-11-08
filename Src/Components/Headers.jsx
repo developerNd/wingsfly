@@ -8,11 +8,16 @@ const Headers = ({
   title = 'Set Your First Goal', 
   children, 
   onBackPress,
-  showBackButton = true
+  showBackButton = true,
+  disabled = false
 }) => {
   const navigation = useNavigation();
   
   const handleBackPress = () => {
+    if (disabled) {
+      return; 
+    }
+    
     if (onBackPress) {
       onBackPress();
     } else {
@@ -32,8 +37,14 @@ const Headers = ({
         <TouchableOpacity 
           style={{marginTop: HP(0.25)}}
           onPress={handleBackPress}
+          disabled={disabled} 
+          activeOpacity={disabled ? 1 : 0.2}
         >
-          <BackIcon name="chevron-back-outline" size={WP(6.5)} color="#3B3B3B" />
+          <BackIcon 
+            name="chevron-back-outline" 
+            size={WP(6.5)} 
+            color={disabled ? "#CCCCCC" : "#3B3B3B"} 
+          />
         </TouchableOpacity>
       ) : (
         <View style={{width: WP(6.5)}} />
@@ -44,7 +55,7 @@ const Headers = ({
           fontSize: FS(1.97),
           fontFamily: 'OpenSans-Bold',
           textAlign: 'center',
-          color: '#3B3B3B',
+          color: disabled ? '#CCCCCC' : '#3B3B3B', 
           lineHeight: HP(2.5),
           flex: 1,
           marginHorizontal: WP(7.27),

@@ -27,8 +27,8 @@ const CateogerySelection = () => {
   const navigation = useNavigation();
   const route = useRoute();
 
-  // Extract the type parameter from route params
-  const {type} = route.params || {};
+  // Extract parameters from route params - INCLUDING fromNightMode flag
+  const {type, fromNightMode} = route.params || {};
 
   const handleCategoryPress = category => {
     // Check if the type is 'Goal' (Challenge) and navigate to CreateChallengeScreen
@@ -36,11 +36,13 @@ const CateogerySelection = () => {
       navigation.navigate('CreateChallengeScreen', {
         type: type,
         selectedCategory: category,
+        fromNightMode: fromNightMode, // Pass through Night Mode flag
       });
     } else {
       navigation.navigate('EvaluateProgress', {
         type: type,
         selectedCategory: category,
+        fromNightMode: fromNightMode, // Pass through Night Mode flag
       });
     }
   };
@@ -144,7 +146,7 @@ const styles = StyleSheet.create({
   createCategoryContent: {
     flexDirection: 'row',
   },
-   plusIcon: {
+  plusIcon: {
     width: WP(6.5),
     height: WP(6.5),
     borderRadius: WP(2.3),

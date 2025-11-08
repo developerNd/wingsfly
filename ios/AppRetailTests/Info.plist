@@ -20,5 +20,7 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSMicrophoneUsageDescription</key>
+    <string>This app needs microphone access for voice commands.</string>
 </dict>
 </plist>

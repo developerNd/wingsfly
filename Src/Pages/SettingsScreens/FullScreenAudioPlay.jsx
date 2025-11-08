@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import TrackPlayer, {
@@ -19,6 +21,7 @@ import TrackPlayer, {
   useTrackPlayerEvents,
 } from 'react-native-track-player';
 import Slider from '@react-native-community/slider';
+import Voice from '@react-native-voice/voice';
 import {HP, WP, FS} from '../../utils/dimentions';
 import {colors} from '../../Helper/Contants';
 
@@ -35,9 +38,300 @@ const FullScreenAudioPlay = ({route, navigation}) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [shouldNavigateBack, setShouldNavigateBack] = useState(false);
 
+  // Voice Recognition states
+  const [isListening, setIsListening] = useState(false);
+  const [recognizedText, setRecognizedText] = useState('');
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [showVoiceToast, setShowVoiceToast] = useState(false);
+  const [voiceToastMessage, setVoiceToastMessage] = useState('');
+
   const timerIntervalRef = useRef(null);
+  const voiceToastTimeoutRef = useRef(null);
 
   const {sessionStartTime, voiceSettings, isSessionExpired} = timerData || {};
+
+  // Setup Voice Recognition
+  useEffect(() => {
+    setupVoiceRecognition();
+
+    return () => {
+      Voice.destroy().then(Voice.removeAllListeners);
+      if (voiceToastTimeoutRef.current) {
+        clearTimeout(voiceToastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const setupVoiceRecognition = async () => {
+    try {
+      // Request microphone permission
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'Audio player needs microphone access for voice commands.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          },
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          console.log('Microphone permission denied');
+          return;
+        }
+      }
+
+      // Set up voice recognition event listeners
+      Voice.onSpeechStart = onSpeechStart;
+      Voice.onSpeechEnd = onSpeechEnd;
+      Voice.onSpeechResults = onSpeechResults;
+      Voice.onSpeechError = onSpeechError;
+
+      setVoiceEnabled(true);
+      console.log('✅ Voice recognition setup complete');
+    } catch (error) {
+      console.error('Error setting up voice recognition:', error);
+    }
+  };
+
+  const onSpeechStart = () => {
+    console.log('🎤 Speech recognition started');
+    setIsListening(true);
+  };
+
+  const onSpeechEnd = () => {
+    console.log('🎤 Speech recognition ended');
+    setIsListening(false);
+  };
+
+  const onSpeechResults = event => {
+    const text = event.value[0].toLowerCase();
+    console.log('🗣️ Recognized:', text);
+    setRecognizedText(text);
+    processVoiceCommand(text);
+  };
+
+  const onSpeechError = error => {
+    console.error('Speech recognition error:', error);
+    setIsListening(false);
+    
+    // Handle specific error codes
+    if (error.error && error.error.code) {
+      const errorCode = error.error.code;
+      
+      if (errorCode === '5') {
+        console.log('Client side error, voice recognition available for retry');
+      } else if (errorCode === '7') {
+        showVoiceToastMessage('No speech detected. Try again.');
+      } else if (errorCode === '6') {
+        showVoiceToastMessage('No internet connection');
+      }
+    }
+  };
+
+  const startListening = async () => {
+    if (!voiceEnabled) {
+      Alert.alert(
+        'Voice Commands Unavailable',
+        'Please enable microphone permissions in settings.',
+      );
+      return;
+    }
+
+    if (isSessionExpired) {
+      showVoiceToastMessage('Session has ended');
+      return;
+    }
+
+    // Prevent starting if already listening
+    if (isListening) {
+      console.log('Already listening, ignoring request');
+      return;
+    }
+
+    try {
+      // Destroy and cleanup any existing session completely
+      try {
+        await Voice.destroy();
+        await Voice.removeAllListeners();
+      } catch (e) {
+        console.log('No existing session to destroy');
+      }
+      
+      // Re-setup listeners
+      Voice.onSpeechStart = onSpeechStart;
+      Voice.onSpeechEnd = onSpeechEnd;
+      Voice.onSpeechResults = onSpeechResults;
+      Voice.onSpeechError = onSpeechError;
+      
+      // Small delay to ensure cleanup
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Start fresh recognition
+      await Voice.start('en-US');
+      setRecognizedText('');
+    } catch (error) {
+      console.error('Error starting voice recognition:', error);
+      showVoiceToastMessage('Failed to start voice recognition');
+      setIsListening(false);
+    }
+  };
+
+  const stopListening = async () => {
+    if (!isListening) {
+      console.log('Not listening, ignoring stop request');
+      return;
+    }
+    
+    try {
+      setIsListening(false);
+      await Voice.stop();
+      
+      // Add small delay before allowing restart
+      await new Promise(resolve => setTimeout(resolve, 300));
+    } catch (error) {
+      console.error('Error stopping voice recognition:', error);
+      setIsListening(false);
+    }
+  };
+
+  const showVoiceToastMessage = (message, duration = 2000) => {
+    setVoiceToastMessage(message);
+    setShowVoiceToast(true);
+
+    if (voiceToastTimeoutRef.current) {
+      clearTimeout(voiceToastTimeoutRef.current);
+    }
+
+    voiceToastTimeoutRef.current = setTimeout(() => {
+      setShowVoiceToast(false);
+    }, duration);
+  };
+
+  const processVoiceCommand = async text => {
+    try {
+      // Play command
+      if (text.includes('play') || text.includes('resume') || text.includes('start')) {
+        const state = await TrackPlayer.getState();
+        if (state === State.Paused || hasEnded) {
+          if (hasEnded) {
+            await TrackPlayer.seekTo(0);
+          }
+          await TrackPlayer.play();
+          setHasEnded(false);
+          showVoiceToastMessage('▶️ Playing');
+        } else {
+          showVoiceToastMessage('Already playing');
+        }
+      }
+      // Pause/Stop command
+      else if (text.includes('pause') || text.includes('stop')) {
+        await TrackPlayer.pause();
+        showVoiceToastMessage('⏸️ Paused');
+      }
+      // Restart command
+      else if (text.includes('restart') || text.includes('replay') || text.includes('again')) {
+        await TrackPlayer.seekTo(0);
+        await TrackPlayer.play();
+        setHasEnded(false);
+        showVoiceToastMessage('🔄 Restarting');
+      }
+      // Skip forward commands
+      else if (text.includes('forward') || text.includes('skip')) {
+        const seconds = extractSeconds(text) || 10;
+        const newPosition = Math.min(progress.position + seconds, progress.duration);
+        await TrackPlayer.seekTo(newPosition);
+        showVoiceToastMessage(`⏩ Forward ${seconds}s`);
+      }
+      // Skip backward commands
+      else if (text.includes('backward') || text.includes('rewind') || text.includes('back')) {
+        const seconds = extractSeconds(text) || 10;
+        const newPosition = Math.max(progress.position - seconds, 0);
+        await TrackPlayer.seekTo(newPosition);
+        showVoiceToastMessage(`⏪ Backward ${seconds}s`);
+      }
+      // Seek to position
+      else if (text.includes('go to') || text.includes('jump to')) {
+        const seconds = extractSeconds(text);
+        if (seconds !== null && seconds <= progress.duration) {
+          await TrackPlayer.seekTo(seconds);
+          showVoiceToastMessage(`⏩ Jumped to ${formatTime(seconds)}`);
+        } else {
+          showVoiceToastMessage('Invalid position');
+        }
+      }
+      // Go back command (exit player)
+      else if (text.includes('exit') || text.includes('close') || text.includes('go back')) {
+        showVoiceToastMessage('👋 Going back');
+        setTimeout(() => {
+          handleBack();
+        }, 1000);
+      }
+      // Show time remaining
+      else if (text.includes('time') || text.includes('remaining') || text.includes('left')) {
+        const remaining = progress.duration - progress.position;
+        showVoiceToastMessage(`⏱️ ${formatTime(remaining)} remaining`, 3000);
+      }
+      // Help command
+      else if (text.includes('help') || text.includes('commands')) {
+        showVoiceCommandsHelp();
+      }
+      // Command not recognized
+      else {
+        showVoiceToastMessage('Command not recognized. Say "help" for commands');
+      }
+    } catch (error) {
+      console.error('Error processing voice command:', error);
+      showVoiceToastMessage('Error processing command');
+    }
+
+    // Don't manually stop - let onSpeechEnd handle it naturally
+  };
+
+  // Extract seconds from voice command
+  const extractSeconds = text => {
+    // Look for numbers in the text
+    const match = text.match(/(\d+)/);
+    if (match) {
+      return parseInt(match[1]);
+    }
+    
+    // Handle word numbers
+    const wordNumbers = {
+      'five': 5, 'ten': 10, 'fifteen': 15, 'twenty': 20,
+      'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60,
+    };
+    
+    for (const [word, value] of Object.entries(wordNumbers)) {
+      if (text.includes(word)) {
+        return value;
+      }
+    }
+    
+    return null;
+  };
+
+  const showVoiceCommandsHelp = () => {
+    Alert.alert(
+      '🎤 Voice Commands',
+      '▶️ Playback:\n' +
+        '• "Play/Resume/Start" - Play audio\n' +
+        '• "Pause/Stop" - Pause audio\n' +
+        '• "Restart/Replay" - Restart from beginning\n\n' +
+        '⏩ Navigation:\n' +
+        '• "Forward [seconds]" - Skip forward\n' +
+        '• "Backward/Rewind [seconds]" - Skip backward\n' +
+        '• "Go to [seconds]" - Jump to position\n\n' +
+        '⏱️ Info:\n' +
+        '• "Time/Remaining" - Check time left\n\n' +
+        '🚪 Exit:\n' +
+        '• "Exit/Close/Go back" - Return to previous screen\n\n' +
+        '❓ Help:\n' +
+        '• "Help/Commands" - Show this help',
+      [{text: 'Got it', style: 'default'}],
+    );
+  };
 
   // Timer tick effect
   useEffect(() => {
@@ -83,6 +377,11 @@ const FullScreenAudioPlay = ({route, navigation}) => {
   // Navigate back when session expires
   useEffect(() => {
     if (shouldNavigateBack) {
+      // Stop listening if active
+      if (isListening) {
+        stopListening();
+      }
+
       // Pause audio before navigating
       TrackPlayer.pause().catch(err => console.error('Error pausing:', err));
 
@@ -91,7 +390,7 @@ const FullScreenAudioPlay = ({route, navigation}) => {
         navigation.goBack();
       }, 500);
     }
-  }, [shouldNavigateBack, navigation]);
+  }, [shouldNavigateBack, navigation, isListening]);
 
   // Listen for playback ended event
   useTrackPlayerEvents([Event.PlaybackQueueEnded], async event => {
@@ -162,6 +461,11 @@ const FullScreenAudioPlay = ({route, navigation}) => {
   };
 
   const handleBack = async () => {
+    // Stop listening if active
+    if (isListening) {
+      await stopListening();
+    }
+
     try {
       await TrackPlayer.pause();
     } catch (error) {
@@ -257,6 +561,55 @@ const FullScreenAudioPlay = ({route, navigation}) => {
 
         <View style={styles.backButton} />
       </View>
+
+      {/* Voice Control Button - Top Right */}
+      {voiceEnabled && !isSessionExpired && (
+        <TouchableOpacity
+          style={[
+            styles.voiceButton,
+            isListening && styles.voiceButtonActive,
+          ]}
+          onPress={isListening ? stopListening : startListening}
+          activeOpacity={0.8}>
+          <MaterialIcons
+            name={isListening ? 'mic' : 'mic-none'}
+            size={WP(6)}
+            color={colors.White}
+          />
+        </TouchableOpacity>
+      )}
+
+      {/* Voice Help Button */}
+      {voiceEnabled && !isSessionExpired && (
+        <TouchableOpacity
+          style={styles.helpButton}
+          onPress={showVoiceCommandsHelp}
+          activeOpacity={0.8}>
+          <MaterialIcons
+            name="help-outline"
+            size={WP(4)}
+            color={colors.Primary}
+          />
+        </TouchableOpacity>
+      )}
+
+      {/* Voice Toast */}
+      {showVoiceToast && (
+        <View style={styles.voiceToast}>
+          <Text style={styles.voiceToastText}>{voiceToastMessage}</Text>
+        </View>
+      )}
+
+      {/* Voice Recognition Status */}
+      {isListening && (
+        <View style={styles.listeningCard}>
+          <MaterialIcons name="mic" size={WP(5)} color={colors.Primary} />
+          <Text style={styles.listeningText}>Listening...</Text>
+          {recognizedText !== '' && (
+            <Text style={styles.recognizedText}>"{recognizedText}"</Text>
+          )}
+        </View>
+      )}
 
       {/* Album Art */}
       <View style={styles.artworkContainer}>
@@ -377,6 +730,99 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-SemiBold',
     color: '#FFFFFF',
     marginLeft: WP(1),
+  },
+  voiceButton: {
+    position: 'absolute',
+    top: HP(2),
+    right: WP(4),
+    width: WP(12),
+    height: WP(12),
+    borderRadius: WP(6),
+    backgroundColor: colors.Primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
+    shadowColor: colors.Primary,
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    zIndex: 1000,
+  },
+  voiceButtonActive: {
+    backgroundColor: '#E53935',
+  },
+  helpButton: {
+    position: 'absolute',
+    top: HP(2),
+    right: WP(18),
+    width: WP(10),
+    height: WP(10),
+    borderRadius: WP(5),
+    backgroundColor: colors.White,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: colors.Shadow,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    zIndex: 1000,
+  },
+  voiceToast: {
+    position: 'absolute',
+    top: HP(15),
+    left: WP(4),
+    right: WP(4),
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    paddingVertical: HP(1.5),
+    paddingHorizontal: WP(4),
+    borderRadius: WP(3),
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    zIndex: 2000,
+  },
+  voiceToastText: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-SemiBold',
+    color: colors.White,
+    textAlign: 'center',
+  },
+  listeningCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: WP(4),
+    marginTop: HP(15),
+    padding: WP(3),
+    borderRadius: WP(2),
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  listeningText: {
+    fontSize: FS(1.4),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#FFFFFF',
+    marginLeft: WP(2),
+    flex: 1,
+  },
+  recognizedText: {
+    fontSize: FS(1.2),
+    fontFamily: 'OpenSans-Medium',
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontStyle: 'italic',
+    marginLeft: WP(2),
   },
   artworkContainer: {
     flex: 1,

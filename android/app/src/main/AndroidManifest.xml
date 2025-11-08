@@ -59,6 +59,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     
     <!-- Accessibility permissions -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -95,7 +96,9 @@
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        tools:replace="android:appComponentFactory"
+    android:appComponentFactory="androidx.core.app.CoreComponentFactory">
 
         <!-- Main Activity -->
         <activity
@@ -119,34 +122,77 @@
     <category android:name="android.intent.category.DEFAULT" />
 </intent-filter>
 
-<!-- Intent filter for Morning Mode trigger -->
-<intent-filter>
-    <action android:name="TRIGGER_MORNING_MODE" />
-    <category android:name="android.intent.category.DEFAULT" />
-</intent-filter>
-
         </activity>
 
-        <!-- Morning Mode Alarm Receiver - Handles both alarms AND boot events -->
-<receiver
-    android:name=".MorningModeAlarmReceiver"
+        <!-- ADD THESE ENTRIES TO YOUR AndroidManifest.xml -->
+
+<!-- Morning Routine Voice Command Activity -->
+<activity
+    android:name=".MorningVoiceCommandActivity"
+    android:label="Morning Routine"
+    android:theme="@style/AlarmTheme"
+    android:launchMode="singleTop"
+    android:taskAffinity=""
+    android:excludeFromRecents="false"
+    android:showWhenLocked="true"
+    android:turnScreenOn="true"
+    android:exported="false"
+    android:screenOrientation="portrait"
+    android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode|locale|layoutDirection"
+    android:priority="1000"
+    android:enabled="true">
+    
+    <!-- Handle morning routine intents -->
+    <intent-filter android:priority="2147483647">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+    
+    <intent-filter android:priority="2147483647">
+        <action android:name="com.wingsfly.SHOW_MORNING_ROUTINE" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+</activity>
+
+<!-- Morning Routine Service -->
+<service
+    android:name=".MorningRoutineService"
     android:enabled="true"
-    android:exported="true"
+    android:exported="false"
+    android:foregroundServiceType="specialUse|mediaPlayback"
+    android:process=":morningRoutine"
+    android:priority="1000">
+    <property 
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="morning_routine" />
+    
+    <intent-filter>
+        <action android:name="com.wingsfly.START_MORNING_ROUTINE_SERVICE" />
+        <action android:name="com.wingsfly.STOP_MORNING_ROUTINE_SERVICE" />
+    </intent-filter>
+</service>
+
+<!-- Morning Routine Alarm Receiver -->
+<receiver
+    android:name=".MorningRoutineAlarmReceiver"
+    android:enabled="true"
+    android:exported="false"
     android:directBootAware="true"
+    android:process=":morningRoutine"
     android:priority="1000">
     
-    <!-- Boot events to reschedule after device restart -->
     <intent-filter android:priority="1000">
         <action android:name="android.intent.action.BOOT_COMPLETED" />
         <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
         <action android:name="android.intent.action.QUICKBOOT_POWERON" />
     </intent-filter>
     
-    <!-- Morning Mode alarm trigger -->
     <intent-filter android:priority="1000">
-        <action android:name="com.wingsfly.MORNING_MODE_ALARM" />
+        <action android:name="com.wingsfly.MORNING_ROUTINE_ALARM" />
+        <category android:name="android.intent.category.DEFAULT" />
     </intent-filter>
 </receiver>
+        
 
         <!-- Night Mode Alarm Receiver - Handles both alarms AND boot events -->
 <receiver

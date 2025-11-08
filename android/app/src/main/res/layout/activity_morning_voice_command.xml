@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
+
+    <!-- Time Display -->
+    <TextView
+        android:id="@+id/currentTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="60dp"
+        android:text="00:00"
+        android:textColor="#000000"
+        android:textSize="72sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif-light" />
+
+    <!-- Date Display -->
+    <TextView
+        android:id="@+id/currentDate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/currentTime"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="8dp"
+        android:text="Monday, 1 January"
+        android:textColor="#666666"
+        android:textSize="18sp"
+        android:fontFamily="sans-serif" />
+
+    <!-- Routine Name -->
+    <TextView
+        android:id="@+id/routineName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/currentDate"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="24dp"
+        android:text="Morning Routine"
+        android:textColor="#0059FF"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif" />
+
+    <!-- Command Counter -->
+    <TextView
+        android:id="@+id/commandCounter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/routineName"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="40dp"
+        android:text="Command 1 of 3"
+        android:textColor="#999999"
+        android:textSize="16sp"
+        android:fontFamily="sans-serif" />
+
+    <!-- Current Command Display -->
+    <LinearLayout
+        android:id="@+id/commandContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/commandCounter"
+        android:layout_marginTop="32dp"
+        android:layout_marginLeft="32dp"
+        android:layout_marginRight="32dp"
+        android:orientation="vertical"
+        android:background="@drawable/command_background"
+        android:padding="24dp"
+        android:elevation="4dp">
+
+        <!-- Command Icon -->
+        <ImageView
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:src="@android:drawable/ic_btn_speak_now"
+            android:tint="#FFA726" />
+
+        <!-- Command Text -->
+        <TextView
+            android:id="@+id/currentCommandText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Good morning! Time to wake up and start your day."
+            android:textColor="#000000"
+            android:textSize="22sp"
+            android:textAlignment="center"
+            android:lineSpacingExtra="4dp"
+            android:fontFamily="sans-serif" />
+
+    </LinearLayout>
+
+    <!-- Progress Indicator -->
+    <LinearLayout
+        android:id="@+id/progressContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/commandContainer"
+        android:layout_marginTop="40dp"
+        android:layout_marginLeft="32dp"
+        android:layout_marginRight="32dp"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:indeterminate="false"
+            android:max="100"
+            android:progress="0" />
+
+    </LinearLayout>
+
+    <!-- Info Text -->
+    <TextView
+        android:id="@+id/infoText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/progressContainer"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="16dp"
+        android:text="This screen will close automatically"
+        android:textColor="#999999"
+        android:textSize="14sp"
+        android:fontFamily="sans-serif-light" />
+
+    <!-- Bottom Gradient -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:layout_alignParentBottom="true"
+        android:background="@drawable/gradient_bottom" />
+
+</RelativeLayout>

@@ -76,20 +76,19 @@ import CreateVoiceCommandScreen from '../Pages/SettingsScreens/CreateVoiceComman
 import IntentionSettingsScreen from '../Pages/SettingsScreens/IntentionSettingsScreen';
 import AppreciationSettingsScreen from '../Pages/SettingsScreens/AppreciationSettingsScreen';
 import DigitalDetoxScreen from '../Pages/SettingsScreens/DigitalDetoxScreen';
-import DetoxMediaSettingsScreen from '../Pages/SettingsScreens/DetoxMediaSettingsScreen';
 import GetBackScreen from '../Pages/SettingsScreens/GetBackScreen';
 import GetBackSettingsScreen from '../Pages/SettingsScreens/GetBackSettingsScreen';
 import GetBackConfirmationScreen from '../Pages/SettingsScreens/GetBackConfirmationScreen';
-import UsageLimitVideoSettingsScreen from '../Pages/SettingsScreens/UsageLimitVideoSettingsScreen';
 import DateReminderSettingsScreen from '../Pages/SettingsScreens/DateReminderSettingsScreen';
 import YouTubeVideosScreen from '../Pages/SettingsScreens/YouTubeVideosScreen';
 import YouTubeIntegrationScreen from '../Pages/SettingsScreens/YouTubeIntegrationScreen';
-import YouTubeSettingsScreen from '../Pages/SettingsScreens/YouTubeSettingsScreen';
 import NightRoutineScreen from '../Pages/SettingsScreens/NightRoutineScreen';
+import MorningRoutineScreen from '../Pages/SettingsScreens/Morningroutinescreen';
 import FullScreenAudioPlay from '../Pages/SettingsScreens/FullScreenAudioPlay';
 import FullScreenVideoPlayer from '../Pages/SettingsScreens/FullScreenVideoPlayer';
 import MorningVideosScreen from '../Pages/SettingsScreens/MorningVideosScreen';
-import MorningModeSettingsScreen from '../Pages/SettingsScreens/MorningModeSettingsScreen';
+import LeaderboardScreen from '../Pages/SettingsScreens/LeaderboardScreen';
+import AudioFilesScreen from '../Pages/SettingsScreens/AudioFilesScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -521,14 +520,6 @@ function AppStack({route}) {
           )}
         </Stack.Screen>
 
-        <Stack.Screen name="DetoxMediaSettingsScreen">
-          {props => (
-            <ScreenWithNotes>
-              <DetoxMediaSettingsScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
         <Stack.Screen name="GetBackScreen">
           {props => (
             <ScreenWithNotes>
@@ -549,14 +540,6 @@ function AppStack({route}) {
           {props => (
             <ScreenWithNotes>
               <GetBackConfirmationScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
-        <Stack.Screen name="UsageLimitVideoSettingsScreen">
-          {props => (
-            <ScreenWithNotes>
-              <UsageLimitVideoSettingsScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
@@ -585,10 +568,10 @@ function AppStack({route}) {
           )}
         </Stack.Screen>
 
-        <Stack.Screen name="YouTubeSettingsScreen">
+        <Stack.Screen name="MorningRoutineScreen">
           {props => (
             <ScreenWithNotes>
-              <YouTubeSettingsScreen {...props} />
+              <MorningRoutineScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
@@ -609,14 +592,6 @@ function AppStack({route}) {
           )}
         </Stack.Screen>
 
-        <Stack.Screen name="MorningModeSettingsScreen">
-          {props => (
-            <ScreenWithNotes>
-              <MorningModeSettingsScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
         <Stack.Screen name="FullScreenAudioPlayer">
           {props => (
             <ScreenWithNotes>
@@ -629,6 +604,22 @@ function AppStack({route}) {
           {props => (
             <ScreenWithNotes>
               <FullScreenVideoPlayer {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="LeaderboardScreen">
+          {props => (
+            <ScreenWithNotes>
+              <LeaderboardScreen {...props} />
+            </ScreenWithNotes>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="AudioFilesScreen">
+          {props => (
+            <ScreenWithNotes>
+              <AudioFilesScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
