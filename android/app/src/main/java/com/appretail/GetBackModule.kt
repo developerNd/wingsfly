@@ -9,7 +9,6 @@ import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import com.facebook.react.bridge.*
-import org.json.JSONArray
 
 class GetBackModule(private val reactContext: ReactApplicationContext) : 
     ReactContextBaseJavaModule(reactContext) {
@@ -58,10 +57,28 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
         }
     }
     
+    /**
+     * ✅ UPDATED: Start Get Back lock with URLs from Supabase
+     * @param durationInMinutes - Session duration
+     * @param confirmationVideoUrl - URL to confirmation video from Supabase
+     * @param mediaFileUrl - URL to media file (video/audio) from Supabase (nullable)
+     * @param mediaType - Type of media: "video" or "audio" (nullable)
+     */
     @ReactMethod
-    fun startGetBackLock(durationInMinutes: Int, promise: Promise) {
+    fun startGetBackLock(
+        durationInMinutes: Int, 
+        confirmationVideoUrl: String,
+        mediaFileUrl: String?,
+        mediaType: String?,
+        promise: Promise
+    ) {
         try {
-            Log.d(TAG, "Starting Get Back lock for $durationInMinutes minutes")
+            Log.d(TAG, "========================================")
+            Log.d(TAG, "🚀 Starting Get Back lock for $durationInMinutes minutes")
+            Log.d(TAG, "Confirmation video URL: $confirmationVideoUrl")
+            Log.d(TAG, "Media URL: $mediaFileUrl")
+            Log.d(TAG, "Media type: $mediaType")
+            Log.d(TAG, "========================================")
             
             val currentActivity = currentActivity
             if (currentActivity == null) {
@@ -107,31 +124,6 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
                 Log.w(TAG, "⚠️ Usage stats permission not granted - some features may be limited")
             }
             
-            // Get random media file from storage
-            val mediaFilesJson = reactContext
-                .getSharedPreferences("GetBackPrefs", Context.MODE_PRIVATE)
-                .getString("media_files", null)
-            
-            var selectedMediaPath: String? = null
-            var selectedMediaType: String? = null
-            
-            if (mediaFilesJson != null) {
-                try {
-                    val mediaArray = JSONArray(mediaFilesJson)
-                    if (mediaArray.length() > 0) {
-                        // Pick random media file
-                        val randomIndex = (0 until mediaArray.length()).random()
-                        val mediaObject = mediaArray.getJSONObject(randomIndex)
-                        selectedMediaPath = mediaObject.getString("filePath")
-                        selectedMediaType = mediaObject.getString("type")
-                        
-                        Log.d(TAG, "Selected random media: type=$selectedMediaType, path=$selectedMediaPath")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error parsing media files", e)
-                }
-            }
-            
             // Safety check: Limit maximum duration to 3 hours
             val safeDuration = durationInMinutes.coerceAtMost(180)
             if (safeDuration != durationInMinutes) {
@@ -148,11 +140,12 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
                 reactContext.startService(serviceIntent)
             }
             
-            // Then start the activity with media information
+            // ✅ Start the activity with media URLs from Supabase
             val activityIntent = Intent(reactContext, GetBackLockActivity::class.java)
             activityIntent.putExtra("duration_minutes", safeDuration)
-            activityIntent.putExtra("media_file_path", selectedMediaPath)
-            activityIntent.putExtra("media_type", selectedMediaType)
+            activityIntent.putExtra("confirmation_video_url", confirmationVideoUrl)
+            activityIntent.putExtra("media_file_url", mediaFileUrl)
+            activityIntent.putExtra("media_type", mediaType)
             activityIntent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or 
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -259,23 +252,6 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting overlay permission: ${e.message}", e)
             promise.reject("REQUEST_OVERLAY_ERROR", e.message)
-        }
-    }
-    
-    @ReactMethod
-    fun saveMediaFiles(mediaFilesJson: String, promise: Promise) {
-        try {
-            reactContext
-                .getSharedPreferences("GetBackPrefs", Context.MODE_PRIVATE)
-                .edit()
-                .putString("media_files", mediaFilesJson)
-                .apply()
-            
-            Log.d(TAG, "Media files saved to SharedPreferences")
-            promise.resolve(true)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error saving media files", e)
-            promise.reject("SAVE_MEDIA_ERROR", e.message)
         }
     }
 }

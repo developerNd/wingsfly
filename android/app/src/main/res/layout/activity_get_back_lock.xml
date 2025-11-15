@@ -1,222 +1,167 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- ✅ FIXED: Changed from RelativeLayout to FrameLayout -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FF6B6B"
-    android:padding="24dp">
+    android:background="#FF6B6B">
 
-    <!-- Video View will be added dynamically as background layer -->
-
+    <!-- Main Content Container -->
     <LinearLayout
-        android:id="@+id/headerSection"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentTop="true"
-        android:layout_marginTop="40dp"
-        android:orientation="vertical"
-        android:gravity="center">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/headerText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Get Back Active"
-            android:textColor="#FFFFFF"
-            android:textSize="20sp"
-            android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.05" />
-
-        <TextView
-            android:id="@+id/currentTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="12:00"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:alpha="0.8" />
-
-    </LinearLayout>
-
-    <!-- Placeholder for video container - will be inserted dynamically -->
-    <FrameLayout
-        android:id="@+id/videoPlaceholder"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_below="@id/headerSection"
-        android:layout_marginTop="32dp"
-        android:visibility="gone" />
-
-    <LinearLayout
-        android:id="@+id/timerSection"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_centerInParent="true"
-        android:orientation="vertical"
-        android:gravity="center">
-
-        <ImageView
-            android:id="@+id/lockIcon"
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:src="@android:drawable/ic_lock_idle_lock"
-            android:tint="#FFFFFF"
-            android:layout_marginBottom="32dp" />
-
-        <TextView
-            android:id="@+id/timerText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="00:00"
-            android:textColor="#FFFFFF"
-            android:textSize="64sp"
-            android:fontFamily="sans-serif-light"
-            android:letterSpacing="0.05"
-            android:layout_marginBottom="16dp" />
-
-        <TextView
-            android:id="@+id/motivationText"
+        <!-- Header Section -->
+        <LinearLayout
+            android:id="@+id/headerSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Getting back on track! Stay focused."
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:fontFamily="sans-serif-medium"
-            android:textAlignment="center"
-            android:alpha="0.9"
-            android:layout_marginBottom="32dp"
-            android:paddingLeft="32dp"
-            android:paddingRight="32dp" />
+            android:layout_marginTop="40dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingLeft="24dp"
+            android:paddingRight="24dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp">
 
+            <TextView
+                android:id="@+id/headerText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Get Back Active"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.05" />
+
+            <TextView
+                android:id="@+id/currentTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="12:00"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:alpha="0.8" />
+
+        </LinearLayout>
+
+        <!-- ✅ Video Container - Positioned at TOP -->
+        <FrameLayout
+            android:id="@+id/videoContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:layout_marginLeft="20dp"
+            android:layout_marginRight="20dp"
+            android:visibility="gone"
+            android:background="#000000" />
+
+        <!-- Lock Icon (shown when no video) -->
+        <ImageView
+            android:id="@+id/lockIcon"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:src="@android:drawable/ic_lock_idle_lock"
+            android:tint="#FFFFFF"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="60dp" />
+
+        <!-- Spacer to push timer section down -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Timer Section - Positioned BELOW video -->
         <LinearLayout
+            android:id="@+id/timerSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="32dp">
+            android:gravity="center"
+            android:paddingLeft="24dp"
+            android:paddingRight="24dp"
+            android:paddingBottom="16dp">
 
-            <ProgressBar
-                android:id="@+id/progressBar"
-                style="?android:attr/progressBarStyleHorizontal"
+            <TextView
+                android:id="@+id/timerText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00"
+                android:textColor="#FFFFFF"
+                android:textSize="64sp"
+                android:fontFamily="sans-serif-light"
+                android:letterSpacing="0.05"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:id="@+id/motivationText"
                 android:layout_width="match_parent"
-                android:layout_height="8dp"
-                android:progressTint="#FFFFFF"
-                android:progressBackgroundTint="#66FFFFFF"
-                android:max="100"
-                android:progress="0" />
+                android:layout_height="wrap_content"
+                android:text="Getting back on track! Stay focused."
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:fontFamily="sans-serif-medium"
+                android:textAlignment="center"
+                android:alpha="0.9"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp" />
+
+        </LinearLayout>
+
+        <!-- Bottom Progress Section -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="40dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingLeft="24dp"
+            android:paddingRight="24dp"
+            android:paddingTop="24dp"
+            android:paddingBottom="24dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="24dp">
+
+                <ProgressBar
+                    android:id="@+id/progressBar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp"
+                    android:progressTint="#FFFFFF"
+                    android:progressBackgroundTint="#66FFFFFF"
+                    android:max="100"
+                    android:progress="0" />
+
+                <TextView
+                    android:id="@+id/progressPercentage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginTop="8dp"
+                    android:text="0% Complete"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:alpha="0.8" />
+
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/progressPercentage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginTop="8dp"
-                android:text="0% Complete"
+                android:text="Session unlocks automatically when timer ends"
                 android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:alpha="0.8" />
+                android:textSize="13sp"
+                android:alpha="0.6"
+                android:textAlignment="center" />
 
         </LinearLayout>
 
     </LinearLayout>
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_marginBottom="40dp"
-        android:orientation="vertical"
-        android:gravity="center">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginBottom="12dp"
-            android:paddingLeft="16dp"
-            android:paddingRight="16dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@android:drawable/ic_dialog_info"
-                android:tint="#FFFFFF"
-                android:alpha="0.8" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="Get Back session in progress"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:alpha="0.8" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginBottom="12dp"
-            android:paddingLeft="16dp"
-            android:paddingRight="16dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@android:drawable/ic_delete"
-                android:tint="#FFFFFF"
-                android:alpha="0.8" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="Phone locked until timer completes"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:alpha="0.8" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginBottom="20dp"
-            android:paddingLeft="16dp"
-            android:paddingRight="16dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@android:drawable/star_on"
-                android:tint="#FFFFFF"
-                android:alpha="0.8" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="Focus on getting back on track"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:alpha="0.8" />
-
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Session unlocks automatically when timer ends"
-            android:textColor="#FFFFFF"
-            android:textSize="13sp"
-            android:alpha="0.6"
-            android:textAlignment="center" />
-
-    </LinearLayout>
-
-</RelativeLayout>
+</FrameLayout>

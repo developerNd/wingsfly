@@ -22,6 +22,7 @@ import {
   useFocusEffect,
 } from '@react-navigation/native';
 import Voice from '@react-native-voice/voice';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import TrackPlayer, {
   State,
   usePlaybackState,
@@ -35,6 +36,8 @@ import CustomToast from '../../../Components/CustomToast';
 import {planYourDayService} from '../../../services/api/planYourDayService';
 import {useAuth} from '../../../contexts/AuthContext';
 
+const VOICE_COMMAND_COMPLETED_KEY = '@voice_command_completed_plan_your_day';
+
 const PlanYourDayScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -43,8 +46,10 @@ const PlanYourDayScreen = () => {
   const selectedCategory = route.params?.selectedCategory;
   const evaluationType = route.params?.evaluationType;
   const type = route.params?.type || 'Plan';
-  const audioInfo = route.params?.audioInfo; // Audio info from Night Mode
+  const audioInfo = route.params?.audioInfo;
   const fromNightMode = route.params?.fromNightMode;
+  const sessionData = route.params?.sessionData;
+  const taskCreated = route.params?.taskCreated; // NEW: Check if task was created
 
   const [selectedOption, setSelectedOption] = useState(null);
   const [selectedHours, setSelectedHours] = useState(null);
@@ -65,11 +70,9 @@ const PlanYourDayScreen = () => {
   const playbackState = usePlaybackState();
   const progress = useProgress();
 
-  // NEW: Voice command audio completion tracking
-  const [isVoiceCommandPlaying, setIsVoiceCommandPlaying] = useState(false);
-  const [hasVoiceCommandCompleted, setHasVoiceCommandCompleted] =
-    useState(true); // ✅ Changed default to true
-  const [voiceCommandStarted, setVoiceCommandStarted] = useState(false); // ✅ Add new state to track if audio ever started
+  // Voice Command Completion Tracking
+  const [voiceCommandCompleted, setVoiceCommandCompleted] = useState(false);
+  const hasNavigatedBack = useRef(false);
 
   // Voice Recognition States
   const [isListening, setIsListening] = useState(false);
@@ -93,109 +96,137 @@ const PlanYourDayScreen = () => {
     };
   }, []);
 
-  // Check for VOICE COMMAND audio from Night Mode ONLY
-  useEffect(() => {
-    const checkAudioPlayback = async () => {
-      try {
-        const state = await TrackPlayer.getState();
+  // 🎯 Check and resume audio when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const checkAndResumeAudio = async () => {
+        if (!fromNightMode) {
+          console.log('ℹ️ Not from Night Mode - skipping audio check');
+          return;
+        }
 
-        if (
-          state === State.Playing ||
-          state === State.Paused ||
-          state === State.Buffering
-        ) {
+        console.log('🔍 Checking audio state on focus...');
+        console.log('📊 From Night Mode:', fromNightMode);
+        console.log('📊 Task Created:', taskCreated);
+
+        try {
+          const state = await TrackPlayer.getState();
+          console.log('🎵 Current playback state:', state);
+
+          const trackIndex = await TrackPlayer.getCurrentTrack();
+          console.log('🎵 Current track index:', trackIndex);
+
+          if (trackIndex !== null) {
+            const track = await TrackPlayer.getTrack(trackIndex);
+            console.log('🎵 Current track:', track?.title);
+            console.log('🎵 Track isVoiceCommand:', track?.isVoiceCommand);
+
+            // Check if it's a voice command track
+            if (track && track.isVoiceCommand === true) {
+              console.log('✅ Voice command track detected!');
+              setCurrentTrack(track);
+              setShowMiniPlayer(true);
+
+              // ✅ Handle different states appropriately
+              if (state === State.Paused) {
+                console.log('▶️ Resuming paused voice command audio...');
+                await TrackPlayer.play();
+                showVoiceToastMessage('▶️ Continuing audio playback');
+              } else if (state === State.Playing) {
+                console.log('✅ Audio already playing - showing mini player');
+              } else if (state === State.Buffering || state === State.Loading) {
+                console.log('⏳ Audio buffering/loading - showing mini player');
+              } else if (state === State.Stopped || state === State.Ended) {
+                console.log('⏹️ Audio has ended - will trigger navigation');
+                setShowMiniPlayer(false);
+                // Navigation will be handled by the playback state listener
+              } else {
+                console.log('ℹ️ Unknown audio state:', state);
+              }
+            } else {
+              console.log('ℹ️ Not a voice command track');
+              setShowMiniPlayer(false);
+            }
+          } else {
+            console.log('ℹ️ No track currently loaded');
+            setShowMiniPlayer(false);
+          }
+        } catch (error) {
+          console.error('❌ Error checking audio state:', error);
+        }
+      };
+
+      checkAndResumeAudio();
+
+      return () => {
+        if (isListening) {
+          stopListening();
+        }
+      };
+    }, [fromNightMode, taskCreated, isListening]),
+  );
+
+  // 🎯 Listen for voice command audio completion
+  useEffect(() => {
+    const onPlaybackState = async ({state}) => {
+      console.log('📻 Playback state changed:', state);
+
+      if (!fromNightMode) {
+        return;
+      }
+
+      // Check if audio stopped or ended
+      if (state === State.Stopped || state === State.Ended) {
+        try {
           const trackIndex = await TrackPlayer.getCurrentTrack();
 
           if (trackIndex !== null) {
             const track = await TrackPlayer.getTrack(trackIndex);
+            console.log('🔍 Track details on stop/end:', {
+              title: track?.title,
+              isVoiceCommand: track?.isVoiceCommand,
+              fromNightMode: fromNightMode,
+            });
 
-            // ONLY show mini player if it's a voice command track
-            if (track && track.isVoiceCommand === true) {
-              console.log(
-                '📻 Voice command audio detected from Night Mode:',
-                track.title,
-              );
-              setCurrentTrack(track);
-              setShowMiniPlayer(true);
-              setIsVoiceCommandPlaying(state === State.Playing);
-              setVoiceCommandStarted(true); // ✅ Mark that voice command started
-              setHasVoiceCommandCompleted(false);
-            } else {
-              console.log('📻 Regular audio detected, not showing mini player');
+            if (
+              track &&
+              track.isVoiceCommand === true &&
+              fromNightMode &&
+              !hasNavigatedBack.current
+            ) {
+              console.log('✅ Voice command audio naturally completed!');
+
+              // Save completion status to AsyncStorage
+              await AsyncStorage.setItem(VOICE_COMMAND_COMPLETED_KEY, 'true');
+              console.log('✅ Voice command completion saved to AsyncStorage');
+
+              setVoiceCommandCompleted(true);
               setShowMiniPlayer(false);
+              setCurrentTrack(null);
+
+              // Auto-navigate back to Night Mode after audio completes
+              console.log('⏳ Waiting 1 second before auto-navigation...');
+              setTimeout(() => {
+                handleNavigateBackToNightMode();
+              }, 1000); // Give user 1 second to see completion
+            } else {
+              console.log(
+                'ℹ️ Audio stopped but conditions not met for auto-navigation:',
+                {
+                  isVoiceCommand: track?.isVoiceCommand,
+                  fromNightMode: fromNightMode,
+                  alreadyNavigated: hasNavigatedBack.current,
+                },
+              );
             }
-          }
-        }
-      } catch (error) {
-        console.log('No audio currently playing');
-      }
-    };
-
-    if (fromNightMode) {
-      checkAudioPlayback();
-    }
-  }, [fromNightMode]);
-
-  // Listen for TrackPlayer events - Track voice command completion
-  useEffect(() => {
-    const onTrackChange = async () => {
-      try {
-        const trackIndex = await TrackPlayer.getCurrentTrack();
-        if (trackIndex !== null) {
-          const track = await TrackPlayer.getTrack(trackIndex);
-
-          // ONLY show mini player for voice command tracks
-          if (track && track.isVoiceCommand === true) {
-            console.log('📻 Voice command track changed:', track.title);
-            setCurrentTrack(track);
-            setShowMiniPlayer(true);
-            setVoiceCommandStarted(true); // ✅ Mark that voice command started
-            setHasVoiceCommandCompleted(false);
           } else {
-            // Hide mini player for regular audio tracks
-            console.log('📻 Regular audio track, hiding mini player');
-            setShowMiniPlayer(false);
-            setCurrentTrack(null);
+            console.log('ℹ️ No track index available');
           }
-        }
-      } catch (error) {
-        console.log('Error getting track:', error);
-      }
-    };
-
-    const onPlaybackState = async ({state}) => {
-      if (currentTrack && currentTrack.isVoiceCommand) {
-        if (state === State.Playing) {
-          setIsVoiceCommandPlaying(true);
-          setVoiceCommandStarted(true); // ✅ Mark that voice command started
-          setHasVoiceCommandCompleted(false); // Reset when playing
-        } else if (state === State.Paused) {
-          setIsVoiceCommandPlaying(false);
-          // ✅ Keep voiceCommandStarted as true - don't enable actions!
-          // Don't set hasVoiceCommandCompleted to true here!
-        } else if (state === State.Stopped || state === State.Ended) {
-          console.log(
-            '✅ Voice command audio completed - enabling all actions',
-          );
-          setShowMiniPlayer(false);
-          setCurrentTrack(null);
-          setIsVoiceCommandPlaying(false);
-          setVoiceCommandStarted(false); // ✅ Reset started flag
-          setHasVoiceCommandCompleted(true); // Only set to true when completely finished
+        } catch (error) {
+          console.error('Error checking track completion:', error);
         }
       }
-
-      if (state === State.Stopped || state === State.None) {
-        setShowMiniPlayer(false);
-        setCurrentTrack(null);
-      }
     };
-
-    // Subscribe to events
-    const trackChangeListener = TrackPlayer.addEventListener(
-      Event.PlaybackActiveTrackChanged,
-      onTrackChange,
-    );
 
     const playbackStateListener = TrackPlayer.addEventListener(
       Event.PlaybackState,
@@ -203,10 +234,101 @@ const PlanYourDayScreen = () => {
     );
 
     return () => {
-      trackChangeListener.remove();
       playbackStateListener.remove();
     };
-  }, [currentTrack]);
+  }, [fromNightMode]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const checkVoiceCommandCompletion = async () => {
+        // ✅ Only check if coming from Night Mode
+        if (!fromNightMode) {
+          console.log('ℹ️ Not from Night Mode, skipping completion check');
+          return;
+        }
+
+        // ✅ Only check if we haven't already navigated
+        if (hasNavigatedBack.current) {
+          console.log('ℹ️ Already navigated back, skipping completion check');
+          return;
+        }
+
+        try {
+          const completed = await AsyncStorage.getItem(
+            VOICE_COMMAND_COMPLETED_KEY,
+          );
+
+          console.log('🔍 Checking voice command completion flag:', completed);
+
+          // ✅ This should only trigger if audio completed while screen was in background
+          if (completed === 'true') {
+            // Double-check: Is audio actually stopped?
+            try {
+              const state = await TrackPlayer.getState();
+              console.log('🔍 Current audio state:', state);
+
+              if (state === State.Stopped || state === State.Ended) {
+                console.log(
+                  '✅ Audio completed while screen was in background - auto-navigating',
+                );
+                handleNavigateBackToNightMode();
+              } else {
+                console.log(
+                  '⚠️ Completion flag set but audio still playing - clearing flag',
+                );
+                await AsyncStorage.removeItem(VOICE_COMMAND_COMPLETED_KEY);
+              }
+            } catch (error) {
+              console.error('Error checking audio state:', error);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking voice command completion:', error);
+        }
+      };
+
+      checkVoiceCommandCompletion();
+    }, [fromNightMode]),
+  );
+
+  // 🎯 Handle navigation back to Night Mode
+  const handleNavigateBackToNightMode = async () => {
+    if (hasNavigatedBack.current) {
+      console.log('⚠️ Already navigated back, skipping...');
+      return;
+    }
+
+    hasNavigatedBack.current = true;
+
+    console.log('🚀 Navigating back to Night Mode...');
+
+    // Stop voice listening if active
+    if (isListening) {
+      await stopListening();
+    }
+
+    // Clear the completion flag
+    try {
+      await AsyncStorage.removeItem(VOICE_COMMAND_COMPLETED_KEY);
+      console.log('✅ Voice command completion flag cleared');
+    } catch (error) {
+      console.error('Error clearing completion flag:', error);
+    }
+
+    // Show toast message
+    showVoiceToastMessage(
+      '🌙 Now for the relaxation time, watch audio and video',
+      3000,
+    );
+
+    // Navigate back to Night Mode after a short delay
+    setTimeout(() => {
+      navigation.navigate('YouTubeVideosScreen', {
+        returnedFromPlanYourDay: true,
+        taskCreated: taskCreated || false,
+      });
+    }, 500);
+  };
 
   const setupVoiceRecognition = async () => {
     try {
@@ -282,12 +404,6 @@ const PlanYourDayScreen = () => {
   };
 
   const startListening = async () => {
-    // Disable voice recognition if voice command is still playing
-    if (voiceCommandStarted && !hasVoiceCommandCompleted) {
-      showVoiceToastMessage('Please wait for the introduction to complete');
-      return;
-    }
-
     if (!voiceEnabled) {
       showToast(
         'Voice Commands Unavailable. Please enable microphone permissions in settings.',
@@ -431,13 +547,15 @@ const PlanYourDayScreen = () => {
     );
   };
 
+  // 🎯 Custom back press handler - DISABLED for Night Mode flow
   const handleCustomBackPress = async () => {
     console.log('📱 PlanYourDayScreen: Custom back handler called');
 
-    // Disable back button if voice command is still playing
-    if (voiceCommandStarted && !hasVoiceCommandCompleted) {
-      showVoiceToastMessage('Please wait for the introduction to complete');
-      return true; // Prevent back action
+    // 🚫 BLOCK back button if coming from Night Mode
+    if (fromNightMode) {
+      console.log('🚫 Back button blocked - Night Mode flow active');
+      showVoiceToastMessage('⏳ Please wait for audio to complete');
+      return;
     }
 
     if (isListening) {
@@ -457,9 +575,12 @@ const PlanYourDayScreen = () => {
         routes: [{name: 'BottomTab', params: {screen: 'Home'}}],
       });
     } else {
-      // Normal back navigation
-      console.log('📱 PlanYourDayScreen: Going back normally');
-      navigation.goBack();
+      // If no screen to go back to, navigate to Home
+      console.log('📱 PlanYourDayScreen: No back stack, navigating to Home');
+      navigation.reset({
+        index: 0,
+        routes: [{name: 'BottomTab', params: {screen: 'Home'}}],
+      });
     }
   };
 
@@ -468,34 +589,13 @@ const PlanYourDayScreen = () => {
       'hardwareBackPress',
       () => {
         console.log('📱 PlanYourDayScreen: Hardware back button pressed');
-
-        // Disable back button if voice command is still playing
-        if (voiceCommandStarted && !hasVoiceCommandCompleted) {
-          showVoiceToastMessage('Please wait for the introduction to complete');
-          return true; // Block the back action
-        }
-
         handleCustomBackPress();
-        return true; // Prevent default back action
+        return true;
       },
     );
 
     return () => backHandler.remove();
-  }, [isListening, hasVoiceCommandCompleted, isVoiceCommandPlaying]); // Add dependencies
-
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('📱 PlanYourDayScreen: Screen FOCUSED');
-
-      return () => {
-        console.log('📱 PlanYourDayScreen: Screen BLURRED (losing focus)');
-
-        if (isListening) {
-          stopListening();
-        }
-      };
-    }, [isListening]),
-  );
+  }, [isListening, fromNightMode]);
 
   const loadUserPlans = async () => {
     if (!user) {
@@ -507,18 +607,24 @@ const PlanYourDayScreen = () => {
       setLoading(true);
       console.log('Loading Plan Your Day entries for user:', user.id);
 
-      // Get today's date in YYYY-MM-DD format
-      const today = new Date().toISOString().split('T')[0];
-      console.log('Filtering plans for today:', today);
+      // ✅ GET TOMORROW'S DATE instead of today
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowDate = tomorrow.toISOString().split('T')[0];
+
+      console.log('Filtering plans for tomorrow:', tomorrowDate);
 
       const plans = await planYourDayService.getPlanYourDayEntries(user.id);
       console.log('Total plans loaded:', plans.length);
 
-      // Filter plans to show only today's tasks (based on start_date)
-      const todayPlans = plans.filter(plan => plan.start_date === today);
-      console.log('Plans for today:', todayPlans.length);
+      // ✅ FILTER FOR TOMORROW'S PLANS
+      const tomorrowPlans = plans.filter(
+        plan => plan.start_date === tomorrowDate,
+      );
+      console.log('Plans for tomorrow:', tomorrowPlans.length);
 
-      const transformedPlans = todayPlans.map(plan => ({
+      // ✅ UPDATE THE TRANSFORMATION to use tomorrowPlans
+      const transformedPlans = tomorrowPlans.map(plan => ({
         id: plan.id,
         title: plan.title,
         type: 'Plan Your Day',
@@ -539,7 +645,7 @@ const PlanYourDayScreen = () => {
         (a, b) => new Date(b.created_at) - new Date(a.created_at),
       );
 
-      console.log("Transformed today's plans:", transformedPlans.length);
+      console.log("Transformed tomorrow's plans:", transformedPlans.length);
       setCreatedTasks(transformedPlans);
     } catch (error) {
       console.error('Error loading Plan Your Day entries:', error);
@@ -594,12 +700,6 @@ const PlanYourDayScreen = () => {
   };
 
   const handleTargetHoursPress = () => {
-    // Disable if voice command is still playing
-    if (voiceCommandStarted && !hasVoiceCommandCompleted) {
-      showVoiceToastMessage('Please wait for the introduction to complete');
-      return;
-    }
-
     setSelectedOption('hours');
     setShowHourSelection(true);
     if (toastVisible) {
@@ -641,30 +741,21 @@ const PlanYourDayScreen = () => {
   };
 
   const handleTaskOptionSelect = () => {
-    // Disable if voice command is still playing
-    if (voiceCommandStarted && !hasVoiceCommandCompleted) {
-      showVoiceToastMessage('Please wait for the introduction to complete');
-      return;
-    }
-
     const navigationData = {
       selectedCategory,
       evaluationType,
       type: 'Plan',
       planType: 'tasks',
-      fromNightMode: fromNightMode, // Pass along Night Mode flag
+      // Pass Night Mode params if coming from Night Mode
+      fromNightMode: fromNightMode,
+      audioInfo: audioInfo,
+      sessionData: sessionData,
     };
 
     navigation.navigate('CategorySelection', navigationData);
   };
 
   const openSidebar = () => {
-    // Disable if voice command is still playing
-    if (voiceCommandStarted && !hasVoiceCommandCompleted) {
-      showVoiceToastMessage('Please wait for the introduction to complete');
-      return;
-    }
-
     setOffCanvasVisible(true);
     Animated.timing(slideAnim, {
       toValue: 0,
@@ -788,82 +879,62 @@ const PlanYourDayScreen = () => {
     },
   ];
 
-  const renderPlanOption = option => {
-    // Disable options if voice command is still playing
-    const isDisabled = !hasVoiceCommandCompleted && isVoiceCommandPlaying;
-
-    return (
-      <TouchableOpacity
-        key={option.id}
-        style={[
-          styles.optionCard,
-          selectedOption === option.id && styles.optionCardSelected,
-          selectedHours && option.id === 'hours' && styles.optionCardWithHours,
-          isDisabled && styles.optionCardDisabled,
-        ]}
-        onPress={() => {
-          if (isDisabled) {
-            showVoiceToastMessage(
-              'Please wait for the introduction to complete',
-            );
-            return;
-          }
-          if (option.id === 'tasks') {
-            handleTaskOptionSelect();
-          } else {
-            handleTargetHoursPress();
-          }
-        }}
-        activeOpacity={isDisabled ? 1 : 0.8}
-        disabled={isDisabled}>
-        <View style={styles.optionContent}>
-          <View style={styles.optionIconContainer}>
-            {option.id === 'hours' ? (
-              <MaterialIcons
-                name="schedule"
-                size={WP(7)}
-                color={isDisabled ? '#CCCCCC' : colors.Primary}
-              />
-            ) : (
-              <MaterialIcons
-                name="task-alt"
-                size={WP(7)}
-                color={isDisabled ? '#CCCCCC' : colors.Primary}
-              />
-            )}
-          </View>
-
-          <View style={styles.optionTextContainer}>
-            <Text
-              style={[
-                styles.optionTitle,
-                isDisabled && styles.optionTitleDisabled,
-              ]}>
-              {option.title}
-            </Text>
-            <Text
-              style={[
-                styles.optionSubtitle,
-                selectedHours &&
-                  option.id === 'hours' &&
-                  styles.optionSubtitleSelected,
-                isDisabled && styles.optionSubtitleDisabled,
-              ]}>
-              {option.subtitle}
-            </Text>
-          </View>
-
-          <View style={styles.arrowContainer}>
+  const renderPlanOption = option => (
+    <TouchableOpacity
+      key={option.id}
+      style={[
+        styles.optionCard,
+        selectedOption === option.id && styles.optionCardSelected,
+        selectedHours && option.id === 'hours' && styles.optionCardWithHours,
+      ]}
+      onPress={() => {
+        if (option.id === 'tasks') {
+          handleTaskOptionSelect();
+        } else {
+          handleTargetHoursPress();
+        }
+      }}
+      activeOpacity={0.8}>
+      <View style={styles.optionContent}>
+        <View style={styles.optionIconContainer}>
+          {option.id === 'hours' ? (
             <MaterialIcons
-              name="keyboard-arrow-right"
-              size={WP(6)}
-              color={isDisabled ? '#CCCCCC' : '#666666'}
+              name="schedule"
+              size={WP(7)}
+              color={colors.Primary}
             />
-          </View>
+          ) : (
+            <MaterialIcons
+              name="task-alt"
+              size={WP(7)}
+              color={colors.Primary}
+            />
+          )}
         </View>
-      </TouchableOpacity>
-    );
-  };
+
+        <View style={styles.optionTextContainer}>
+          <Text style={styles.optionTitle}>{option.title}</Text>
+          <Text
+            style={[
+              styles.optionSubtitle,
+              selectedHours &&
+                option.id === 'hours' &&
+                styles.optionSubtitleSelected,
+            ]}>
+            {option.subtitle}
+          </Text>
+        </View>
+
+        <View style={styles.arrowContainer}>
+          <MaterialIcons
+            name="keyboard-arrow-right"
+            size={WP(6)}
+            color="#666666"
+          />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
 
   const renderHourOption = hour => (
     <TouchableOpacity
@@ -1062,23 +1133,17 @@ const PlanYourDayScreen = () => {
     </Modal>
   );
 
-  // Check if screen should be disabled (voice command playing OR started but not completed)
-  const isScreenDisabled = voiceCommandStarted && !hasVoiceCommandCompleted; // ✅ Changed logic
-
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
       <View style={styles.headerWrapper}>
+        {/* 🎯 HIDE back button if coming from Night Mode */}
         <Headers
           title="Plan Your Day"
-          onBackPress={isScreenDisabled ? null : handleCustomBackPress}
-          disabled={isScreenDisabled}>
-          <TouchableOpacity onPress={openSidebar} disabled={isScreenDisabled}>
-            <MaterialIcons
-              name="menu"
-              size={WP(6)}
-              color={isScreenDisabled ? '#CCCCCC' : '#333333'}
-            />
+          onBackPress={fromNightMode ? null : handleCustomBackPress}
+          showBackButton={!fromNightMode}>
+          <TouchableOpacity onPress={openSidebar}>
+            <MaterialIcons name="menu" size={WP(6)} color="#333333" />
           </TouchableOpacity>
         </Headers>
       </View>
@@ -1089,14 +1154,9 @@ const PlanYourDayScreen = () => {
       {/* Voice Control Button - Floating */}
       {voiceEnabled && (
         <TouchableOpacity
-          style={[
-            styles.voiceButton,
-            isListening && styles.voiceButtonActive,
-            isScreenDisabled && styles.voiceButtonDisabled,
-          ]}
+          style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
           onPress={isListening ? stopListening : startListening}
-          activeOpacity={0.8}
-          disabled={isScreenDisabled}>
+          activeOpacity={0.8}>
           <MaterialIcons
             name={isListening ? 'mic' : 'mic-none'}
             size={WP(7)}
@@ -1113,17 +1173,13 @@ const PlanYourDayScreen = () => {
       {/* Voice Help Button */}
       {voiceEnabled && (
         <TouchableOpacity
-          style={[
-            styles.helpButton,
-            isScreenDisabled && styles.helpButtonDisabled,
-          ]}
+          style={styles.helpButton}
           onPress={showVoiceCommandsHelp}
-          activeOpacity={0.8}
-          disabled={isScreenDisabled}>
+          activeOpacity={0.8}>
           <MaterialIcons
             name="help-outline"
             size={WP(5)}
-            color={isScreenDisabled ? '#CCCCCC' : colors.Primary}
+            color={colors.Primary}
           />
         </TouchableOpacity>
       )}
@@ -1148,46 +1204,27 @@ const PlanYourDayScreen = () => {
 
       <ScrollView
         style={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={!isScreenDisabled}>
+        showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           <View style={styles.videoContainer}>
             <View style={styles.videoPlaceholder}>
               <MaterialIcons
                 name="play-circle-fill"
                 size={WP(12)}
-                color={isScreenDisabled ? '#CCCCCC' : colors.Primary}
+                color={colors.Primary}
               />
-              <Text
-                style={[
-                  styles.videoText,
-                  isScreenDisabled && styles.videoTextDisabled,
-                ]}>
+              <Text style={styles.videoText}>
                 Watch: How to Plan Your Day Effectively
               </Text>
-              <Text
-                style={[
-                  styles.videoSubtext,
-                  isScreenDisabled && styles.videoSubtextDisabled,
-                ]}>
-                2:30 min
-              </Text>
+              <Text style={styles.videoSubtext}>2:30 min</Text>
             </View>
           </View>
 
           <View style={styles.instructionsContainer}>
-            <Text
-              style={[
-                styles.instructionsTitle,
-                isScreenDisabled && styles.instructionsTitleDisabled,
-              ]}>
+            <Text style={styles.instructionsTitle}>
               Choose Your Planning Style
             </Text>
-            <Text
-              style={[
-                styles.instructionsText,
-                isScreenDisabled && styles.instructionsTextDisabled,
-              ]}>
+            <Text style={styles.instructionsText}>
               Select how you'd like to plan and track your daily productivity.
             </Text>
           </View>
@@ -1247,6 +1284,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+  },
+  miniPlayerArtworkImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  miniPlayerArtworkPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F0F7FF',
   },
   miniPlayerInfo: {
     flex: 1,
@@ -1318,17 +1367,11 @@ const styles = StyleSheet.create({
     marginTop: HP(1),
     textAlign: 'center',
   },
-  videoTextDisabled: {
-    color: '#CCCCCC',
-  },
   videoSubtext: {
     fontSize: FS(1.4),
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginTop: HP(0.5),
-  },
-  videoSubtextDisabled: {
-    color: '#CCCCCC',
   },
   instructionsContainer: {marginBottom: HP(2.5)},
   instructionsTitle: {
@@ -1338,18 +1381,12 @@ const styles = StyleSheet.create({
     marginBottom: HP(0.8),
     textAlign: 'center',
   },
-  instructionsTitleDisabled: {
-    color: '#CCCCCC',
-  },
   instructionsText: {
     fontSize: FS(1.6),
     fontFamily: 'OpenSans-Regular',
     color: '#666666',
     textAlign: 'center',
     lineHeight: HP(2.8),
-  },
-  instructionsTextDisabled: {
-    color: '#CCCCCC',
   },
   optionsContainer: {marginBottom: HP(2.5)},
   optionCard: {
@@ -1371,10 +1408,6 @@ const styles = StyleSheet.create({
     borderColor: colors.Primary,
     borderWidth: 2,
   },
-  optionCardDisabled: {
-    backgroundColor: '#F5F5F5',
-    opacity: 0.6,
-  },
   optionContent: {flexDirection: 'row', alignItems: 'center'},
   optionIconContainer: {
     width: WP(12),
@@ -1392,9 +1425,6 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: HP(0.5),
   },
-  optionTitleDisabled: {
-    color: '#CCCCCC',
-  },
   optionSubtitle: {
     fontSize: FS(1.4),
     fontFamily: 'OpenSans-Regular',
@@ -1404,9 +1434,6 @@ const styles = StyleSheet.create({
   optionSubtitleSelected: {
     color: colors.Primary,
     fontFamily: 'OpenSans-SemiBold',
-  },
-  optionSubtitleDisabled: {
-    color: '#CCCCCC',
   },
   arrowContainer: {padding: WP(1)},
   hourSelectionOverlay: {
@@ -1677,9 +1704,6 @@ const styles = StyleSheet.create({
   voiceButtonActive: {
     backgroundColor: '#E53935',
   },
-  voiceButtonDisabled: {
-    backgroundColor: '#CCCCCC',
-  },
   listeningIndicator: {
     position: 'absolute',
     width: WP(16),
@@ -1711,9 +1735,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     zIndex: 1000,
-  },
-  helpButtonDisabled: {
-    backgroundColor: '#F5F5F5',
   },
   listeningCard: {
     flexDirection: 'row',

@@ -16,14 +16,13 @@ public class DateReminderScheduler {
     private static final String TAG = "DateReminderScheduler";
     private static final String PREFS_NAME = "DateReminderPrefs";
     private static final String KEY_ENABLED = "enabled";
-    private static final String KEY_MORNING_TIME = "morning_time";
-    private static final String KEY_EVENING_TIME = "evening_time";
     
     private static final int MORNING_REQUEST_CODE = 7000;
     private static final int EVENING_REQUEST_CODE = 7001;
     
     /**
      * Reschedule reminders after boot or app restart
+     * This will sync from database if enabled
      */
     public static void scheduleDailyReminders(Context context) {
         try {
@@ -35,8 +34,56 @@ public class DateReminderScheduler {
                 return;
             }
             
-            String morningTime = prefs.getString(KEY_MORNING_TIME, "7:0");
-            String eveningTime = prefs.getString(KEY_EVENING_TIME, "19:0");
+            Log.d(TAG, "========================================");
+            Log.d(TAG, "Reminders enabled - syncing from database...");
+            
+            // Fetch fresh settings from database
+            DateReminderDatabase.Settings settings = DateReminderDatabase.fetchSettings();
+            
+            if (settings == null) {
+                Log.w(TAG, "⚠️ No settings in database - using cached values");
+                // Fall back to cached values
+                scheduleCachedReminders(context, prefs);
+            } else {
+                Log.d(TAG, "✅ Settings fetched from database");
+                
+                // Update SharedPreferences with fresh data
+                SharedPreferences.Editor editor = prefs.edit();
+                editor.putString("morning_time", settings.morningTime);
+                editor.putString("evening_time", settings.eveningTime);
+                editor.putBoolean("auto_close", settings.autoClose);
+                editor.putString("morning_image_uri", settings.morningImageUrl != null ? settings.morningImageUrl : "");
+                editor.putString("evening_image_uri", settings.eveningImageUrl != null ? settings.eveningImageUrl : "");
+                editor.putLong("last_sync_time", System.currentTimeMillis());
+                editor.apply();
+                
+                // Parse and schedule
+                String[] morningParts = settings.morningTime.split(":");
+                int morningHour = Integer.parseInt(morningParts[0]);
+                int morningMinute = Integer.parseInt(morningParts[1]);
+                
+                String[] eveningParts = settings.eveningTime.split(":");
+                int eveningHour = Integer.parseInt(eveningParts[0]);
+                int eveningMinute = Integer.parseInt(eveningParts[1]);
+                
+                scheduleCustomReminders(context, morningHour, morningMinute, eveningHour, eveningMinute);
+                Log.d(TAG, "✅ Reminders rescheduled with latest database settings");
+            }
+            
+            Log.d(TAG, "========================================");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error scheduling daily reminders: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Fallback method to schedule from cached preferences
+     */
+    private static void scheduleCachedReminders(Context context, SharedPreferences prefs) {
+        try {
+            String morningTime = prefs.getString("morning_time", "7:0");
+            String eveningTime = prefs.getString("evening_time", "19:0");
             
             String[] morningParts = morningTime.split(":");
             int morningHour = Integer.parseInt(morningParts[0]);
@@ -47,11 +94,10 @@ public class DateReminderScheduler {
             int eveningMinute = Integer.parseInt(eveningParts[1]);
             
             scheduleCustomReminders(context, morningHour, morningMinute, eveningHour, eveningMinute);
-            
-            Log.d(TAG, "✅ Daily reminders rescheduled from preferences");
+            Log.d(TAG, "✅ Reminders rescheduled from cached settings");
             
         } catch (Exception e) {
-            Log.e(TAG, "Error scheduling daily reminders: " + e.getMessage(), e);
+            Log.e(TAG, "Error scheduling cached reminders: " + e.getMessage(), e);
         }
     }
     
@@ -79,12 +125,10 @@ public class DateReminderScheduler {
                 return;
             }
             
-            // Create intent for the receiver
             Intent intent = new Intent(context, DateReminderReceiver.class);
             intent.setAction("DATE_REMINDER_" + requestCode);
             intent.putExtra("requestCode", requestCode);
             
-            // CRITICAL: Use FLAG_IMMUTABLE for Android 12+ and FLAG_UPDATE_CURRENT for reliability
             PendingIntent pendingIntent = PendingIntent.getBroadcast(
                 context,
                 requestCode,
@@ -92,14 +136,12 @@ public class DateReminderScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
             
-            // Set the calendar for the reminder time (TODAY)
             Calendar calendar = Calendar.getInstance();
             calendar.set(Calendar.HOUR_OF_DAY, hour);
             calendar.set(Calendar.MINUTE, minute);
             calendar.set(Calendar.SECOND, 0);
             calendar.set(Calendar.MILLISECOND, 0);
             
-            // If the time has already passed today, schedule for tomorrow
             long currentTime = System.currentTimeMillis();
             if (calendar.getTimeInMillis() <= currentTime) {
                 calendar.add(Calendar.DAY_OF_YEAR, 1);
@@ -108,12 +150,9 @@ public class DateReminderScheduler {
             
             long triggerTime = calendar.getTimeInMillis();
             
-            // CRITICAL: Use setExactAndAllowWhileIdle for MAXIMUM RELIABILITY
-            // This works even in Doze mode and when device is locked
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // setExactAndAllowWhileIdle is the MOST RELIABLE method
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent);
-                Log.d(TAG, "✅ Scheduled with setExactAndAllowWhileIdle (Android 6+) - Works in Doze & locked");
+                Log.d(TAG, "✅ Scheduled with setExactAndAllowWhileIdle (Android 6+)");
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent);
                 Log.d(TAG, "✅ Scheduled with setExact (Android 4.4+)");
@@ -125,7 +164,6 @@ public class DateReminderScheduler {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault());
             Log.d(TAG, "📅 Reminder set for " + hour + ":" + String.format("%02d", minute) + 
                   " (" + sdf.format(calendar.getTime()) + ")");
-            Log.d(TAG, "Trigger time: " + triggerTime + " ms (Current: " + currentTime + " ms)");
             
         } catch (Exception e) {
             Log.e(TAG, "❌ Error scheduling reminder: " + e.getMessage(), e);

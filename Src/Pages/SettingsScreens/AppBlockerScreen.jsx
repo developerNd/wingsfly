@@ -95,6 +95,8 @@ const InstalledApps = (() => {
         checkPermissions: () => Promise.resolve({overlay: false, usage: false}),
         openOverlaySettings: () => Promise.resolve(true),
         openUsageSettings: () => Promise.resolve(true),
+        refreshNotification: () => Promise.resolve(true),
+        getSystemUsageStats: () => Promise.resolve({}),
       };
     }
     return NativeModules.InstalledApps;
@@ -124,6 +126,8 @@ const InstalledApps = (() => {
       checkPermissions: () => Promise.resolve({overlay: false, usage: false}),
       openOverlaySettings: () => Promise.resolve(true),
       openUsageSettings: () => Promise.resolve(true),
+      refreshNotification: () => Promise.resolve(true),
+      getSystemUsageStats: () => Promise.resolve({}),
     };
   }
 })();
@@ -254,13 +258,20 @@ const AppBlockerScreen = () => {
 
     const refreshUsageData = async () => {
       try {
-        const allUsageData = await InstalledApps.getAllAppsUsageToday();
+        // ✅ Use system usage stats for most accurate data
+        const systemUsageStats = await getSystemUsageStats();
+        
         let hasChanges = false;
         const updatedApps = apps.map(app => {
-          const currentUsage = allUsageData[app.packageName] || 0;
-          if (currentUsage !== app.usageToday) {
+          const systemUsage = systemUsageStats[app.packageName] || 0;
+          
+          // Convert milliseconds to minutes and validate
+          const usageMinutes = Math.floor(systemUsage / (60 * 1000));
+          const validUsage = Math.min(usageMinutes, 1440); // Cap at 24 hours
+          
+          if (validUsage !== app.usageToday) {
             hasChanges = true;
-            return {...app, usageToday: currentUsage};
+            return {...app, usageToday: validUsage};
           }
           return app;
         });
@@ -296,6 +307,48 @@ const AppBlockerScreen = () => {
       setFilteredApps(filtered);
     }
   }, [searchQuery, apps]);
+
+  // ✅ NEW: Get system usage stats - SINGLE SOURCE OF TRUTH
+  const getSystemUsageStats = async () => {
+    try {
+      // Try native method first (most reliable)
+      if (InstalledApps.getSystemUsageStats) {
+        const stats = await InstalledApps.getSystemUsageStats();
+        if (stats && Object.keys(stats).length > 0) {
+          console.log('📊 Got system usage stats from native:', Object.keys(stats).length);
+          return stats;
+        }
+      }
+
+      // Fallback to AppUsageModule
+      if (AppUsageModule) {
+        const dailyStats = await AppUsageModule.getDailyUsageStats();
+        if (dailyStats && Array.isArray(dailyStats)) {
+          const statsMap = dailyStats.reduce((acc, stat) => {
+            if (stat.totalTimeInForeground > 0) {
+              acc[stat.packageName] = stat.totalTimeInForeground;
+            }
+            return acc;
+          }, {});
+          console.log('📊 Got usage stats from AppUsageModule:', Object.keys(statsMap).length);
+          return statsMap;
+        }
+      }
+
+      // Last resort: getAllAppsUsageToday (but convert to milliseconds for consistency)
+      const minutesMap = await InstalledApps.getAllAppsUsageToday();
+      const msMap = {};
+      Object.keys(minutesMap).forEach(pkg => {
+        msMap[pkg] = minutesMap[pkg] * 60 * 1000; // Convert minutes to ms
+      });
+      console.log('📊 Got usage from getAllAppsUsageToday:', Object.keys(msMap).length);
+      return msMap;
+
+    } catch (error) {
+      console.error('❌ Error getting system usage stats:', error);
+      return {};
+    }
+  };
 
   // Sort apps: Distractive apps by usage first, then normal apps by usage
   const sortAppsByUsage = (appsList) => {
@@ -460,41 +513,73 @@ const AppBlockerScreen = () => {
     }
   };
 
+  // ✅ FIXED: Properly fetch and sync usage limits from Supabase
   const silentLoadAppDataFromSupabase = async () => {
     if (!user?.id || syncing) return;
 
     try {
+      console.log('📥 Starting Supabase data fetch...');
       setSyncing(true);
+      
       const [usageLimits, schedules] = await Promise.all([
         appBlockerService.getUserUsageLimits(user.id),
         appBlockerService.getUserSchedules(user.id),
       ]);
 
+      console.log('✅ Supabase data fetched:', {
+        usageLimits: usageLimits.length,
+        schedules: schedules.length
+      });
+
       if (apps.length > 0) {
-        applySupabaseDataToApps(usageLimits, schedules);
+        await applySupabaseDataToApps(usageLimits, schedules);
       }
     } catch (error) {
-      console.error('Error loading data from Supabase:', error);
+      console.error('❌ Error loading data from Supabase:', error);
     } finally {
       setSyncing(false);
     }
   };
 
-  const applySupabaseDataToApps = (usageLimits, schedules) => {
-    const updatedApps = apps.map(app => {
+  // ✅ FIXED: Apply Supabase data AND sync to native layer
+  const applySupabaseDataToApps = async (usageLimits, schedules) => {
+    console.log('🔄 Applying Supabase data to apps...');
+    
+    const updatedApps = await Promise.all(apps.map(async app => {
       const appLimit = usageLimits.find(limit => limit.package_name === app.packageName);
       const appSchedules = schedules.filter(schedule => schedule.package_name === app.packageName);
       const convertedSchedules = convertSupabaseSchedulesToAppFormat(appSchedules);
 
+      // Get the usage limit from Supabase
+      const supabaseUsageLimit = appLimit ? appLimit.limit_minutes : 0;
+      
+      // Sync to native layer if there's a difference
+      if (supabaseUsageLimit > 0) {
+        try {
+          const nativeLimit = await InstalledApps.getAppUsageLimit(app.packageName);
+          
+          if (nativeLimit !== supabaseUsageLimit) {
+            console.log(`🔧 Syncing ${app.name} limit: ${nativeLimit} -> ${supabaseUsageLimit}`);
+            await InstalledApps.setAppUsageLimit(app.packageName, supabaseUsageLimit);
+            
+            // Re-evaluate blocking status after sync
+            await InstalledApps.reevaluateAppBlockingStatus(app.packageName);
+          }
+        } catch (error) {
+          console.error(`Error syncing limit for ${app.packageName}:`, error);
+        }
+      }
+
       return {
         ...app,
-        usageLimit: appLimit ? appLimit.limit_minutes : app.usageLimit || 0,
+        usageLimit: supabaseUsageLimit,
         schedules: convertedSchedules.length > 0 ? convertedSchedules : app.schedules,
         schedulesEnabled: convertedSchedules.length > 0 || app.schedulesEnabled,
         isLocked: convertedSchedules.length > 0 || app.isLocked,
       };
-    });
+    }));
 
+    console.log('✅ Updated apps with Supabase data');
     setApps(updatedApps);
     
     const updatedSortedApps = allSortedAppsRef.current.map(app => {
@@ -571,17 +656,21 @@ const AppBlockerScreen = () => {
 
   const handleUsageLimitUpdate = async updatedApp => {
     try {
+      console.log('💾 Updating usage limit for:', updatedApp.name);
+      
       await handleAppUpdate(updatedApp);
 
       if (user?.id) {
         try {
           if (updatedApp.usageLimit > 0) {
+            console.log('📤 Syncing limit to Supabase:', updatedApp.usageLimit);
             await appBlockerService.setAppUsageLimit(
               user.id,
               updatedApp.packageName,
               updatedApp.name,
               updatedApp.usageLimit
             );
+            console.log('✅ Synced to Supabase successfully');
           } else {
             await appBlockerService.removeAppUsageLimit(
               user.id,
@@ -589,11 +678,13 @@ const AppBlockerScreen = () => {
             );
           }
         } catch (syncError) {
-          console.error('Failed to sync usage limit (silent):', syncError);
+          console.error('❌ Failed to sync usage limit:', syncError);
+          Alert.alert('Warning', 'Usage limit set locally but failed to sync to cloud');
         }
       }
     } catch (error) {
       console.error('Error in handleUsageLimitUpdate:', error);
+      Alert.alert('Error', 'Failed to update usage limit');
     }
   };
 
@@ -693,6 +784,7 @@ const AppBlockerScreen = () => {
     }
   };
 
+  // ✅ FIXED: Load usage data with proper validation and single source
   const loadUsageDataForAllApps = async appsList => {
     try {
       const permissions = await InstalledApps.checkPermissions();
@@ -705,26 +797,10 @@ const AppBlockerScreen = () => {
         }));
       }
 
-      // Try to get detailed usage stats from AppUsageModule if available
-      let detailedUsageMap = {};
-      if (AppUsageModule) {
-        try {
-          const dailyStats = await AppUsageModule.getDailyUsageStats();
-          if (dailyStats && Array.isArray(dailyStats)) {
-            detailedUsageMap = dailyStats.reduce((acc, stat) => {
-              if (stat.totalTimeInForeground > 10000) { // More than 10 seconds
-                acc[stat.packageName] = stat.totalTimeInForeground;
-              }
-              return acc;
-            }, {});
-            console.log(`Loaded detailed usage for ${Object.keys(detailedUsageMap).length} apps`);
-          }
-        } catch (err) {
-          console.warn('Could not load detailed usage stats:', err);
-        }
-      }
+      console.log('📊 Loading usage data for all apps...');
 
-      const allUsageData = await InstalledApps.getAllAppsUsageToday();
+      // ✅ Get system usage stats (single source of truth)
+      const systemUsageStats = await getSystemUsageStats();
 
       const usageLimitPromises = appsList.map(async app => {
         try {
@@ -733,16 +809,31 @@ const AppBlockerScreen = () => {
             InstalledApps.isAppLimitReached(app.packageName),
           ]);
 
-          // Prefer detailed usage from AppUsageModule, fallback to InstalledApps
-          const usageToday = detailedUsageMap[app.packageName] || allUsageData[app.packageName] || 0;
+          // Get usage from system stats (in milliseconds)
+          const usageMs = systemUsageStats[app.packageName] || 0;
+          
+          // Convert to minutes and validate
+          let usageMinutes = Math.floor(usageMs / (60 * 1000));
+          
+          // ✅ CRITICAL: Validate usage - cannot exceed 24 hours
+          if (usageMinutes > 1440) {
+            console.warn(`⚠️ Invalid usage for ${app.name}: ${usageMinutes}min, capping to 1440min`);
+            usageMinutes = 1440;
+          }
+          
+          // ✅ Ensure usage is reasonable (at least 0)
+          usageMinutes = Math.max(0, usageMinutes);
+
+          console.log(`📱 ${app.name}: ${usageMinutes}min / ${usageLimit}min`);
 
           return {
             ...app,
             usageLimit: usageLimit || 0,
-            usageToday: usageToday,
+            usageToday: usageMinutes,
             isLimitReached: isLimitReached || false,
           };
         } catch (error) {
+          console.error(`Error loading usage for ${app.name}:`, error);
           return {
             ...app,
             usageLimit: 0,
@@ -752,7 +843,9 @@ const AppBlockerScreen = () => {
         }
       });
 
-      return await Promise.all(usageLimitPromises);
+      const result = await Promise.all(usageLimitPromises);
+      console.log('✅ Usage data loaded for all apps');
+      return result;
     } catch (error) {
       console.error('Error loading usage data for all apps:', error);
       return appsList.map(app => ({
@@ -778,18 +871,8 @@ const AppBlockerScreen = () => {
 
       const now = Date.now();
 
-      if (
-        appsCache &&
-        appsCache.timestamp &&
-        now - appsCache.timestamp < CACHE_EXPIRATION
-      ) {
-        setApps(appsCache.apps);
-        setFilteredApps(appsCache.apps);
-        allSortedAppsRef.current = appsCache.sortedApps;
-        setHasMoreApps(appsCache.sortedApps.length > appsCache.apps.length);
-        setLoading(false);
-        return;
-      }
+      // ✅ Clear cache on every load to ensure fresh data
+      appsCache = null;
 
       const allApps = await InstalledApps.getInstalledApps();
 
@@ -843,11 +926,12 @@ const AppBlockerScreen = () => {
       });
 
       const appsWithSchedules = await Promise.all(appsWithSchedulesPromises);
+      
+      // ✅ Load usage data with proper validation
       const appsWithUsageData = await loadUsageDataForAllApps(appsWithSchedules);
 
-      // Sort apps: Distractive apps by usage first, then normal apps by usage
+      // Sort apps
       const sortedApps = sortAppsByUsage(appsWithUsageData);
-
       const firstPageApps = sortedApps.slice(0, PAGE_SIZE);
 
       appsCache = {
@@ -972,29 +1056,70 @@ const AppBlockerScreen = () => {
     }
   };
 
+  // ✅ FIXED: Fetch fresh data from Supabase when opening usage limit modal
   const openUsageLimitModal = async app => {
     try {
       setLoadingUsageData(true);
+      console.log('🔍 Opening usage limit modal for:', app.name);
 
       let appWithUsageData = app;
 
+      // ✅ Step 1: Fetch from Supabase first
+      if (user?.id) {
+        try {
+          console.log('📥 Fetching usage limit from Supabase...');
+          const supabaseUsageLimits = await appBlockerService.getUserUsageLimits(user.id);
+          const appLimitFromSupabase = supabaseUsageLimits.find(
+            limit => limit.package_name === app.packageName
+          );
+
+          if (appLimitFromSupabase) {
+            const supabaseLimit = appLimitFromSupabase.limit_minutes;
+            console.log('✅ Found Supabase limit:', supabaseLimit);
+
+            // Sync to native layer
+            await InstalledApps.setAppUsageLimit(app.packageName, supabaseLimit);
+            console.log('✅ Synced to native layer');
+
+            // Re-evaluate blocking status
+            await InstalledApps.reevaluateAppBlockingStatus(app.packageName);
+          } else {
+            console.log('ℹ️ No usage limit found in Supabase for this app');
+          }
+        } catch (supabaseError) {
+          console.warn('⚠️ Failed to fetch from Supabase:', supabaseError);
+        }
+      }
+
+      // ✅ Step 2: Get fresh validated data from native layer
       try {
-        const [usageLimit, usageToday, isLimitReached] = await Promise.all([
+        const [usageLimit, isLimitReached] = await Promise.all([
           InstalledApps.getAppUsageLimit(app.packageName),
-          InstalledApps.getRealTimeUsageToday
-            ? InstalledApps.getRealTimeUsageToday(app.packageName)
-            : InstalledApps.getAppUsageToday(app.packageName),
           InstalledApps.isAppLimitReached(app.packageName),
         ]);
+
+        // ✅ Get system usage stats for accurate current usage
+        const systemUsageStats = await getSystemUsageStats();
+        const usageMs = systemUsageStats[app.packageName] || 0;
+        let usageMinutes = Math.floor(usageMs / (60 * 1000));
+        
+        // Validate usage
+        usageMinutes = Math.min(Math.max(0, usageMinutes), 1440);
+
+        console.log('📊 Native data:', {
+          usageLimit,
+          usageToday: usageMinutes,
+          isLimitReached
+        });
 
         appWithUsageData = {
           ...app,
           usageLimit: usageLimit || 0,
-          usageToday: usageToday || 0,
+          usageToday: usageMinutes,
           isLimitReached: isLimitReached || false,
         };
       } catch (error) {
-        console.warn('Failed to load fresh usage data:', error);
+        console.warn('⚠️ Failed to load fresh usage data:', error);
         appWithUsageData = {
           ...app,
           usageLimit: app.usageLimit || 0,
@@ -1003,6 +1128,7 @@ const AppBlockerScreen = () => {
         };
       }
 
+      // Update app state
       const updatedApps = apps.map(a =>
         a.packageName === app.packageName ? appWithUsageData : a,
       );
@@ -1021,10 +1147,16 @@ const AppBlockerScreen = () => {
         };
       }
 
+      console.log('✅ Opening modal with data:', {
+        name: appWithUsageData.name,
+        limit: appWithUsageData.usageLimit,
+        usage: appWithUsageData.usageToday
+      });
+
       setSelectedAppForLimit(appWithUsageData);
       setShowUsageLimitModal(true);
     } catch (error) {
-      console.error('Error loading usage data for limit modal:', error);
+      console.error('❌ Error loading usage data for limit modal:', error);
       Alert.alert('Error', 'Failed to load usage data');
       setSelectedAppForLimit({
         ...app,

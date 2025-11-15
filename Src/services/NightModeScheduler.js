@@ -1,8 +1,13 @@
-import { AppState, DeviceEventEmitter, NativeModules, Alert, Platform } from 'react-native';
+import {
+  AppState,
+  DeviceEventEmitter,
+  NativeModules,
+  Platform,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { nightRoutineService } from '../services/api/nightRoutineService';
+import {nightRoutineService} from '../services/api/nightRoutineService';
 
-const { NightModeSchedulerModule } = NativeModules;
+const {NightModeSchedulerModule} = NativeModules;
 
 const STORAGE_KEYS = {
   LAST_CHECK: '@night_mode_last_check',
@@ -29,7 +34,7 @@ class NightModeScheduler {
   async initialize(userId, navigationRef) {
     try {
       console.log('🌙 [NightModeScheduler] Initializing...');
-      
+
       this.currentUserId = userId;
       this.navigationRef = navigationRef;
 
@@ -51,12 +56,12 @@ class NightModeScheduler {
         return;
       }
 
-      // ✅ Check Xiaomi setup requirements BEFORE scheduling
+      // ✅ Check Xiaomi setup requirements BEFORE scheduling (silent check only)
       if (this.isXiaomiDevice) {
         const setupComplete = await this.checkXiaomiSetup();
         if (!setupComplete) {
           console.warn('⚠️ [NightModeScheduler] Xiaomi setup incomplete');
-          // Still continue but user will be warned
+          // Continue without showing alerts
         }
       }
 
@@ -92,7 +97,7 @@ class NightModeScheduler {
       }
 
       this.isXiaomiDevice = await NightModeSchedulerModule.isXiaomi();
-      
+
       if (this.isXiaomiDevice) {
         console.warn('⚠️ [NightModeScheduler] Xiaomi device detected');
         const deviceInfo = await NightModeSchedulerModule.getDeviceInfo();
@@ -105,27 +110,21 @@ class NightModeScheduler {
   }
 
   /**
-   * ✅ NEW: Check Xiaomi setup requirements
+   * ✅ MODIFIED: Check Xiaomi setup requirements (silent check, no alerts)
    */
   async checkXiaomiSetup() {
     try {
       if (!this.isXiaomiDevice) return true;
 
-      // Check if warning has been shown before
-      const warningShown = await AsyncStorage.getItem(STORAGE_KEYS.XIAOMI_WARNING_SHOWN);
-      
       // Check battery optimization
-      const isIgnoringBattery = await NightModeSchedulerModule.isIgnoringBatteryOptimizations();
+      const isIgnoringBattery =
+        await NightModeSchedulerModule.isIgnoringBatteryOptimizations();
 
       if (!isIgnoringBattery) {
-        console.warn('⚠️ [NightModeScheduler] Battery optimization not disabled on Xiaomi');
-        
-        // Only show warning once unless user explicitly wants to see it again
-        if (!warningShown) {
-          await this.showXiaomiSetupWarning();
-          await AsyncStorage.setItem(STORAGE_KEYS.XIAOMI_WARNING_SHOWN, 'true');
-        }
-        
+        console.warn(
+          '⚠️ [NightModeScheduler] Battery optimization not disabled on Xiaomi',
+        );
+        // Just log the warning, don't show any alerts
         return false;
       }
 
@@ -137,90 +136,48 @@ class NightModeScheduler {
   }
 
   /**
-   * ✅ NEW: Show Xiaomi setup warning
+   * ✅ REMOVED: Alert dialogs removed - method kept for API compatibility
    */
   async showXiaomiSetupWarning() {
-    return new Promise((resolve) => {
-      Alert.alert(
-        '⚠️ Xiaomi Device Setup Required',
-        'To ensure Night Mode works reliably on your Xiaomi device, please:\n\n' +
-        '1. Enable Autostart permission\n' +
-        '2. Disable Battery Optimization\n' +
-        '3. Set app to "No restrictions"\n\n' +
-        'Without these settings, alarms may not work when the app is closed.',
-        [
-          {
-            text: 'Setup Later',
-            style: 'cancel',
-            onPress: () => resolve(false),
-          },
-          {
-            text: 'Autostart Settings',
-            onPress: async () => {
-              try {
-                await NightModeSchedulerModule.openAutostartSettings();
-              } catch (error) {
-                console.error('Error opening autostart:', error);
-              }
-              
-              // Show second alert for battery optimization
-              setTimeout(() => {
-                Alert.alert(
-                  'Battery Optimization',
-                  'Next, please disable battery optimization for this app.',
-                  [
-                    {
-                      text: 'Skip',
-                      style: 'cancel',
-                      onPress: () => resolve(false),
-                    },
-                    {
-                      text: 'Open Settings',
-                      onPress: async () => {
-                        try {
-                          await NightModeSchedulerModule.requestIgnoreBatteryOptimization();
-                          resolve(true);
-                        } catch (error) {
-                          console.error('Error opening battery settings:', error);
-                          resolve(false);
-                        }
-                      },
-                    },
-                  ]
-                );
-              }, 500);
-            },
-          },
-        ]
-      );
-    });
+    // Method kept empty for backwards compatibility
+    // All alert logic removed
+    console.log(
+      '🌙 [NightModeScheduler] Xiaomi setup warning suppressed (alerts disabled)',
+    );
+    return Promise.resolve(false);
   }
 
   /**
-   * ✅ NEW: Manual Xiaomi setup trigger (for settings screen)
+   * ✅ MODIFIED: Manual Xiaomi setup trigger (alerts removed)
    */
   async showXiaomiSetupGuide() {
     if (!this.isXiaomiDevice) {
-      Alert.alert('Not a Xiaomi Device', 'This device does not require special setup.');
+      console.log('Not a Xiaomi Device - no special setup required');
       return;
     }
 
-    await this.showXiaomiSetupWarning();
+    // Just log instead of showing alerts
+    console.log(
+      '🌙 [NightModeScheduler] Xiaomi setup guide requested (alerts disabled)',
+    );
   }
 
   /**
    * Setup listener for Night Mode triggers from MainActivity
    */
   setupNightModeTriggerListener() {
-    DeviceEventEmitter.addListener('TRIGGER_NIGHT_MODE', (data) => {
-      console.log('🌙 [NightModeScheduler] Received Night Mode trigger event:', data);
-      
+    DeviceEventEmitter.addListener('TRIGGER_NIGHT_MODE', data => {
+      console.log(
+        '🌙 [NightModeScheduler] Received Night Mode trigger event:',
+        data,
+      );
+
       if (data.from_alarm) {
         console.log('🌙 Alarm triggered - marking as triggered today');
         this.markTriggeredToday();
       }
     });
-    
+
     console.log('✅ [NightModeScheduler] Night Mode trigger listener set up');
   }
 
@@ -232,7 +189,7 @@ class NightModeScheduler {
       if (!this.currentUserId) return;
 
       const routine = await nightRoutineService.getFormattedNightRoutine(
-        this.currentUserId
+        this.currentUserId,
       );
 
       if (routine && routine.bedTime) {
@@ -256,23 +213,32 @@ class NightModeScheduler {
       if (!this.nightRoutine || !NightModeSchedulerModule) return;
 
       const triggerTime = this.calculateTriggerTime(this.nightRoutine.bedTime);
-      
-      console.log('📅 [NightModeScheduler] Scheduling alarm for:', 
-        triggerTime.toLocaleString()
+
+      console.log(
+        '📅 [NightModeScheduler] Scheduling alarm for:',
+        triggerTime.toLocaleString(),
       );
 
       // Schedule alarm and get device info
       const result = await NightModeSchedulerModule.scheduleNightModeAlarm(
         triggerTime.getTime(),
         this.nightRoutine.bedTime.getHours(),
-        this.nightRoutine.bedTime.getMinutes()
+        this.nightRoutine.bedTime.getMinutes(),
       );
 
-      console.log('✅ [NightModeScheduler] Native alarm scheduled (works when app is killed)');
-      console.log('🔔 Alarm will trigger at:', triggerTime.toLocaleTimeString());
-      console.log('🛏️ Bedtime is:', this.nightRoutine.bedTime.toLocaleTimeString());
+      console.log(
+        '✅ [NightModeScheduler] Native alarm scheduled (works when app is killed)',
+      );
+      console.log(
+        '🔔 Alarm will trigger at:',
+        triggerTime.toLocaleTimeString(),
+      );
+      console.log(
+        '🛏️ Bedtime is:',
+        this.nightRoutine.bedTime.toLocaleTimeString(),
+      );
 
-      // ✅ Show warning if Xiaomi device detected in native module
+      // ✅ Check setup silently if Xiaomi device detected
       if (result && result.isXiaomi) {
         console.warn('⚠️ [NightModeScheduler] Xiaomi device - checking setup');
         const setupComplete = await this.checkXiaomiSetup();
@@ -293,7 +259,7 @@ class NightModeScheduler {
   calculateTriggerTime(bedTime) {
     const trigger = new Date(bedTime);
     trigger.setHours(trigger.getHours() - 1);
-    
+
     const now = new Date();
     if (trigger < now) {
       trigger.setDate(trigger.getDate() + 1);
@@ -316,7 +282,9 @@ class NightModeScheduler {
       this.checkAndTriggerNightMode();
     }, 60000);
 
-    console.log('✅ [NightModeScheduler] Periodic check started (backup mechanism)');
+    console.log(
+      '✅ [NightModeScheduler] Periodic check started (backup mechanism)',
+    );
   }
 
   /**
@@ -351,7 +319,9 @@ class NightModeScheduler {
       const fiveMinutes = 5 * 60 * 1000;
 
       if (timeDiff <= fiveMinutes) {
-        console.log('🌙 [NightModeScheduler] Time to trigger Night Mode (backup check)!');
+        console.log(
+          '🌙 [NightModeScheduler] Time to trigger Night Mode (backup check)!',
+        );
         await this.triggerNightMode();
       }
     } catch (error) {
@@ -370,7 +340,10 @@ class NightModeScheduler {
 
       DeviceEventEmitter.emit('NIGHT_MODE_STARTED', {
         bedTime: this.nightRoutine.bedTime,
-        message: `It's time to wind down! Your bedtime is at ${this.nightRoutine.bedTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        message: `It's time to wind down! Your bedtime is at ${this.nightRoutine.bedTime.toLocaleTimeString(
+          [],
+          {hour: '2-digit', minute: '2-digit'},
+        )}`,
       });
 
       if (this.navigationRef && this.navigationRef.current) {
@@ -390,15 +363,20 @@ class NightModeScheduler {
    * Setup app state listener
    */
   setupAppStateListener() {
-    this.appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        console.log('🌙 [NightModeScheduler] App became active');
-        this.startPeriodicCheck();
-      } else if (nextAppState === 'background') {
-        console.log('🌙 [NightModeScheduler] App in background - native alarm will handle');
-        this.stopPeriodicCheck();
-      }
-    });
+    this.appStateSubscription = AppState.addEventListener(
+      'change',
+      nextAppState => {
+        if (nextAppState === 'active') {
+          console.log('🌙 [NightModeScheduler] App became active');
+          this.startPeriodicCheck();
+        } else if (nextAppState === 'background') {
+          console.log(
+            '🌙 [NightModeScheduler] App in background - native alarm will handle',
+          );
+          this.stopPeriodicCheck();
+        }
+      },
+    );
   }
 
   /**
@@ -406,7 +384,9 @@ class NightModeScheduler {
    */
   async hasTriggeredToday() {
     try {
-      const lastTriggered = await AsyncStorage.getItem(STORAGE_KEYS.TRIGGERED_TODAY);
+      const lastTriggered = await AsyncStorage.getItem(
+        STORAGE_KEYS.TRIGGERED_TODAY,
+      );
       if (!lastTriggered) return false;
 
       const lastDate = new Date(lastTriggered);
@@ -430,7 +410,7 @@ class NightModeScheduler {
     try {
       await AsyncStorage.setItem(
         STORAGE_KEYS.TRIGGERED_TODAY,
-        new Date().toISOString()
+        new Date().toISOString(),
       );
     } catch (error) {
       console.error('Error marking triggered:', error);
@@ -454,27 +434,34 @@ class NightModeScheduler {
    */
   async setEnabled(enabled) {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.ENABLED, enabled ? 'true' : 'false');
-      
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.ENABLED,
+        enabled ? 'true' : 'false',
+      );
+
       if (enabled && !this.isInitialized) {
         await this.initialize(this.currentUserId, this.navigationRef);
       } else if (!enabled) {
         this.stopPeriodicCheck();
-        
+
         if (this.appStateSubscription) {
           this.appStateSubscription.remove();
           this.appStateSubscription = null;
         }
-        
+
         if (NightModeSchedulerModule) {
           await NightModeSchedulerModule.cancelNightModeAlarm();
-          console.log('🌙 [NightModeScheduler] Native alarm cancelled (user disabled)');
+          console.log(
+            '🌙 [NightModeScheduler] Native alarm cancelled (user disabled)',
+          );
         }
-        
+
         this.isInitialized = false;
       }
 
-      console.log(`🌙 [NightModeScheduler] ${enabled ? 'Enabled' : 'Disabled'}`);
+      console.log(
+        `🌙 [NightModeScheduler] ${enabled ? 'Enabled' : 'Disabled'}`,
+      );
     } catch (error) {
       console.error('Error setting enabled state:', error);
     }
@@ -486,7 +473,7 @@ class NightModeScheduler {
   async updateNightRoutine(userId) {
     try {
       console.log('🌙 [NightModeScheduler] Updating night routine...');
-      
+
       this.currentUserId = userId;
       await this.loadNightRoutine();
 
@@ -509,7 +496,7 @@ class NightModeScheduler {
   async getStatus() {
     const enabled = await this.isEnabled();
     const hasTriggered = await this.hasTriggeredToday();
-    
+
     let nextTriggerTime = null;
     if (this.nightRoutine) {
       nextTriggerTime = this.calculateTriggerTime(this.nightRoutine.bedTime);
@@ -518,7 +505,8 @@ class NightModeScheduler {
     let nativeAlarmScheduled = false;
     if (NightModeSchedulerModule) {
       try {
-        nativeAlarmScheduled = await NightModeSchedulerModule.isAlarmScheduled();
+        nativeAlarmScheduled =
+          await NightModeSchedulerModule.isAlarmScheduled();
       } catch (error) {
         console.error('Error checking native alarm:', error);
       }
@@ -528,7 +516,8 @@ class NightModeScheduler {
     let xiaomiSetupComplete = true;
     if (this.isXiaomiDevice && NightModeSchedulerModule) {
       try {
-        xiaomiSetupComplete = await NightModeSchedulerModule.isIgnoringBatteryOptimizations();
+        xiaomiSetupComplete =
+          await NightModeSchedulerModule.isIgnoringBatteryOptimizations();
       } catch (error) {
         console.error('Error checking Xiaomi setup:', error);
       }
@@ -553,14 +542,14 @@ class NightModeScheduler {
    */
   cleanup() {
     console.log('🌙 [NightModeScheduler] Cleaning up...');
-    
+
     this.stopPeriodicCheck();
-    
+
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;
     }
-    
+
     this.isInitialized = false;
   }
 

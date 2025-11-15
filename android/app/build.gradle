@@ -99,6 +99,8 @@ android {
         }
         def apiKey = localProperties.getProperty("ELEVENLABS_API_KEY")
         buildConfigField "String", "ELEVENLABS_API_KEY", "\"${apiKey}\""
+        buildConfigField "String", "SUPABASE_URL", "\"${localProperties.getProperty('SUPABASE_URL', '')}\""
+        buildConfigField "String", "SUPABASE_ANON_KEY", "\"${localProperties.getProperty('SUPABASE_ANON_KEY', '')}\""
     }
     
     // Add packaging options to handle potential library conflicts

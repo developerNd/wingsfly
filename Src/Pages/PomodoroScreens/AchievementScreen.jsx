@@ -15,9 +15,8 @@ import {colors} from '../../Helper/Contants';
 import {useRoute} from '@react-navigation/native';
 import {supabase} from '../../../supabase';
 
-// Import Appreciation Services
+// Import Appreciation Service
 import AppreciationVoiceService from '../../services/Appreciation/appreciationVoiceService';
-import appreciationStorageService from '../../services/Appreciation/appreciationStorageService';
 
 import YouDidItBackground from '../../assets/Images/Achievement-screen/you-did-it-bttn.svg';
 import TaskStatsBackground from '../../assets/Images/Achievement-screen/stats-background.svg';
@@ -93,21 +92,14 @@ const AchievementScreen = ({
           try {
             console.log('🎵 Playing appreciation message...');
             
-            // Get appreciation data from storage
-            const appreciationData = await appreciationStorageService.getAppreciationData();
+            // Fetch and play appreciation message directly from database
+            const success = await AppreciationVoiceService.playAppreciationMessage();
             
-            if (appreciationData && (appreciationData.text || appreciationData.audioFilePath)) {
-              // Play custom appreciation message
-              const success = await AppreciationVoiceService.playAppreciationMessage(appreciationData);
-              
-              if (success) {
-                console.log('✅ Appreciation message played successfully');
-                setVoicePlayed(true);
-              } else {
-                console.log('⚠️ Failed to play appreciation message');
-              }
+            if (success) {
+              console.log('✅ Appreciation message played successfully');
+              setVoicePlayed(true);
             } else {
-              console.log('ℹ️ No custom appreciation message set');
+              console.log('⚠️ Failed to play appreciation message or no settings configured');
             }
           } catch (error) {
             console.error('❌ Error playing appreciation message:', error);

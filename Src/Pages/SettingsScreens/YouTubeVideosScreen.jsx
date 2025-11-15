@@ -971,8 +971,6 @@ const YouTubeVideosScreen = ({navigation, route}) => {
     }
   }, [settings?.voice_command_text, isListening]);
 
-  // Handle trigger timestamp - Navigate to PlanYourDayScreen
-  // Handle trigger timestamp - Navigate to PlanYourDayScreen
   const handleTriggerTimestamp = useCallback(async () => {
     console.log('🎯 Handling trigger timestamp navigation...');
 
@@ -986,25 +984,34 @@ const YouTubeVideosScreen = ({navigation, route}) => {
       console.error('Error saving trigger completion:', error);
     }
 
-    // DON'T pause TrackPlayer - let it continue in background
+    // ✅ DON'T stop or pause TrackPlayer - let it continue in background
+    // ✅ DON'T reset or modify audio playback at all
+
     // Only stop voice listening
     if (isListening) {
       stopListening();
     }
 
     // Get current track info to pass to Plan Your Day screen
-    const currentTrack = await TrackPlayer.getCurrentTrack();
-    const trackInfo = currentTrack
-      ? await TrackPlayer.getTrack(currentTrack)
-      : null;
+    let trackInfo = null;
+    try {
+      const currentTrackIndex = await TrackPlayer.getCurrentTrack();
+      if (currentTrackIndex !== null) {
+        trackInfo = await TrackPlayer.getTrack(currentTrackIndex);
+        console.log('📊 Passing track info to PlanYourDay:', trackInfo?.title);
+      }
+    } catch (error) {
+      console.error('Error getting current track:', error);
+    }
 
     // Navigate with audio info
     navigateToPlanYourDay(trackInfo);
   }, [settings, isListening]);
 
-  // Navigate to PlanYourDayScreen with audio info
+  // Also update navigateToPlanYourDay to ensure it doesn't interfere with audio
   const navigateToPlanYourDay = (audioInfo = null) => {
     console.log('🚀 Navigating to PlanYourDayScreen...');
+    console.log('📊 Audio info being passed:', audioInfo?.title);
 
     try {
       navigation.navigate('PlanYourDayScreen', {
@@ -1016,6 +1023,8 @@ const YouTubeVideosScreen = ({navigation, route}) => {
         },
         audioInfo: audioInfo, // Pass current playing audio info
         isVoiceCommand: isVoiceCommandTrack, // Flag if it's voice command audio
+        // ✅ NEW: Flag to indicate audio should continue playing
+        continueAudioPlayback: true,
       });
     } catch (error) {
       console.error('❌ Error navigating to PlanYourDayScreen:', error);

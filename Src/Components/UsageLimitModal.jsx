@@ -35,11 +35,25 @@ const UsageLimitModal = ({
     isLimitReached: false,
   });
 
+  // ✅ Fetch fresh data when modal opens
   useEffect(() => {
     if (selectedApp && visible) {
-      console.log('Setting up usage limit modal for:', selectedApp.name);
+      console.log('🔄 UsageLimitModal opened for:', selectedApp.name);
+      initializeModalData();
+    }
+  }, [selectedApp, visible]);
 
-      // Initialize local usage data from the app
+  // ✅ Initialize modal with fresh data
+  const initializeModalData = async () => {
+    try {
+      console.log('📊 Current selectedApp data:', {
+        name: selectedApp.name,
+        usageLimit: selectedApp.usageLimit,
+        usageToday: selectedApp.usageToday,
+        isLimitReached: selectedApp.isLimitReached
+      });
+
+      // Set local state from selectedApp (which was freshly fetched in AppBlockerScreen)
       setLocalUsageData({
         usageToday: selectedApp.usageToday || 0,
         usageLimit: selectedApp.usageLimit || 0,
@@ -53,12 +67,16 @@ const UsageLimitModal = ({
         const minutes = existingLimit % 60;
         setLimitHours(hours > 0 ? hours.toString() : '');
         setLimitMinutes(minutes > 0 ? minutes.toString() : '');
+        console.log('⏰ Initialized limit inputs:', {hours, minutes, total: existingLimit});
       } else {
         setLimitHours('');
         setLimitMinutes('');
+        console.log('ℹ️ No usage limit set');
       }
+    } catch (error) {
+      console.error('❌ Error initializing modal:', error);
     }
-  }, [selectedApp, visible]);
+  };
 
   const formatTime = minutes => {
     if (minutes < 60) {
@@ -72,13 +90,36 @@ const UsageLimitModal = ({
     return `${hours}h ${remainingMinutes}m`;
   };
 
+  // ✅ Manual refresh button
   const refreshUsageData = async () => {
     if (!selectedApp) return;
 
     try {
       setRefreshing(true);
-      console.log('Refreshing usage data for:', selectedApp.name);
+      console.log('🔄 Manual refresh for:', selectedApp.name);
 
+      // Fetch from Supabase first if logged in
+      if (user?.id) {
+        try {
+          const supabaseUsageLimits = await appBlockerService.getUserUsageLimits(user.id);
+          const appLimitFromSupabase = supabaseUsageLimits.find(
+            limit => limit.package_name === selectedApp.packageName
+          );
+
+          if (appLimitFromSupabase) {
+            const supabaseLimit = appLimitFromSupabase.limit_minutes;
+            console.log('📥 Refreshed from Supabase:', supabaseLimit);
+            
+            // Sync to native
+            await InstalledApps.setAppUsageLimit(selectedApp.packageName, supabaseLimit);
+            await InstalledApps.reevaluateAppBlockingStatus(selectedApp.packageName);
+          }
+        } catch (supabaseError) {
+          console.warn('⚠️ Supabase refresh failed:', supabaseError);
+        }
+      }
+
+      // Get fresh native data
       const [usageToday, usageLimit, isLimitReached] = await Promise.all([
         InstalledApps.getAppUsageToday(selectedApp.packageName),
         InstalledApps.getAppUsageLimit(selectedApp.packageName),
@@ -91,11 +132,19 @@ const UsageLimitModal = ({
         isLimitReached: isLimitReached || false,
       };
 
+      console.log('✅ Refreshed data:', updatedData);
       setLocalUsageData(updatedData);
 
-      console.log('Refreshed usage data:', updatedData);
+      // Update input fields
+      if (usageLimit > 0) {
+        const hours = Math.floor(usageLimit / 60);
+        const minutes = usageLimit % 60;
+        setLimitHours(hours > 0 ? hours.toString() : '');
+        setLimitMinutes(minutes > 0 ? minutes.toString() : '');
+      }
+
     } catch (error) {
-      console.error('Error refreshing usage data:', error);
+      console.error('❌ Error refreshing usage data:', error);
       Alert.alert('Error', 'Failed to refresh usage data');
     } finally {
       setRefreshing(false);
@@ -113,13 +162,12 @@ const UsageLimitModal = ({
       const minutes = parseInt(limitMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
 
-      console.log(
-        'Setting usage limit for',
-        selectedApp.name,
-        ':',
-        totalMinutes,
-        'minutes',
-      );
+      console.log('💾 Saving usage limit:', {
+        app: selectedApp.name,
+        hours,
+        minutes,
+        total: totalMinutes
+      });
 
       if (totalMinutes <= 0) {
         Alert.alert(
@@ -131,7 +179,6 @@ const UsageLimitModal = ({
       }
 
       if (totalMinutes > 1440) {
-        // 24 hours
         Alert.alert(
           'Invalid Limit',
           'Usage limit cannot exceed 24 hours per day.',
@@ -140,101 +187,105 @@ const UsageLimitModal = ({
         return;
       }
 
-      // Set the usage limit in native module
+      // ✅ Step 1: Set in native module
+      console.log('📱 Setting limit in native module...');
       const success = await InstalledApps.setAppUsageLimit(
         selectedApp.packageName,
         totalMinutes,
       );
 
-      if (success) {
-        // Force re-evaluation of blocking status after setting new limit
-        console.log('Re-evaluating blocking status after setting new limit');
-        const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(
-          selectedApp.packageName,
-        );
-
-        // Refresh all usage data to get updated status
-        const [usageToday, isLimitReached] = await Promise.all([
-          InstalledApps.getAppUsageToday(selectedApp.packageName),
-          InstalledApps.isAppLimitReached(selectedApp.packageName),
-        ]);
-
-        const updatedApp = {
-          ...selectedApp,
-          usageLimit: totalMinutes,
-          usageToday: usageToday || 0,
-          isLimitReached: isLimitReached || false,
-          isActuallyLocked: shouldBeLocked || false,
-        };
-
-        // Sync to Supabase if user is logged in
-        if (user?.id) {
-          try {
-            await appBlockerService.setAppUsageLimit(
-              user.id,
-              selectedApp.packageName,
-              selectedApp.name,
-              totalMinutes,
-            );
-            console.log('Usage limit synced to Supabase successfully');
-          } catch (syncError) {
-            console.error(
-              'Failed to sync usage limit to Supabase (silent):',
-              syncError,
-            );
-          }
-        }
-
-        try {
-          await InstalledApps.refreshNotification();
-          console.log('Notification refreshed immediately');
-        } catch (error) {
-          console.warn('Failed to refresh notification:', error);
-        }
-
-        console.log('Updated app state after setting limit:', {
-          name: updatedApp.name,
-          limit: updatedApp.usageLimit,
-          usage: updatedApp.usageToday,
-          limitReached: updatedApp.isLimitReached,
-          actuallyLocked: updatedApp.isActuallyLocked,
-        });
-
-        // Update local data
-        setLocalUsageData({
-          usageToday: usageToday || 0,
-          usageLimit: totalMinutes,
-          isLimitReached: isLimitReached || false,
-        });
-
-        // Update the parent component with complete app state
-        onAppUpdate(updatedApp);
-
-        Alert.alert(
-          'Success',
-          `Usage limit of ${formatTime(totalMinutes)} set for ${
-            selectedApp.name
-          }${
-            !isLimitReached
-              ? '\n\nApp is now unlocked as current usage is below the new limit.'
-              : ''
-          }`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                console.log(
-                  'Usage limit set and blocking status updated successfully',
-                );
-              },
-            },
-          ],
-        );
-      } else {
-        Alert.alert('Error', 'Failed to set usage limit');
+      if (!success) {
+        Alert.alert('Error', 'Failed to set usage limit in native module');
+        return;
       }
+
+      console.log('✅ Native module updated');
+
+      // ✅ Step 2: Sync to Supabase
+      if (user?.id) {
+        try {
+          console.log('📤 Syncing to Supabase...');
+          await appBlockerService.setAppUsageLimit(
+            user.id,
+            selectedApp.packageName,
+            selectedApp.name,
+            totalMinutes,
+          );
+          console.log('✅ Synced to Supabase successfully');
+        } catch (syncError) {
+          console.error('⚠️ Failed to sync to Supabase:', syncError);
+          Alert.alert(
+            'Warning',
+            'Usage limit set locally but failed to sync to cloud. It will sync when connection is restored.',
+            [{text: 'OK'}]
+          );
+        }
+      }
+
+      // ✅ Step 3: Re-evaluate blocking status
+      console.log('🔄 Re-evaluating blocking status...');
+      const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(
+        selectedApp.packageName,
+      );
+
+      // ✅ Step 4: Refresh all usage data
+      const [usageToday, isLimitReached] = await Promise.all([
+        InstalledApps.getAppUsageToday(selectedApp.packageName),
+        InstalledApps.isAppLimitReached(selectedApp.packageName),
+      ]);
+
+      const updatedApp = {
+        ...selectedApp,
+        usageLimit: totalMinutes,
+        usageToday: usageToday || 0,
+        isLimitReached: isLimitReached || false,
+        isActuallyLocked: shouldBeLocked || false,
+      };
+
+      console.log('📊 Updated app state:', {
+        name: updatedApp.name,
+        limit: updatedApp.usageLimit,
+        usage: updatedApp.usageToday,
+        limitReached: updatedApp.isLimitReached,
+        locked: updatedApp.isActuallyLocked
+      });
+
+      // ✅ Step 5: Refresh notification
+      try {
+        await InstalledApps.refreshNotification();
+        console.log('🔔 Notification refreshed');
+      } catch (error) {
+        console.warn('⚠️ Failed to refresh notification:', error);
+      }
+
+      // Update local data
+      setLocalUsageData({
+        usageToday: usageToday || 0,
+        usageLimit: totalMinutes,
+        isLimitReached: isLimitReached || false,
+      });
+
+      // Update parent component
+      onAppUpdate(updatedApp);
+
+      Alert.alert(
+        'Success',
+        `Usage limit of ${formatTime(totalMinutes)} set for ${selectedApp.name}${
+          !isLimitReached
+            ? '\n\nApp is now unlocked as current usage is below the new limit.'
+            : '\n\nLimit has been reached - app is locked.'
+        }`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              console.log('✅ Usage limit saved successfully');
+            },
+          },
+        ],
+      );
     } catch (error) {
-      console.error('Error setting usage limit:', error);
+      console.error('❌ Error setting usage limit:', error);
       Alert.alert('Error', 'Failed to set usage limit');
     } finally {
       setSaving(false);
@@ -255,82 +306,77 @@ const UsageLimitModal = ({
           onPress: async () => {
             try {
               setSaving(true);
-              console.log('Removing usage limit for:', selectedApp.name);
+              console.log('🗑️ Removing usage limit for:', selectedApp.name);
 
+              // ✅ Step 1: Remove from native module
               const success = await InstalledApps.removeAppUsageLimit(
                 selectedApp.packageName,
               );
 
-              if (success) {
-                // Force re-evaluation of blocking status after removing limit
-                console.log(
-                  'Re-evaluating blocking status after removing limit',
-                );
-                const shouldBeLocked =
-                  await InstalledApps.reevaluateAppBlockingStatus(
+              if (!success) {
+                Alert.alert('Error', 'Failed to remove usage limit');
+                return;
+              }
+
+              console.log('✅ Removed from native module');
+
+              // ✅ Step 2: Sync removal to Supabase
+              if (user?.id) {
+                try {
+                  console.log('📤 Syncing removal to Supabase...');
+                  await appBlockerService.removeAppUsageLimit(
+                    user.id,
                     selectedApp.packageName,
                   );
-
-                // Sync removal to Supabase if user is logged in
-                if (user?.id) {
-                  try {
-                    await appBlockerService.removeAppUsageLimit(
-                      user.id,
-                      selectedApp.packageName,
-                    );
-                    console.log(
-                      'Usage limit removal synced to Supabase successfully',
-                    );
-                  } catch (syncError) {
-                    console.error(
-                      'Failed to sync usage limit removal to Supabase (silent):',
-                      syncError,
-                    );
-                  }
+                  console.log('✅ Removal synced to Supabase');
+                } catch (syncError) {
+                  console.error('⚠️ Failed to sync removal:', syncError);
                 }
-
-                try {
-                  await InstalledApps.refreshNotification();
-                  console.log('Notification refreshed after removing limit');
-                } catch (error) {
-                  console.warn('Failed to refresh notification:', error);
-                }
-
-                const updatedApp = {
-                  ...selectedApp,
-                  usageLimit: 0,
-                  isLimitReached: false,
-                  isActuallyLocked: shouldBeLocked || false,
-                };
-
-                console.log('Updated app state after removing limit:', {
-                  name: updatedApp.name,
-                  actuallyLocked: updatedApp.isActuallyLocked,
-                });
-
-                // Update local data
-                setLocalUsageData(prev => ({
-                  ...prev,
-                  usageLimit: 0,
-                  isLimitReached: false,
-                }));
-
-                // Clear the input fields
-                setLimitHours('');
-                setLimitMinutes('');
-
-                // Update the parent component
-                onAppUpdate(updatedApp);
-
-                Alert.alert(
-                  'Success',
-                  `Usage limit removed for ${selectedApp.name}\n\nApp blocking status has been updated.`,
-                );
-              } else {
-                Alert.alert('Error', 'Failed to remove usage limit');
               }
+
+              // ✅ Step 3: Re-evaluate blocking status
+              console.log('🔄 Re-evaluating blocking status...');
+              const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(
+                selectedApp.packageName,
+              );
+
+              // ✅ Step 4: Refresh notification
+              try {
+                await InstalledApps.refreshNotification();
+                console.log('🔔 Notification refreshed');
+              } catch (error) {
+                console.warn('⚠️ Failed to refresh notification:', error);
+              }
+
+              const updatedApp = {
+                ...selectedApp,
+                usageLimit: 0,
+                isLimitReached: false,
+                isActuallyLocked: shouldBeLocked || false,
+              };
+
+              console.log('✅ Updated app state after removal');
+
+              // Update local data
+              setLocalUsageData(prev => ({
+                ...prev,
+                usageLimit: 0,
+                isLimitReached: false,
+              }));
+
+              // Clear input fields
+              setLimitHours('');
+              setLimitMinutes('');
+
+              // Update parent component
+              onAppUpdate(updatedApp);
+
+              Alert.alert(
+                'Success',
+                `Usage limit removed for ${selectedApp.name}\n\nApp blocking status has been updated.`,
+              );
             } catch (error) {
-              console.error('Error removing usage limit:', error);
+              console.error('❌ Error removing usage limit:', error);
               Alert.alert('Error', 'Failed to remove usage limit');
             } finally {
               setSaving(false);
@@ -354,7 +400,7 @@ const UsageLimitModal = ({
           onPress: async () => {
             try {
               setSaving(true);
-              console.log('Resetting usage for:', selectedApp.name);
+              console.log('🔄 Resetting usage for:', selectedApp.name);
 
               const success = await InstalledApps.resetAppUsageToday(
                 selectedApp.packageName,
@@ -368,10 +414,9 @@ const UsageLimitModal = ({
                 ]);
 
                 // Re-evaluate blocking status
-                const shouldBeLocked =
-                  await InstalledApps.reevaluateAppBlockingStatus(
-                    selectedApp.packageName,
-                  );
+                const shouldBeLocked = await InstalledApps.reevaluateAppBlockingStatus(
+                  selectedApp.packageName,
+                );
 
                 const updatedApp = {
                   ...selectedApp,
@@ -387,7 +432,7 @@ const UsageLimitModal = ({
                   isLimitReached: isLimitReached || false,
                 }));
 
-                // Update the parent component
+                // Update parent component
                 onAppUpdate(updatedApp);
 
                 Alert.alert('Success', `Usage reset for ${selectedApp.name}`);

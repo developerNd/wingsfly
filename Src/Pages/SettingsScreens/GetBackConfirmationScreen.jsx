@@ -8,12 +8,16 @@ import {
   Alert,
   ActivityIndicator,
   Dimensions,
+  NativeModules,
+  NativeEventEmitter,
+  DeviceEventEmitter,
+  Platform,
 } from 'react-native';
 import Video from 'react-native-video';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import getBackMediaStorageService from '../../services/GetBack/getBackMediaStorageService';
+import getBackMediaSupabaseService from '../../services/GetBack/getBackMediaSupabaseService';
 import GetBackBridge from '../../services/GetBack/GetBackBridge';
 
 const {width} = Dimensions.get('window');
@@ -21,50 +25,83 @@ const {width} = Dimensions.get('window');
 const GetBackConfirmationScreen = ({navigation, route}) => {
   const {durationMinutes} = route.params;
   const [loading, setLoading] = useState(true);
-  const [videoPath, setVideoPath] = useState(null);
+  const [videoUrl, setVideoUrl] = useState(null);
   const [videoError, setVideoError] = useState(false);
   const [canProceed, setCanProceed] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [videoEnded, setVideoEnded] = useState(false);
   const videoRef = useRef(null);
 
   useEffect(() => {
     loadConfirmationVideo();
+    
+    // ✅ NEW: Listen for close broadcast from lock activity
+    let closeListener;
+    if (Platform.OS === 'android') {
+      closeListener = DeviceEventEmitter.addListener('CLOSE_CONFIRMATION_SCREEN', () => {
+        console.log('📥 Received close broadcast - navigating away');
+        navigation.goBack();
+      });
+    }
+    
+    return () => {
+      if (closeListener) {
+        closeListener.remove();
+      }
+    };
   }, []);
 
+  // ✅ UPDATED: Load confirmation video from Supabase
   const loadConfirmationVideo = async () => {
     try {
-      const confirmationVideo = await getBackMediaStorageService.getConfirmationVideo();
+      setLoading(true);
+      console.log('📥 Fetching confirmation video from Supabase...');
       
-      if (!confirmationVideo) {
+      const confirmationResult = await getBackMediaSupabaseService.fetchConfirmationVideo();
+      
+      if (!confirmationResult.hasConfirmation) {
         Alert.alert(
           'No Confirmation Video',
-          'Please set up a confirmation video first in settings.',
+          'No confirmation video found. Please contact admin to upload one from the dashboard.',
           [{text: 'OK', onPress: () => navigation.goBack()}]
         );
         return;
       }
 
-      setVideoPath(confirmationVideo.filePath);
+      console.log('✅ Confirmation video URL:', confirmationResult.data.fileUrl);
+      setVideoUrl(confirmationResult.data.fileUrl);
       setLoading(false);
     } catch (error) {
-      console.error('Error loading confirmation video:', error);
-      Alert.alert('Error', 'Failed to load confirmation video');
-      navigation.goBack();
+      console.error('❌ Error loading confirmation video:', error);
+      Alert.alert(
+        'Error',
+        'Failed to load confirmation video from server. Please check your internet connection.',
+        [{text: 'OK', onPress: () => navigation.goBack()}]
+      );
     }
   };
 
   const handleVideoEnd = () => {
+    console.log('✅ Confirmation video ended');
+    setVideoEnded(true);
     setCanProceed(true);
   };
 
   const handleVideoError = (error) => {
-    console.error('Video playback error:', error);
+    console.error('❌ Video playback error:', error);
     setVideoError(true);
     Alert.alert(
       'Video Error',
-      'Failed to play confirmation video. Please check your video file.',
-      [{text: 'OK', onPress: () => navigation.goBack()}]
+      'Failed to play confirmation video. Please check your internet connection and try again.',
+      [
+        {text: 'Retry', onPress: loadConfirmationVideo},
+        {text: 'Cancel', onPress: () => navigation.goBack()}
+      ]
     );
+  };
+
+  const handleVideoLoad = () => {
+    console.log('📹 Confirmation video loaded successfully');
   };
 
   const handleNext = async () => {
@@ -79,11 +116,23 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
     setStarting(true);
 
     try {
+      console.log('🚀 Starting Get Back lock...');
       const success = await GetBackBridge.startGetBackLock(durationMinutes);
       
       if (success) {
-        console.log('Get Back lock started successfully');
-        // Navigation will be handled by native side
+        console.log('✅ Get Back lock started successfully');
+        
+        // ✅ FIX: Move app to background instead of navigating/closing
+        // The native lock activity will handle everything
+        // We just minimize the RN app
+        const {NativeModules} = require('react-native');
+        const {GetBackModule} = NativeModules;
+        
+        // Optional: You could add a native method to minimize the app
+        // For now, just do nothing - the lock activity will take over
+        console.log('📱 Lock activity is now active - confirmation screen in background');
+        
+        // Don't navigate or finish - just let the lock activity overlay everything
       } else {
         Alert.alert(
           'Error',
@@ -92,8 +141,8 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
         setStarting(false);
       }
     } catch (error) {
-      console.error('Error starting Get Back:', error);
-      Alert.alert('Error', 'An error occurred while starting Get Back');
+      console.error('❌ Error starting Get Back:', error);
+      Alert.alert('Error', 'An error occurred while starting Get Back: ' + error.message);
       setStarting(false);
     }
   };
@@ -104,7 +153,7 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
         <StatusBar backgroundColor="#F8F9FA" barStyle="dark-content" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.Primary} />
-          <Text style={styles.loadingText}>Loading confirmation video...</Text>
+          <Text style={styles.loadingText}>Loading confirmation video from server...</Text>
         </View>
       </View>
     );
@@ -134,10 +183,10 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
           </Text>
           
           <View style={styles.videoContainer}>
-            {videoPath && !videoError ? (
+            {videoUrl && !videoError ? (
               <Video
                 ref={videoRef}
-                source={{uri: `file://${videoPath}`}}
+                source={{uri: videoUrl}}
                 style={styles.video}
                 controls={false}
                 resizeMode="contain"
@@ -146,16 +195,47 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
                 playWhenInactive={false}
                 onEnd={handleVideoEnd}
                 onError={handleVideoError}
-                onLoad={() => console.log('Video loaded')}
+                onLoad={handleVideoLoad}
+                onBuffer={(buffering) => {
+                  console.log('Video buffering:', buffering);
+                }}
               />
             ) : (
               <View style={styles.videoErrorContainer}>
                 <Icon name="error-outline" size={WP(15)} color="#BDBDBD" />
-                <Text style={styles.videoErrorText}>Video unavailable</Text>
+                <Text style={styles.videoErrorText}>
+                  {videoError ? 'Video playback failed' : 'Video unavailable'}
+                </Text>
+                {videoError && (
+                  <TouchableOpacity 
+                    style={styles.retryButton}
+                    onPress={loadConfirmationVideo}>
+                    <Icon name="refresh" size={WP(5)} color={colors.Primary} />
+                    <Text style={styles.retryButtonText}>Retry</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
 
+          {/* Video Status Indicator */}
+          {!videoEnded && videoUrl && !videoError && (
+            <View style={styles.watchingIndicator}>
+              <Icon name="play-circle-filled" size={WP(5)} color="#1565C0" />
+              <Text style={styles.watchingText}>
+                Please watch the complete video to continue
+              </Text>
+            </View>
+          )}
+
+          {videoEnded && (
+            <View style={styles.readyIndicator}>
+              <Icon name="check-circle" size={WP(5)} color="#2E7D32" />
+              <Text style={styles.readyText}>
+                Video watched! You can now proceed
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Session Info */}
@@ -299,6 +379,22 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-SemiBold',
     color: '#BDBDBD',
     marginTop: HP(2),
+    textAlign: 'center',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.White,
+    paddingHorizontal: WP(4),
+    paddingVertical: HP(1.5),
+    borderRadius: WP(3),
+    marginTop: HP(2),
+  },
+  retryButtonText: {
+    fontSize: FS(1.5),
+    fontFamily: 'OpenSans-SemiBold',
+    color: colors.Primary,
+    marginLeft: WP(1),
   },
   watchingIndicator: {
     flexDirection: 'row',

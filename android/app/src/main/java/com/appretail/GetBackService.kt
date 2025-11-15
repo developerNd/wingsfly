@@ -11,6 +11,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 
+/**
+ * Digital Detox Method: Service monitors apps and relaunches overlay
+ * More reliable than kiosk mode
+ */
 class GetBackService : Service() {
     
     companion object {
@@ -25,47 +29,45 @@ class GetBackService : Service() {
     
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var usageStatsManager: UsageStatsManager
-    private lateinit var activityManager: ActivityManager
-    private var lastForegroundCheck = 0L
+    private var lastCheck = 0L
     
+    // Digital Detox monitoring - checks every 200ms
     private val monitorRunnable = object : Runnable {
         override fun run() {
             if (isServiceRunning) {
-                checkAndRelaunchActivity()
-                blockAllApps()
-                handler.postDelayed(this, 300) // Aggressive check every 300ms
+                checkTimeAndRelaunch()
+                blockUnauthorizedApps()
+                handler.postDelayed(this, 200)
             }
         }
     }
     
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Get Back Service created")
+        Log.d(TAG, "🔒 Get Back Service created (Digital Detox method)")
         usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         isServiceRunning = true
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "Get Back Service started")
+        Log.d(TAG, "🔒 Get Back Service started")
         
         getBackDurationMinutes = intent?.getIntExtra("duration_minutes", 5) ?: 5
         getBackStartTime = System.currentTimeMillis()
         
-        // Start foreground without persistent notification
+        // Start as foreground but hide notification
         createMinimalNotificationChannel()
         startForeground(NOTIFICATION_ID, createMinimalNotification())
         
-        // Immediately cancel the notification after starting foreground
+        // Hide notification after starting foreground
         handler.postDelayed({
             try {
-                val notificationManager = getSystemService(NotificationManager::class.java)
-                notificationManager?.cancel(NOTIFICATION_ID)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error canceling notification", e)
-            }
+                val nm = getSystemService(NotificationManager::class.java)
+                nm?.cancel(NOTIFICATION_ID)
+            } catch (e: Exception) { }
         }, 100)
         
+        // Start monitoring
         handler.post(monitorRunnable)
         
         return START_STICKY
@@ -78,7 +80,6 @@ class GetBackService : Service() {
                 "Get Back",
                 NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Get Back Active"
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_SECRET
                 enableVibration(false)
@@ -86,8 +87,8 @@ class GetBackService : Service() {
                 setSound(null, null)
             }
             
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(channel)
         }
     }
     
@@ -99,7 +100,6 @@ class GetBackService : Service() {
                 .setContentText("Active")
                 .setPriority(Notification.PRIORITY_MIN)
                 .setOngoing(false)
-                .setAutoCancel(true)
                 .setVisibility(Notification.VISIBILITY_SECRET)
                 .build()
         } else {
@@ -107,15 +107,61 @@ class GetBackService : Service() {
             Notification.Builder(this)
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setContentTitle("Get Back")
-                .setContentText("Active")
                 .setPriority(Notification.PRIORITY_MIN)
-                .setOngoing(false)
-                .setAutoCancel(true)
                 .build()
         }
     }
     
-    private fun blockAllApps() {
+    /**
+     * Digital Detox Method: Check if time is up, then check foreground app
+     */
+    private fun checkTimeAndRelaunch() {
+        try {
+            // Check if session time completed
+            val elapsed = (System.currentTimeMillis() - getBackStartTime) / 1000
+            if (elapsed >= getBackDurationMinutes * 60) {
+                Log.d(TAG, "✅ Get Back session completed")
+                stopGetBack()
+                return
+            }
+            
+            // Throttle checks
+            val now = System.currentTimeMillis()
+            if (now - lastCheck < 150) return
+            lastCheck = now
+            
+            // Check if lock activity is in foreground
+            if (!isLockActivityForeground()) {
+                Log.d(TAG, "⚠️ Lock not in foreground, relaunching")
+                relaunchLockActivity()
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in monitoring", e)
+        }
+    }
+    
+    /**
+     * Digital Detox Method: Block any unauthorized app from staying in foreground
+     */
+    private fun blockUnauthorizedApps() {
+        try {
+            val currentPackage = getCurrentForegroundPackage()
+            
+            if (currentPackage.isNotEmpty() && currentPackage != packageName) {
+                Log.d(TAG, "🚫 Blocking unauthorized app: $currentPackage")
+                relaunchLockActivity()
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error blocking apps", e)
+        }
+    }
+    
+    /**
+     * Get current foreground package using UsageStats
+     */
+    private fun getCurrentForegroundPackage(): String {
         try {
             val endTime = System.currentTimeMillis()
             val startTime = endTime - 500
@@ -131,76 +177,31 @@ class GetBackService : Service() {
                 }
             }
             
-            if (foregroundPackage.isNotEmpty() && foregroundPackage != packageName) {
-                Log.d(TAG, "Blocking app: $foregroundPackage")
-                relaunchGetBackActivity()
-            }
+            return foregroundPackage
         } catch (e: Exception) {
-            Log.e(TAG, "Error in app blocking", e)
+            return ""
         }
     }
     
-    private fun checkAndRelaunchActivity() {
+    /**
+     * Check if our lock activity is in foreground
+     */
+    private fun isLockActivityForeground(): Boolean {
         try {
-            // Check if time is up
-            val elapsed = (System.currentTimeMillis() - getBackStartTime) / 1000
-            if (elapsed >= getBackDurationMinutes * 60) {
-                Log.d(TAG, "Get Back time completed, stopping service")
-                stopGetBack()
-                return
-            }
-            
-            // Throttle checks
-            val now = System.currentTimeMillis()
-            if (now - lastForegroundCheck < 200) {
-                return
-            }
-            lastForegroundCheck = now
-            
-            // Check if our lock activity is in foreground
-            if (!isLockActivityInForeground()) {
-                Log.d(TAG, "Lock activity not in foreground, relaunching")
-                relaunchGetBackActivity()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in monitoring: ${e.message}", e)
-        }
-    }
-    
-    private fun isLockActivityInForeground(): Boolean {
-        try {
-            val tasks = activityManager.appTasks
-            if (tasks.isNotEmpty()) {
-                val topActivity = tasks[0].taskInfo.topActivity
-                if (topActivity?.className == GetBackLockActivity::class.java.name) {
-                    return true
-                }
-            }
-            
-            val endTime = System.currentTimeMillis()
-            val startTime = endTime - 1000
-            
-            val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
-            val event = UsageEvents.Event()
-            var currentPackage = ""
-
-            while (usageEvents.hasNextEvent()) {
-                usageEvents.getNextEvent(event)
-                if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                    currentPackage = event.packageName
-                }
-            }
-            
+            val currentPackage = getCurrentForegroundPackage()
             return currentPackage == packageName
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking foreground activity", e)
             return false
         }
     }
     
-    private fun relaunchGetBackActivity() {
+    /**
+     * Digital Detox Method: Relaunch lock activity to bring it back
+     */
+    private fun relaunchLockActivity() {
         try {
-            val remainingSeconds = (getBackDurationMinutes * 60) - ((System.currentTimeMillis() - getBackStartTime) / 1000)
+            val remainingSeconds = (getBackDurationMinutes * 60) - 
+                ((System.currentTimeMillis() - getBackStartTime) / 1000)
             val remainingMinutes = (remainingSeconds / 60).toInt().coerceAtLeast(1)
             
             val intent = Intent(this, GetBackLockActivity::class.java)
@@ -209,22 +210,25 @@ class GetBackService : Service() {
                 Intent.FLAG_ACTIVITY_NEW_TASK or 
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             )
             
             startActivity(intent)
-            Log.d(TAG, "Relaunched Get Back activity")
+            Log.d(TAG, "✅ Lock activity relaunched")
+            
         } catch (e: Exception) {
             Log.e(TAG, "Error relaunching activity", e)
         }
     }
     
+    /**
+     * Stop the Get Back session
+     */
     private fun stopGetBack() {
         isServiceRunning = false
         handler.removeCallbacks(monitorRunnable)
         
+        // Notify activity to stop
         val stopIntent = Intent("com.wingsfly.STOP_GET_BACK")
         sendBroadcast(stopIntent)
         
@@ -236,6 +240,7 @@ class GetBackService : Service() {
         }
         
         stopSelf()
+        Log.d(TAG, "✅ Get Back service stopped")
     }
     
     override fun onBind(intent: Intent?): IBinder? = null
@@ -243,7 +248,7 @@ class GetBackService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         if (isServiceRunning) {
-            Log.d(TAG, "Task removed but Get Back is active, restarting service")
+            Log.d(TAG, "⚠️ Task removed, restarting service")
             val restartIntent = Intent(applicationContext, GetBackService::class.java)
             restartIntent.putExtra("duration_minutes", getBackDurationMinutes)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -257,6 +262,6 @@ class GetBackService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(monitorRunnable)
-        Log.d(TAG, "Get Back Service destroyed")
+        Log.d(TAG, "🔒 Get Back Service destroyed")
     }
 }

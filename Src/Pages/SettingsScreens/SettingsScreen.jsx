@@ -37,14 +37,6 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('VoiceCommandListScreen');
   };
 
-  const handleIntentionPress = () => {
-    navigation.navigate('IntentionSettingsScreen');
-  };
-
-  const handleAppreciationPress = () => {
-    navigation.navigate('AppreciationSettingsScreen');
-  };
-
   // Digital Detox
   const handleDigitalDetoxPress = () => {
     navigation.navigate('DigitalDetoxScreen');
@@ -57,10 +49,6 @@ const SettingsScreen = ({navigation}) => {
   // NEW: Get Back
   const handleGetBackPress = () => {
     navigation.navigate('GetBackScreen');
-  };
-
-  const handleGetBackMediaSettingsPress = () => {
-    navigation.navigate('GetBackSettingsScreen');
   };
 
   // NEW: YouTube Videos
@@ -78,10 +66,6 @@ const SettingsScreen = ({navigation}) => {
     navigation.navigate('NightRoutineScreen');
   };
 
-  const handleMorningRoutinePress = () => {
-    navigation.navigate('MorningRoutineScreen');
-  };
-
   const handleMorningVideosScreen = () => {
     navigation.navigate('MorningVideosScreen', {
       lockMode: true, // Enable lock mode
@@ -91,11 +75,6 @@ const SettingsScreen = ({navigation}) => {
   // NEW: Leaderboard
   const handleLeaderboardPress = () => {
     navigation.navigate('LeaderboardScreen');
-  };
-
-  // NEW: Audio Files
-  const handleAudioPress = () => {
-    navigation.navigate('AudioFilesScreen');
   };
 
   const handleLogout = () => {
@@ -209,11 +188,6 @@ const SettingsScreen = ({navigation}) => {
           <Text style={styles.sectionTitle}>Sleep & Routine</Text>
           <View style={styles.sectionContent}>
             <SettingItem
-              title="Morning Routine"
-              onPress={handleMorningRoutinePress}
-            />
-            <View style={styles.separator} />
-            <SettingItem
               title="Night Routine"
               onPress={handleNightRoutinePress}
             />
@@ -230,11 +204,6 @@ const SettingsScreen = ({navigation}) => {
             />
             <View style={styles.separator} />
             <SettingItem title="Get Back" onPress={handleGetBackPress} />
-            <View style={styles.separator} />
-            <SettingItem
-              title="Get Back Media Settings"
-              onPress={handleGetBackMediaSettingsPress}
-            />
           </View>
         </View>
 
@@ -245,22 +214,6 @@ const SettingsScreen = ({navigation}) => {
             <SettingItem
               title="Voice Commands"
               onPress={handleVoiceCommandsPress}
-            />
-          </View>
-        </View>
-
-        {/* Motivation Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Motivation</Text>
-          <View style={styles.sectionContent}>
-            <SettingItem
-              title="Intention Command"
-              onPress={handleIntentionPress}
-            />
-            <View style={styles.separator} />
-            <SettingItem
-              title="Appreciation Message"
-              onPress={handleAppreciationPress}
             />
           </View>
         </View>
@@ -292,14 +245,6 @@ const SettingsScreen = ({navigation}) => {
 
             <View style={styles.separator} />
             <SettingItem title="YouTube" onPress={handleYouTubePress} />
-          </View>
-        </View>
-
-        {/* NEW: Audio Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Media</Text>
-          <View style={styles.sectionContent}>
-            <SettingItem title="Audio Files" onPress={handleAudioPress} />
           </View>
         </View>
 

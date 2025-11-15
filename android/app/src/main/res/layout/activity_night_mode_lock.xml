@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A2E">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp">
+
+        <!-- Moon Icon -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🌙"
+            android:textSize="80sp"
+            android:layout_marginBottom="24dp"/>
+
+        <!-- Title -->
+        <TextView
+            android:id="@+id/nightModeTitleText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Night Mode"
+            android:textSize="32sp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- Message -->
+        <TextView
+            android:id="@+id/nightModeMessageText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="It's time to wind down for bed"
+            android:textSize="18sp"
+            android:textColor="#B0B0C0"
+            android:gravity="center"
+            android:layout_marginBottom="32dp"/>
+
+        <!-- Bed Time -->
+        <TextView
+            android:id="@+id/bedTimeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Bedtime: 22:00"
+            android:textSize="24sp"
+            android:textColor="#FFD700"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- Current Time -->
+        <TextView
+            android:id="@+id/currentTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Current: 21:00:00"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="48dp"/>
+
+        <!-- Open App Button -->
+        <Button
+            android:id="@+id/openAppButton"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="Open App"
+            android:textSize="18sp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:background="@drawable/night_mode_button_bg"
+            android:layout_marginTop="32dp"/>
+
+        <!-- Info Text -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tap the button above to continue"
+            android:textSize="14sp"
+            android:textColor="#808090"
+            android:layout_marginTop="16dp"/>
+
+    </LinearLayout>
+
+</FrameLayout>

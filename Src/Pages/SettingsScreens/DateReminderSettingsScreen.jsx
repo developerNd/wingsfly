@@ -4,15 +4,11 @@ import {
   View,
   StyleSheet,
   StatusBar,
-  TouchableOpacity,
   Switch,
-  ScrollView,
   ActivityIndicator,
-  Image,
-  Alert,
+  TouchableOpacity,
+  AppState,
 } from 'react-native';
-import DatePicker from 'react-native-date-picker';
-import {launchImageLibrary} from 'react-native-image-picker';
 import Headers from '../../Components/Headers';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
@@ -22,17 +18,12 @@ import {NativeModules} from 'react-native';
 const {DateReminderModule} = NativeModules;
 
 const DateReminderSettingsScreen = ({navigation}) => {
-  const [isEnabled, setIsEnabled] = useState(false);
-  const [autoClose, setAutoClose] = useState(false);
-  const [morningTime, setMorningTime] = useState(new Date());
-  const [eveningTime, setEveningTime] = useState(new Date());
-  const [showMorningPicker, setShowMorningPicker] = useState(false);
-  const [showEveningPicker, setShowEveningPicker] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isEnabled, setIsEnabled] = useState(true); // Changed to true
   const [isLoading, setIsLoading] = useState(true);
-  const [morningImageUri, setMorningImageUri] = useState(null);
-  const [eveningImageUri, setEveningImageUri] = useState(null);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [currentSettings, setCurrentSettings] = useState(null);
 
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
@@ -41,49 +32,76 @@ const DateReminderSettingsScreen = ({navigation}) => {
 
   useEffect(() => {
     loadSettings();
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription?.remove();
+    };
   }, []);
+
+  const handleAppStateChange = async (nextAppState) => {
+    if (nextAppState === 'active') {
+      console.log('App came to foreground - syncing settings...');
+      await syncSettings();
+    }
+  };
 
   const loadSettings = async () => {
     try {
       setIsLoading(true);
       const settings = await DateReminderModule.getSettings();
       setIsEnabled(settings.enabled);
-      setAutoClose(settings.autoClose || false);
-
-      // Parse time strings to Date objects
-      const [morningHour, morningMinute] = settings.morningTime.split(':');
-      const morning = new Date();
-      morning.setHours(parseInt(morningHour));
-      morning.setMinutes(parseInt(morningMinute));
-      setMorningTime(morning);
-
-      const [eveningHour, eveningMinute] = settings.eveningTime.split(':');
-      const evening = new Date();
-      evening.setHours(parseInt(eveningHour));
-      evening.setMinutes(parseInt(eveningMinute));
-      setEveningTime(evening);
-
-      // Load images if exist
-      if (settings.morningImageUri && settings.morningImageUri !== '') {
-        setMorningImageUri(settings.morningImageUri);
+      
+      if (settings.lastSyncTime > 0) {
+        setLastSyncTime(new Date(settings.lastSyncTime));
       }
-      if (settings.eveningImageUri && settings.eveningImageUri !== '') {
-        setEveningImageUri(settings.eveningImageUri);
+      
+      if (settings.enabled) {
+        setCurrentSettings({
+          morningTime: settings.morningTime,
+          eveningTime: settings.eveningTime,
+          autoClose: settings.autoClose,
+        });
       }
-
-      setHasChanges(false);
     } catch (error) {
       console.log('Error loading settings:', error);
-      // Set defaults
-      const morning = new Date();
-      morning.setHours(7, 0, 0);
-      setMorningTime(morning);
-
-      const evening = new Date();
-      evening.setHours(19, 0, 0);
-      setEveningTime(evening);
+      setIsEnabled(true); // Keep enabled on error
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const syncSettings = async () => {
+    try {
+      setIsSyncing(true);
+      const synced = await DateReminderModule.syncSettings();
+      
+      if (synced) {
+        await loadSettings();
+        console.log('✅ Settings synced from database');
+      }
+    } catch (error) {
+      console.error('Error syncing settings:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleForceRefresh = async () => {
+    try {
+      setIsSyncing(true);
+      showToast('Refreshing...', 'info');
+      
+      await DateReminderModule.forceRefresh();
+      await loadSettings();
+      
+      showToast('Settings refreshed', 'success');
+    } catch (error) {
+      console.error('Error refreshing settings:', error);
+      showToast('Refresh failed', 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -97,155 +115,47 @@ const DateReminderSettingsScreen = ({navigation}) => {
     setToastVisible(false);
   };
 
-  const formatTime = date => {
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    const displayMinutes = minutes.toString().padStart(2, '0');
-    return `${displayHours}:${displayMinutes} ${ampm}`;
-  };
-
-  const handleToggle = value => {
-    setIsEnabled(value);
-    setHasChanges(true);
-  };
-
-  const handleAutoCloseToggle = value => {
-    setAutoClose(value);
-    setHasChanges(true);
-  };
-
-  const handleMorningTimeConfirm = date => {
-    setMorningTime(date);
-    setShowMorningPicker(false);
-    setHasChanges(true);
-  };
-
-  const handleEveningTimeConfirm = date => {
-    setEveningTime(date);
-    setShowEveningPicker(false);
-    setHasChanges(true);
-  };
-
-  const handleImagePick = (type) => {
-    const options = {
-      mediaType: 'photo',
-      quality: 0.8,
-      maxWidth: 1024,
-      maxHeight: 1024,
-    };
-
-    launchImageLibrary(options, response => {
-      if (response.didCancel) {
-        console.log('User cancelled image picker');
-      } else if (response.errorCode) {
-        console.log('ImagePicker Error: ', response.errorMessage);
-        showToast('Failed to pick image', 'error');
-      } else if (response.assets && response.assets.length > 0) {
-        const asset = response.assets[0];
-        if (type === 'morning') {
-          setMorningImageUri(asset.uri);
-        } else {
-          setEveningImageUri(asset.uri);
-        }
-        setHasChanges(true);
-      }
-    });
-  };
-
-  const handleRemoveImage = (type) => {
-    Alert.alert(
-      'Remove Image',
-      'Are you sure you want to remove this image?',
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            if (type === 'morning') {
-              setMorningImageUri(null);
-            } else {
-              setEveningImageUri(null);
-            }
-            setHasChanges(true);
-          },
-        },
-      ],
-    );
-  };
-
-  const handleSave = async () => {
+  const handleToggle = async (value) => {
     try {
-      setIsSaving(true);
+      setIsSwitching(true);
 
-      if (isEnabled) {
-        const morningTimeStr = `${morningTime.getHours()}:${morningTime.getMinutes()}`;
-        const eveningTimeStr = `${eveningTime.getHours()}:${eveningTime.getMinutes()}`;
-
-        await DateReminderModule.scheduleReminders(
-          morningTimeStr,
-          eveningTimeStr,
-          morningImageUri || '',
-          eveningImageUri || '',
-          autoClose
-        );
-        showToast('Date reminders saved and scheduled', 'success');
+      if (value) {
+        await DateReminderModule.enableReminders();
+        showToast('Reminders enabled', 'success');
       } else {
-        await DateReminderModule.cancelReminders();
-        showToast('Date reminders disabled', 'success');
+        await DateReminderModule.disableReminders();
+        showToast('Reminders disabled', 'success');
       }
 
-      setHasChanges(false);
+      setIsEnabled(value);
+      await loadSettings();
     } catch (error) {
-      console.error('Error saving reminders:', error);
-      showToast('Failed to save settings', 'error');
+      console.error('Error toggling reminders:', error);
+      showToast(error.message || 'Failed to update', 'error');
+      setIsEnabled(!value);
     } finally {
-      setIsSaving(false);
+      setIsSwitching(false);
     }
   };
 
-  const renderImageUpload = (type, imageUri, label) => {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{label}</Text>
-        <View style={styles.imageContainer}>
-          {imageUri ? (
-            <View style={styles.imagePreviewContainer}>
-              <Image
-                source={{uri: imageUri}}
-                style={styles.imagePreview}
-                resizeMode="cover"
-              />
-              <View style={styles.imageActions}>
-                <TouchableOpacity
-                  onPress={() => handleImagePick(type)}
-                  style={styles.changeImageButton}>
-                  <Text style={styles.changeImageText}>Change</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleRemoveImage(type)}
-                  style={styles.removeImageButton}>
-                  <Text style={styles.removeImageText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.uploadButton}
-              onPress={() => handleImagePick(type)}
-              activeOpacity={0.7}>
-              <Text style={styles.uploadIcon}>📷</Text>
-              <Text style={styles.uploadText}>Upload Image</Text>
-              <Text style={styles.uploadSubtext}>
-                Add a personal image for {type} reminder
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-    );
+  const formatTime = (time) => {
+    if (!time) return '';
+    const [hours, minutes] = time.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
+  };
+
+  const formatLastSync = (date) => {
+    if (!date) return 'Never';
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return date.toLocaleDateString();
   };
 
   if (isLoading) {
@@ -268,33 +178,33 @@ const DateReminderSettingsScreen = ({navigation}) => {
 
       <View style={styles.headerWrapper}>
         <Headers title="Date Reminder">
-          {hasChanges && (
+          {isEnabled && (
             <TouchableOpacity
-              onPress={handleSave}
-              disabled={isSaving}
-              style={styles.saveButton}>
-              {isSaving ? (
+              onPress={handleForceRefresh}
+              disabled={isSyncing}
+              style={styles.refreshButton}>
+              {isSyncing ? (
                 <ActivityIndicator size="small" color={colors.Primary} />
               ) : (
-                <Text style={styles.saveText}>Save</Text>
+                <Text style={styles.refreshText}>🔄</Text>
               )}
             </TouchableOpacity>
           )}
         </Headers>
       </View>
 
-      <ScrollView
-        style={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}>
-        {/* Enable/Disable Section */}
-        <View style={styles.section}>
-          <View style={styles.enableContainer}>
-            <View style={styles.enableTextContainer}>
-              <Text style={styles.enableTitle}>Enable Date Reminders</Text>
-              <Text style={styles.enableSubtitle}>
-                Show date twice daily at scheduled times
-              </Text>
-            </View>
+      <View style={styles.content}>
+        {/* Toggle Section */}
+        <View style={styles.toggleCard}>
+          <View style={styles.toggleContent}>
+            <Text style={styles.toggleTitle}>Daily Reminders</Text>
+            <Text style={styles.toggleSubtitle}>
+              Twice daily at scheduled times
+            </Text>
+          </View>
+          {isSwitching ? (
+            <ActivityIndicator size="small" color={colors.Primary} />
+          ) : (
             <Switch
               value={isEnabled}
               onValueChange={handleToggle}
@@ -302,122 +212,35 @@ const DateReminderSettingsScreen = ({navigation}) => {
               thumbColor={colors.White}
               ios_backgroundColor="#D1D1D6"
             />
-          </View>
+          )}
         </View>
 
-        {/* Auto-Close Toggle - VISIBLE WHEN ENABLED */}
-        {isEnabled && (
-          <View style={styles.section}>
-            <View style={styles.enableContainer}>
-              <View style={styles.enableTextContainer}>
-                <Text style={styles.enableTitle}>Auto Close After 30 Seconds</Text>
-                <Text style={styles.enableSubtitle}>
-                  Automatically dismiss or keep until you close
+        {/* Schedule Display */}
+        {isEnabled && currentSettings && (
+          <View style={styles.scheduleCard}>
+            <Text style={styles.scheduleTitle}>Schedule</Text>
+            
+            <View style={styles.timeRow}>
+              <View style={styles.timeItem}>
+                <Text style={styles.timeLabel}>☀️ Morning</Text>
+                <Text style={styles.timeValue}>
+                  {formatTime(currentSettings.morningTime)}
                 </Text>
               </View>
-              <Switch
-                value={autoClose}
-                onValueChange={handleAutoCloseToggle}
-                trackColor={{false: '#D1D1D6', true: colors.Primary}}
-                thumbColor={colors.White}
-                ios_backgroundColor="#D1D1D6"
-              />
+              
+              <View style={styles.timeDivider} />
+              
+              <View style={styles.timeItem}>
+                <Text style={styles.timeLabel}>🌙 Evening</Text>
+                <Text style={styles.timeValue}>
+                  {formatTime(currentSettings.eveningTime)}
+                </Text>
+              </View>
             </View>
           </View>
         )}
+      </View>
 
-        {/* Time Settings (only show when enabled) */}
-        {isEnabled && (
-          <>
-            {/* Morning Time */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>FIRST REMINDER</Text>
-              <TouchableOpacity
-                style={styles.timeContainer}
-                onPress={() => setShowMorningPicker(true)}
-                activeOpacity={0.7}>
-                <View>
-                  <Text style={styles.timeLabel}>Morning Time</Text>
-                  <Text style={styles.timeValue}>{formatTime(morningTime)}</Text>
-                </View>
-                <Text style={styles.arrow}>›</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Morning Image Upload */}
-            {renderImageUpload('morning', morningImageUri, 'MORNING IMAGE (OPTIONAL)')}
-
-            {/* Evening Time */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>SECOND REMINDER</Text>
-              <TouchableOpacity
-                style={styles.timeContainer}
-                onPress={() => setShowEveningPicker(true)}
-                activeOpacity={0.7}>
-                <View>
-                  <Text style={styles.timeLabel}>Evening Time</Text>
-                  <Text style={styles.timeValue}>{formatTime(eveningTime)}</Text>
-                </View>
-                <Text style={styles.arrow}>›</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Evening Image Upload */}
-            {renderImageUpload('evening', eveningImageUri, 'EVENING IMAGE (OPTIONAL)')}
-
-            {/* Save Button at Bottom */}
-            {hasChanges && (
-              <TouchableOpacity
-                style={styles.bottomSaveButton}
-                onPress={handleSave}
-                disabled={isSaving}
-                activeOpacity={0.8}>
-                {isSaving ? (
-                  <ActivityIndicator size="small" color={colors.White} />
-                ) : (
-                  <Text style={styles.bottomSaveButtonText}>
-                    Save & Schedule Reminders
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </>
-        )}
-
-        {!isEnabled && (
-          <View style={styles.disabledInfo}>
-            <Text style={styles.disabledText}>
-              Enable date reminders to schedule daily notifications
-            </Text>
-          </View>
-        )}
-
-        <View style={{height: HP(4)}} />
-      </ScrollView>
-
-      {/* Morning Time Picker */}
-      <DatePicker
-        modal
-        open={showMorningPicker}
-        date={morningTime}
-        mode="time"
-        onConfirm={handleMorningTimeConfirm}
-        onCancel={() => setShowMorningPicker(false)}
-        title="Select Morning Time"
-      />
-
-      {/* Evening Time Picker */}
-      <DatePicker
-        modal
-        open={showEveningPicker}
-        date={eveningTime}
-        mode="time"
-        onConfirm={handleEveningTimeConfirm}
-        onCancel={() => setShowEveningPicker(false)}
-        title="Select Evening Time"
-      />
-
-      {/* Custom Toast */}
       <CustomToast
         visible={toastVisible}
         message={toastMessage}
@@ -445,222 +268,87 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  saveButton: {
-    minWidth: WP(15),
+  refreshButton: {
+    minWidth: WP(10),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  saveText: {
-    fontSize: FS(1.6),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.Primary,
+  refreshText: {
+    fontSize: FS(2),
   },
-  scrollContainer: {
+  content: {
     flex: 1,
     paddingHorizontal: WP(4),
+    paddingTop: HP(2),
   },
-  section: {
-    marginTop: HP(2.5),
-  },
-  sectionTitle: {
-    fontSize: FS(1.3),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.Shadow,
-    marginBottom: HP(1),
-    marginLeft: WP(2),
-    letterSpacing: 1,
-  },
-  enableContainer: {
+  toggleCard: {
     backgroundColor: colors.White,
-    borderRadius: WP(3),
-    padding: WP(4),
+    borderRadius: WP(4),
+    padding: WP(4.5),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    elevation: 3,
+    elevation: 2,
     shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginBottom: HP(2),
   },
-  enableTextContainer: {
+  toggleContent: {
     flex: 1,
     marginRight: WP(3),
   },
-  enableTitle: {
-    fontSize: FS(1.7),
+  toggleTitle: {
+    fontSize: FS(1.8),
     fontFamily: 'OpenSans-Bold',
     color: colors.Black,
-    marginBottom: HP(0.5),
+    marginBottom: HP(0.3),
   },
-  enableSubtitle: {
-    fontSize: FS(1.4),
-    fontFamily: 'OpenSans-Regular',
-    color: '#666666',
-    lineHeight: FS(2),
-  },
-  imageContainer: {
-    backgroundColor: colors.White,
-    borderRadius: WP(3),
-    overflow: 'hidden',
-    elevation: 3,
-    shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-  },
-  uploadButton: {
-    padding: WP(6),
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#E0E0E0',
-    borderStyle: 'dashed',
-    borderRadius: WP(3),
-    margin: 1,
-  },
-  uploadIcon: {
-    fontSize: FS(4),
-    marginBottom: HP(1),
-  },
-  uploadText: {
-    fontSize: FS(1.6),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.Primary,
-    marginBottom: HP(0.5),
-  },
-  uploadSubtext: {
+  toggleSubtitle: {
     fontSize: FS(1.3),
     fontFamily: 'OpenSans-Regular',
-    color: '#999999',
-    textAlign: 'center',
+    color: '#666666',
   },
-  imagePreviewContainer: {
-    padding: WP(3),
-  },
-  imagePreview: {
-    width: '100%',
-    height: HP(20),
-    borderRadius: WP(2),
-  },
-  imageActions: {
-    flexDirection: 'row',
-    marginTop: HP(1.5),
-    gap: WP(2),
-  },
-  changeImageButton: {
-    flex: 1,
-    backgroundColor: colors.Primary,
-    padding: HP(1.5),
-    borderRadius: WP(2),
-    alignItems: 'center',
-  },
-  changeImageText: {
-    fontSize: FS(1.5),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.White,
-  },
-  removeImageButton: {
-    flex: 1,
-    backgroundColor: '#FF3B30',
-    padding: HP(1.5),
-    borderRadius: WP(2),
-    alignItems: 'center',
-  },
-  removeImageText: {
-    fontSize: FS(1.5),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.White,
-  },
-  timeContainer: {
+  scheduleCard: {
     backgroundColor: colors.White,
-    borderRadius: WP(3),
-    padding: WP(4),
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 3,
+    borderRadius: WP(4),
+    padding: WP(4.5),
+    elevation: 2,
     shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  scheduleTitle: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-Bold',
+    color: colors.Black,
+    marginBottom: HP(2),
+  },
+  timeRow: {
+    flexDirection: 'row',
+    marginBottom: HP(2),
+  },
+  timeItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  timeDivider: {
+    width: 1,
+    backgroundColor: '#E0E0E0',
+    marginHorizontal: WP(2),
   },
   timeLabel: {
-    fontSize: FS(1.5),
-    fontFamily: 'OpenSans-Medium',
+    fontSize: FS(1.3),
+    fontFamily: 'OpenSans-Regular',
     color: '#666666',
     marginBottom: HP(0.5),
   },
   timeValue: {
-    fontSize: FS(2.2),
+    fontSize: FS(1.8),
     fontFamily: 'OpenSans-Bold',
     color: colors.Primary,
-  },
-  arrow: {
-    fontSize: FS(3),
-    fontFamily: 'OpenSans-Regular',
-    color: colors.Shadow,
-    opacity: 0.4,
-  },
-  infoSection: {
-    marginTop: HP(3),
-    backgroundColor: '#F0F8FF',
-    borderRadius: WP(3),
-    padding: WP(4),
-    borderLeftWidth: 4,
-    borderLeftColor: colors.Primary,
-  },
-  infoTitle: {
-    fontSize: FS(1.6),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.Black,
-    marginBottom: HP(1),
-  },
-  infoText: {
-    fontSize: FS(1.4),
-    fontFamily: 'OpenSans-Regular',
-    color: '#555555',
-    lineHeight: FS(2.2),
-  },
-  bottomSaveButton: {
-    backgroundColor: colors.Primary,
-    borderRadius: WP(3),
-    padding: HP(2),
-    marginTop: HP(3),
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: colors.Primary,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  bottomSaveButtonText: {
-    fontSize: FS(1.7),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.White,
-  },
-  disabledInfo: {
-    marginTop: HP(3),
-    padding: WP(4),
-    alignItems: 'center',
-  },
-  disabledText: {
-    fontSize: FS(1.5),
-    fontFamily: 'OpenSans-Regular',
-    color: '#999999',
-    textAlign: 'center',
   },
 });
 

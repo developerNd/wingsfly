@@ -20,15 +20,20 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "NightModeAlarmReceiver"
         private val LONG_VIBRATION_PATTERN = longArrayOf(0, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000)
+        private const val CHANNEL_ID = "night_mode_alarm_urgent"
+        private const val NOTIFICATION_ID = 9999
         
-        // ✅ Wake lock durations
-        private const val INITIAL_WAKE_LOCK_DURATION = 120000L // 2 minutes for initial app launch
+        // ✅ CRITICAL FIX: Hold wake lock for LONGER duration (5 minutes)
+        private const val WAKE_LOCK_DURATION = 5 * 60 * 1000L // 5 minutes
+        
+        // ✅ Store wake lock at class level so it persists
+        private var globalWakeLock: PowerManager.WakeLock? = null
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         Log.e(TAG, "")
         Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
-        Log.e(TAG, "🔥 ALARM FIRED! 🔥")
+        Log.e(TAG, "🔥 NIGHT MODE ALARM FIRED! 🔥")
         Log.e(TAG, "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
         Log.e(TAG, "")
 
@@ -63,8 +68,6 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
     }
 
     private fun handleNightModeAlarm(context: Context, intent: Intent) {
-        var wakeLock: PowerManager.WakeLock? = null
-        
         try {
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             
@@ -84,22 +87,17 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
             Log.e(TAG, "   Device Locked: $isDeviceLocked")
             Log.e(TAG, "")
             
-            // ✅ Acquire FULL wake lock to turn on screen and keep it on
-            wakeLock = powerManager.newWakeLock(
+            // ✅ Acquire GLOBAL wake lock that persists
+            globalWakeLock = powerManager.newWakeLock(
                 PowerManager.FULL_WAKE_LOCK or 
                 PowerManager.ACQUIRE_CAUSES_WAKEUP or
                 PowerManager.ON_AFTER_RELEASE,
-                "WingsFly::NightModeWakeLock"
+                "WingsFly::NightModeGlobalWakeLock"
             )
-            wakeLock.acquire(INITIAL_WAKE_LOCK_DURATION)
+            globalWakeLock?.acquire(WAKE_LOCK_DURATION) // ✅ 5 minutes
 
             Log.e(TAG, "🌙 Night Mode alarm triggered!")
-            Log.e(TAG, "🔒 Wake lock acquired: FULL_WAKE_LOCK for ${INITIAL_WAKE_LOCK_DURATION / 1000}s")
-            Log.e(TAG, "   ✅ This keeps the screen ON for 2 minutes")
-            Log.e(TAG, "   ✅ App will stay visible as long as:")
-            Log.e(TAG, "      - Wake lock is active (2 minutes)")
-            Log.e(TAG, "      - User is interacting with it")
-            Log.e(TAG, "      - User doesn't manually minimize")
+            Log.e(TAG, "🔒 GLOBAL wake lock acquired for 5 minutes")
             Log.e(TAG, "")
 
             val bedHour = intent.getIntExtra("bed_hour", 0)
@@ -107,76 +105,142 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
 
             Log.e(TAG, "Bed time: $bedHour:${String.format("%02d", bedMinute)}")
 
-            // ✅ STRATEGY: Start vibration service if device is locked
-            // Service runs independently and vibrates until device is unlocked
-            if (isDeviceLocked || !isScreenOn) {
-                Log.e(TAG, "")
-                Log.e(TAG, "📳📳📳 DEVICE IS LOCKED 📳📳📳")
-                Log.e(TAG, "Starting vibration service...")
-                Log.e(TAG, "Service will vibrate every 8s until you unlock!")
-                Log.e(TAG, "")
-                startVibrationService(context, bedHour, bedMinute)
-                
-                // Small delay to ensure service starts
-                Thread.sleep(800)
-            } else {
-                Log.e(TAG, "✅ Device already unlocked - no vibration service needed")
-            }
-
-            // Create launch intent for MainActivity
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                action = "TRIGGER_NIGHT_MODE"
+            // ✅ CRITICAL: Create notification channel first
+            createNotificationChannel(context)
+            
+            // ✅ Create activity intent with simple flags
+            val lockIntent = Intent(context, NightModeLockActivity::class.java).apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                    Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
                 )
-                putExtra("trigger_night_mode", true)
+                
                 putExtra("bed_hour", bedHour)
                 putExtra("bed_minute", bedMinute)
                 putExtra("from_alarm", true)
                 putExtra("app_was_killed", true)
+                putExtra("device_was_locked", isDeviceLocked)
+                putExtra("isDeviceLocked", isDeviceLocked)
+                putExtra("triggeredTime", System.currentTimeMillis())
             }
 
-            // Create full-screen notification
-            createFullScreenNotification(context, launchIntent, bedHour, bedMinute)
+            // ✅ Create full-screen notification
+            createFullScreenNotification(context, lockIntent, bedHour, bedMinute)
+            
+            // ✅ Start vibration service if device is locked
+            if (isDeviceLocked || !isScreenOn) {
+                Log.e(TAG, "📳 Device is locked - starting vibration service")
+                startVibrationService(context, bedHour, bedMinute)
+            }
 
-            // Launch MainActivity
-            Log.e(TAG, "🚀 Launching MainActivity above lock screen...")
+            // ✅ Launch activity directly - NO DELAY
             try {
-                context.startActivity(launchIntent)
-                Log.e(TAG, "✅ MainActivity launched!")
-                Log.e(TAG, "   App will stay on screen for ~2 minutes or until you interact")
+                context.startActivity(lockIntent)
+                Log.e(TAG, "✅ Lock Activity launched!")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to start activity: ${e.message}")
+                Log.e(TAG, "❌ Failed to start lock activity: ${e.message}")
                 e.printStackTrace()
+                
+                // Fallback: Start foreground service
+                startLockService(context, bedHour, bedMinute)
             }
 
             // Reschedule for tomorrow
-            Log.e(TAG, "")
             Log.e(TAG, "📅 Rescheduling for tomorrow...")
             rescheduleForTomorrow(context, bedHour, bedMinute)
-            Log.e(TAG, "")
+            
+            // ✅ DON'T release wake lock early - let it auto-expire after 5 minutes
+            // The activity maintains its own wake lock
+            Log.e(TAG, "⏰ Global wake lock will auto-release after 5 minutes")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error in alarm receiver: ${e.message}", e)
             e.printStackTrace()
-        } finally {
-            // ✅ Release wake lock after delay to ensure smooth handoff
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                try {
-                    if (wakeLock?.isHeld == true) {
-                        wakeLock.release()
-                        Log.e(TAG, "🔓 Alarm wake lock released (after 3s delay)")
-                        Log.e(TAG, "   Note: Vibration service has its own wake lock")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error releasing wake lock: ${e.message}")
+            
+            // Release wake lock immediately on error
+            try {
+                if (globalWakeLock?.isHeld == true) {
+                    globalWakeLock?.release()
                 }
-            }, 3000) // 3 second delay
+            } catch (e: Exception) { }
+        }
+    }
+
+    /**
+     * ✅ Create notification channel (Android O+)
+     */
+    private fun createNotificationChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Night Mode Alarm",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Night Mode bedtime alarm"
+                enableVibration(true)
+                vibrationPattern = LONG_VIBRATION_PATTERN
+                enableLights(true)
+                setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setBypassDnd(true)
+            }
+            
+            notificationManager.createNotificationChannel(channel)
+            Log.e(TAG, "✅ Notification channel created")
+        }
+    }
+
+    /**
+     * ✅ CRITICAL: Create full-screen notification (EXACTLY like Morning Alarm)
+     */
+    private fun createFullScreenNotification(
+        context: Context, 
+        launchIntent: Intent,
+        bedHour: Int,
+        bedMinute: Int
+    ) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // ✅ Full-screen PendingIntent
+            val fullScreenPendingIntent = PendingIntent.getActivity(
+                context,
+                NOTIFICATION_ID,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    PendingIntent.FLAG_IMMUTABLE
+                } else {
+                    0
+                }
+            )
+
+            // ✅ Build notification
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setContentTitle("🌙 Night Mode - Time to Wind Down")
+                .setContentText("Bedtime at $bedHour:${String.format("%02d", bedMinute)}")
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(fullScreenPendingIntent, true) // ✅ KEY
+                .setAutoCancel(true)
+                .setOngoing(false)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setVibrate(LONG_VIBRATION_PATTERN)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setContentIntent(fullScreenPendingIntent)
+                .build()
+
+            notificationManager.notify(NOTIFICATION_ID, notification)
+            Log.e(TAG, "✅ Full-screen notification created with ID: $NOTIFICATION_ID")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to create notification: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -200,64 +264,26 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun createFullScreenNotification(
-        context: Context, 
-        launchIntent: Intent,
-        bedHour: Int,
-        bedMinute: Int
-    ) {
+    /**
+     * ✅ Fallback: Start foreground service if activity launch fails
+     */
+    private fun startLockService(context: Context, bedHour: Int, bedMinute: Int) {
         try {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val serviceIntent = Intent(context, NightModeLockService::class.java).apply {
+                putExtra("bed_hour", bedHour)
+                putExtra("bed_minute", bedMinute)
+                putExtra("serviceAction", "START_LOCK_SCREEN")
+            }
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    "night_mode_alarm_urgent",
-                    "Night Mode Alarm",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply {
-                    description = "Night Mode bedtime alarm"
-                    enableVibration(true)
-                    vibrationPattern = LONG_VIBRATION_PATTERN
-                    enableLights(true)
-                    setShowBadge(true)
-                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                    setBypassDnd(true)
-                }
-                notificationManager.createNotificationChannel(channel)
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
             }
-
-            val fullScreenPendingIntent = PendingIntent.getActivity(
-                context,
-                0,
-                launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    PendingIntent.FLAG_IMMUTABLE
-                } else {
-                    0
-                }
-            )
-
-            val notification = NotificationCompat.Builder(context, "night_mode_alarm_urgent")
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle("🌙 Night Mode - Time to Wind Down")
-                .setContentText("Bedtime at $bedHour:${String.format("%02d", bedMinute)}")
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setFullScreenIntent(fullScreenPendingIntent, true)
-                .setAutoCancel(true)
-                .setOngoing(false)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setVibrate(LONG_VIBRATION_PATTERN)
-                .setDefaults(Notification.DEFAULT_ALL)
-                .build()
-
-            notificationManager.notify(9999, notification)
-            Log.e(TAG, "✅ Full-screen notification created")
-
+            
+            Log.e(TAG, "✅ Lock service started as fallback")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to create notification: ${e.message}")
-            e.printStackTrace()
+            Log.e(TAG, "❌ Failed to start lock service: ${e.message}")
         }
     }
 
@@ -351,7 +377,7 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
             }
         )
 
-        val showIntent = Intent(context, MainActivity::class.java).apply {
+        val showIntent = Intent(context, NightModeLockActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val showPendingIntent = PendingIntent.getActivity(

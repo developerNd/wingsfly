@@ -3,43 +3,49 @@ package com.wingsfly;
 import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.KeyguardManager;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.PixelFormat;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.MediaPlayer;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
-import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.TextView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 
-public class MorningVoiceCommandActivity extends Activity {
+public class MorningRoutineWakeUpAlarmActivity extends Activity {
 
-    private static final String TAG = "MorningVoiceCommand";
+    private static final String TAG = "MorningWakeUpAlarm";
+    private static final int SNOOZE_MINUTES = 5;
     
-    private PowerManager.WakeLock wakeLock;
+    private Vibrator vibrator;
+    private MediaPlayer mediaPlayer;
+    private AudioManager audioManager;
     private Handler timeHandler;
     private Runnable timeRunnable;
+    private PowerManager.WakeLock wakeLock;
     
     // PERSISTENT OVERLAY
     private android.view.View persistentOverlay;
@@ -52,28 +58,16 @@ public class MorningVoiceCommandActivity extends Activity {
     private TextView overlayTimeTextView;
     private TextView overlayDateTextView;
     private TextView overlayRoutineNameTextView;
-    private TextView overlayCurrentCommandTextView;
-    private TextView overlayCommandCounterTextView;
+    private TextView overlayMessageTextView;
+    private Button overlaySnoozeButton;
+    private Button overlayProceedButton;
     
     // Alarm data
     private String userId;
     private String routineName;
-    private String alarmTime;
-    private boolean isDeviceLocked;
-    private long triggeredTime;
-    
-    // Commands data
-    private List<CommandItem> commands;
-    private int currentCommandIndex = 0;
-    
-    // TTS Service
-    private MorningRoutineTTSService ttsService;
-    
-    // ✅ PRECISE TIMING: Use SystemClock for accurate timing
-    private Handler preciseTimingHandler;
-    private Runnable autoCloseRunnable;
-    private long commandStartTimeMillis = 0;
-    private long targetEndTimeMillis = 0;
+    private String wakeUpTime;
+    private String commands;
+    private boolean isSnooze;
     
     // Screen state receiver
     private final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
@@ -116,58 +110,46 @@ public class MorningVoiceCommandActivity extends Activity {
         super.onCreate(savedInstanceState);
         
         Log.d(TAG, "========================================");
-        Log.d(TAG, "Morning Voice Command Activity Created");
+        Log.d(TAG, "MORNING WAKE-UP ALARM ACTIVITY CREATED");
         Log.d(TAG, "========================================");
         
         extractAlarmData();
-        
-        Log.d(TAG, "📊 COMMANDS LOADED:");
-        Log.d(TAG, "  Total commands: " + commands.size());
-        Log.d(TAG, "  Starting from index: " + currentCommandIndex);
-        if (!commands.isEmpty() && currentCommandIndex < commands.size()) {
-            Log.d(TAG, "  First command to show: " + commands.get(currentCommandIndex).text);
-        }
-        
-        // ✅ Initialize precise timing handler FIRST
-        preciseTimingHandler = new Handler(Looper.getMainLooper());
         
         // Check overlay permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(this)) {
                 Log.e(TAG, "❌ NO OVERLAY PERMISSION");
+                // Fallback to regular activity
                 setupScreenFlags();
-                setContentView(R.layout.activity_morning_voice_command);
+                setContentView(R.layout.activity_morning_wakeup_alarm);
                 initializeRegularViews();
-                ttsService = new MorningRoutineTTSService(this);
+                startAlarmSoundAndVibration();
                 startTimeUpdates();
-                showCurrentCommand();
                 return;
             }
         }
         
-        // Setup in correct order
+        // ✅ CRITICAL: Setup in correct order
         setupBasicActivity();
-        setContentView(R.layout.activity_morning_voice_command);
         
-        ttsService = new MorningRoutineTTSService(this);
+        // Set basic content view (transparent)
+        setContentView(R.layout.activity_morning_wakeup_alarm);
         
-        // ✅ IMPROVED: Minimize initial delays for faster startup
-        createPersistentVoiceCommandOverlay();
+        startAlarmSoundAndVibration();
+        
+        // ✅ Create overlay with delay
+        new Handler(Looper.getMainLooper()).postDelayed(this::createPersistentAlarmOverlay, 300);
+        
         registerReceivers();
         startTimeUpdates();
         
-        // ✅ Show command immediately after overlay creation
-        if (isOverlayCreated) {
-            showCurrentCommand();
-        } else {
-            // Fallback with minimal delay
-            new Handler(Looper.getMainLooper()).postDelayed(this::showCurrentCommand, 100);
-        }
-        
-        Log.d(TAG, "✅ Morning voice command with overlay active");
+        Log.d(TAG, "✅ Morning wake-up alarm with overlay active");
         Log.d(TAG, "========================================");
     }
     
+    /**
+     * ✅ Setup basic activity (EXACTLY like NightModeLockActivity)
+     */
     private void setupBasicActivity() {
         getWindow().addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
@@ -187,6 +169,8 @@ public class MorningVoiceCommandActivity extends Activity {
     }
     
     private void setupScreenFlags() {
+        Log.d(TAG, "Setting up screen flags for wake-up alarm...");
+        
         Window window = getWindow();
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -204,7 +188,7 @@ public class MorningVoiceCommandActivity extends Activity {
         
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                KeyguardManager keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+                KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
                 if (keyguardManager != null) {
                     keyguardManager.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
                         @Override
@@ -221,17 +205,21 @@ public class MorningVoiceCommandActivity extends Activity {
         acquireWakeLock();
     }
     
+    /**
+     * ✅ ENHANCED: Acquire aggressive wake lock
+     */
     private void acquireWakeLock() {
         try {
             PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (powerManager != null) {
+                // ✅ Use FULL_WAKE_LOCK for maximum power
                 wakeLock = powerManager.newWakeLock(
                     PowerManager.FULL_WAKE_LOCK | 
                     PowerManager.ACQUIRE_CAUSES_WAKEUP | 
                     PowerManager.ON_AFTER_RELEASE,
-                    "MorningRoutine:VoiceCommand"
+                    "MorningRoutine:WakeUpAlarm"
                 );
-                wakeLock.acquire(60 * 60 * 1000L);
+                wakeLock.acquire(60 * 60 * 1000L); // 60 minutes
                 Log.d(TAG, "✅ FULL wake lock acquired (60 min)");
             }
         } catch (Exception e) {
@@ -239,12 +227,16 @@ public class MorningVoiceCommandActivity extends Activity {
         }
     }
     
+    /**
+     * ✅ Handle screen off - AGGRESSIVELY wake screen back up
+     */
     private void handleScreenOff() {
         try {
             Log.d(TAG, "========================================");
             Log.d(TAG, "🔒 USER PRESSED LOCK BUTTON");
             Log.d(TAG, "========================================");
             
+            // ✅ CRITICAL: Acquire NEW aggressive wake lock to turn screen back ON
             PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
             PowerManager.WakeLock screenWakeLock = null;
             
@@ -256,15 +248,18 @@ public class MorningVoiceCommandActivity extends Activity {
                     "MorningRoutine:ScreenOnWake"
                 );
                 
-                screenWakeLock.acquire(3000L);
+                // ✅ This will FORCE the screen to turn back on
+                screenWakeLock.acquire(3000L); // 3 seconds to wake screen
             }
             
             Log.d(TAG, "🔆 Aggressive wake lock acquired - FORCING screen back ON");
             
+            // ✅ Keep main wake lock active too
             if (wakeLock != null && !wakeLock.isHeld()) {
                 wakeLock.acquire(60 * 60 * 1000L);
             }
             
+            // ✅ Release the aggressive wake lock after delay
             PowerManager.WakeLock finalScreenWakeLock = screenWakeLock;
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 try {
@@ -284,18 +279,26 @@ public class MorningVoiceCommandActivity extends Activity {
         }
     }
     
+    /**
+     * ✅ Handle screen on - Simply refresh overlay
+     */
     private void handleScreenOn() {
         try {
+            // Simply ensure the existing overlay is visible
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 if (isOverlayCreated && persistentOverlay != null) {
+                    // Just bring to front, don't recreate
                     persistentOverlay.bringToFront();
                     persistentOverlay.invalidate();
+                    
+                    // Update displays
                     updateTime();
-                    updateDate();
+                    
                     Log.d(TAG, "✅ Overlay refreshed on screen on");
                 } else {
+                    // Only recreate if it's missing
                     Log.w(TAG, "⚠️ Overlay missing on screen on - recreating");
-                    createPersistentVoiceCommandOverlay();
+                    createPersistentAlarmOverlay();
                 }
             }, 150);
         } catch (Exception e) {
@@ -303,7 +306,7 @@ public class MorningVoiceCommandActivity extends Activity {
         }
     }
     
-    private void createPersistentVoiceCommandOverlay() {
+    private void createPersistentAlarmOverlay() {
         try {
             if (isOverlayCreated && persistentOverlay != null) {
                 Log.d(TAG, "⏭️ Overlay already exists, skipping creation");
@@ -319,6 +322,7 @@ public class MorningVoiceCommandActivity extends Activity {
             
             windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
             
+            // Remove existing overlay if present
             if (persistentOverlay != null) {
                 try {
                     windowManager.removeView(persistentOverlay);
@@ -328,26 +332,72 @@ public class MorningVoiceCommandActivity extends Activity {
                 persistentOverlay = null;
             }
             
+            // Inflate the wake-up alarm layout
             LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-            persistentOverlay = inflater.inflate(R.layout.activity_morning_voice_command, null);
+            persistentOverlay = inflater.inflate(R.layout.activity_morning_wakeup_alarm, null);
             
+            // Initialize UI elements
             overlayTimeTextView = persistentOverlay.findViewById(R.id.currentTime);
             overlayDateTextView = persistentOverlay.findViewById(R.id.currentDate);
             overlayRoutineNameTextView = persistentOverlay.findViewById(R.id.routineName);
-            overlayCurrentCommandTextView = persistentOverlay.findViewById(R.id.currentCommandText);
-            overlayCommandCounterTextView = persistentOverlay.findViewById(R.id.commandCounter);
+            overlayMessageTextView = persistentOverlay.findViewById(R.id.messageText);
+            overlaySnoozeButton = persistentOverlay.findViewById(R.id.snoozeButton);
+            overlayProceedButton = persistentOverlay.findViewById(R.id.proceedButton);
             
+            // Set routine name
             if (routineName != null && !routineName.isEmpty()) {
                 overlayRoutineNameTextView.setText(routineName);
-                overlayRoutineNameTextView.setVisibility(View.VISIBLE);
             } else {
-                overlayRoutineNameTextView.setVisibility(View.GONE);
+                overlayRoutineNameTextView.setText("Morning Routine");
             }
             
+            // Set message
+            if (isSnooze) {
+                overlayMessageTextView.setText("Time to wake up! (Snoozed)");
+            } else {
+                overlayMessageTextView.setText("Good morning! Time to start your day");
+            }
+            
+            // Update time and date
             updateTime();
             updateDate();
-            updateCommandDisplay();
             
+            // ✅ Button click handlers
+            overlaySnoozeButton.setOnClickListener(v -> {
+                Log.d(TAG, "========================================");
+                Log.d(TAG, "SNOOZE BUTTON CLICKED");
+                Log.d(TAG, "========================================");
+                
+                if (isProceeding) {
+                    Log.d(TAG, "⏭️ Already proceeding, ignoring");
+                    return;
+                }
+                
+                isProceeding = true;
+                overlaySnoozeButton.setEnabled(false);
+                overlaySnoozeButton.setAlpha(0.5f);
+                
+                handleSnooze();
+            });
+            
+            overlayProceedButton.setOnClickListener(v -> {
+                Log.d(TAG, "========================================");
+                Log.d(TAG, "PROCEED BUTTON CLICKED");
+                Log.d(TAG, "========================================");
+                
+                if (isProceeding) {
+                    Log.d(TAG, "⏭️ Already proceeding, ignoring");
+                    return;
+                }
+                
+                isProceeding = true;
+                overlayProceedButton.setEnabled(false);
+                overlayProceedButton.setAlpha(0.5f);
+                
+                handleProceed();
+            });
+            
+            // ✅ Window parameters for persistent overlay
             WindowManager.LayoutParams layoutParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -370,10 +420,11 @@ public class MorningVoiceCommandActivity extends Activity {
             layoutParams.x = 0;
             layoutParams.y = 0;
             
+            // Add the overlay to WindowManager
             windowManager.addView(persistentOverlay, layoutParams);
             
             isOverlayCreated = true;
-            Log.d(TAG, "✅ Persistent voice command overlay created and displayed");
+            Log.d(TAG, "✅ Persistent alarm overlay created and displayed");
             
         } catch (Exception e) {
             Log.e(TAG, "❌ Error creating persistent overlay", e);
@@ -385,285 +436,214 @@ public class MorningVoiceCommandActivity extends Activity {
         Intent intent = getIntent();
         userId = intent.getStringExtra("userId");
         routineName = intent.getStringExtra("name");
-        alarmTime = intent.getStringExtra("time");
-        isDeviceLocked = intent.getBooleanExtra("isDeviceLocked", false);
-        triggeredTime = intent.getLongExtra("triggeredTime", System.currentTimeMillis());
+        wakeUpTime = intent.getStringExtra("time");
+        commands = intent.getStringExtra("commands");
+        isSnooze = intent.getBooleanExtra("isSnooze", false);
         
-        currentCommandIndex = intent.getIntExtra("startFromIndex", 0);
-        
-        String commandsJson = intent.getStringExtra("commands");
-        commands = new ArrayList<>();
-        
-        try {
-            if (commandsJson != null && !commandsJson.isEmpty()) {
-                JSONArray jsonArray = new JSONArray(commandsJson);
-                
-                for (int i = 0; i < jsonArray.length(); i++) {
-                    JSONObject jsonCmd = jsonArray.getJSONObject(i);
-                    
-                    CommandItem cmd = new CommandItem();
-                    cmd.id = jsonCmd.getString("id");
-                    cmd.sequence = jsonCmd.getInt("sequence");
-                    cmd.text = jsonCmd.optString("text", "");
-                    
-                    cmd.lockDurationSeconds = jsonCmd.has("lock_duration_seconds") 
-                        ? jsonCmd.getInt("lock_duration_seconds") 
-                        : 120;
-                    
-                    cmd.gapTimeSeconds = jsonCmd.has("gap_time_seconds") 
-                        ? jsonCmd.getInt("gap_time_seconds") 
-                        : 0;
-                    
-                    commands.add(cmd);
-                    
-                    Log.d(TAG, "========================================");
-                    Log.d(TAG, "Command " + (i+1) + ": " + cmd.text);
-                    Log.d(TAG, "  Lock Duration: " + cmd.lockDurationSeconds + " seconds (" + formatSeconds(cmd.lockDurationSeconds) + ")");
-                    Log.d(TAG, "  Gap Time: " + cmd.gapTimeSeconds + " seconds (" + formatSeconds(cmd.gapTimeSeconds) + ")");
-                    Log.d(TAG, "========================================");
-                }
-                
-                Log.d(TAG, "========================================");
-                Log.d(TAG, "✅ Parsed " + commands.size() + " commands");
-                Log.d(TAG, "Starting from command index: " + currentCommandIndex);
-                Log.d(TAG, "========================================");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Error parsing commands JSON", e);
-        }
+        Log.d(TAG, "Wake-up alarm data extracted:");
+        Log.d(TAG, "  - UserID: " + userId);
+        Log.d(TAG, "  - RoutineName: " + routineName);
+        Log.d(TAG, "  - WakeUpTime: " + wakeUpTime);
+        Log.d(TAG, "  - IsSnooze: " + isSnooze);
     }
     
     private void initializeRegularViews() {
         TextView timeTextView = findViewById(R.id.currentTime);
         TextView dateTextView = findViewById(R.id.currentDate);
         TextView routineNameTextView = findViewById(R.id.routineName);
-        TextView currentCommandTextView = findViewById(R.id.currentCommandText);
-        TextView commandCounterTextView = findViewById(R.id.commandCounter);
+        TextView messageTextView = findViewById(R.id.messageText);
+        Button snoozeButton = findViewById(R.id.snoozeButton);
+        Button proceedButton = findViewById(R.id.proceedButton);
         
         if (routineName != null && !routineName.isEmpty()) {
             routineNameTextView.setText(routineName);
-            routineNameTextView.setVisibility(View.VISIBLE);
         } else {
-            routineNameTextView.setVisibility(View.GONE);
+            routineNameTextView.setText("Morning Routine");
         }
-    }
-    
-    private void registerReceivers() {
-        IntentFilter screenFilter = new IntentFilter();
-        screenFilter.addAction(Intent.ACTION_SCREEN_OFF);
-        screenFilter.addAction(Intent.ACTION_SCREEN_ON);
-        screenFilter.addAction(Intent.ACTION_USER_PRESENT);
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(screenStateReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED);
+        if (isSnooze) {
+            messageTextView.setText("Time to wake up! (Snoozed)");
         } else {
-            registerReceiver(screenStateReceiver, screenFilter);
+            messageTextView.setText("Good morning! Time to start your day");
         }
         
-        Log.d(TAG, "✅ Screen state receivers registered");
+        snoozeButton.setOnClickListener(v -> handleSnooze());
+        proceedButton.setOnClickListener(v -> handleProceed());
     }
     
-    private void updateCommandDisplay() {
-        if (commands.isEmpty() || currentCommandIndex >= commands.size()) {
-            return;
-        }
-        
-        CommandItem currentCommand = commands.get(currentCommandIndex);
-        
-        if (overlayCommandCounterTextView != null) {
-            overlayCommandCounterTextView.setText("Command " + (currentCommandIndex + 1) + " of " + commands.size());
-            Log.d(TAG, "✅ Updated counter: Command " + (currentCommandIndex + 1) + " of " + commands.size());
-        }
-        
-        if (overlayCurrentCommandTextView != null) {
-            overlayCurrentCommandTextView.setText(currentCommand.text);
-            overlayCurrentCommandTextView.setVisibility(View.VISIBLE);
-            Log.d(TAG, "✅ Updated command text: " + currentCommand.text);
-        }
+    private void startAlarmSoundAndVibration() {
+        Log.d(TAG, "Starting alarm sound and vibration...");
+        startVibration();
+        startAlarmSound();
     }
     
-    private void showCurrentCommand() {
-        if (commands.isEmpty()) {
-            Log.e(TAG, "No commands to show");
-            finishAllCommands();
-            return;
-        }
-        
-        if (currentCommandIndex >= commands.size()) {
-            Log.d(TAG, "All commands completed");
-            finishAllCommands();
-            return;
-        }
-        
-        CommandItem currentCommand = commands.get(currentCommandIndex);
-        
-        // ✅ PRECISE TIMING: Record exact start time using SystemClock
-        commandStartTimeMillis = SystemClock.elapsedRealtime();
-        targetEndTimeMillis = commandStartTimeMillis + (currentCommand.lockDurationSeconds * 1000L);
-        
-        Log.d(TAG, "========================================");
-        Log.d(TAG, "SHOWING COMMAND #" + (currentCommandIndex + 1));
-        Log.d(TAG, "Text: " + currentCommand.text);
-        Log.d(TAG, "Lock Duration: " + currentCommand.lockDurationSeconds + " seconds (" + formatSeconds(currentCommand.lockDurationSeconds) + ")");
-        Log.d(TAG, "⏱️ PRECISE START TIME: " + commandStartTimeMillis + " ms");
-        Log.d(TAG, "⏱️ TARGET END TIME: " + targetEndTimeMillis + " ms");
-        Log.d(TAG, "========================================");
-        
-        updateCommandDisplay();
-        playCommandAudio(currentCommand);
-        schedulePreciseAutoClose(currentCommand.lockDurationSeconds);
-        
-        Log.d(TAG, "Auto-close scheduled for " + currentCommand.lockDurationSeconds + " seconds (" + formatSeconds(currentCommand.lockDurationSeconds) + ")");
-    }
-    
-    private void playCommandAudio(CommandItem command) {
+    private void startVibration() {
         try {
-            if (ttsService != null && command.text != null && !command.text.isEmpty()) {
-                Log.d(TAG, "🔊 Playing TTS for: " + command.text);
-                ttsService.speakCommand(command.text);
+            vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator != null && vibrator.hasVibrator()) {
+                long[] pattern = {0, 1000, 1000};
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    VibrationEffect effect = VibrationEffect.createWaveform(pattern, 0);
+                    vibrator.vibrate(effect);
+                } else {
+                    vibrator.vibrate(pattern, 0);
+                }
+                Log.d(TAG, "Vibration started");
             }
         } catch (Exception e) {
-            Log.e(TAG, "❌ Error playing command audio", e);
+            Log.e(TAG, "Error starting vibration", e);
         }
     }
     
-    /**
-     * ✅ IMPROVED: Precise auto-close scheduling with drift correction
-     */
-    private void schedulePreciseAutoClose(int durationSeconds) {
-        // Cancel any existing auto-close
-        if (autoCloseRunnable != null) {
-            preciseTimingHandler.removeCallbacks(autoCloseRunnable);
-        }
-        
-        final long targetDurationMillis = durationSeconds * 1000L;
-        
-        autoCloseRunnable = new Runnable() {
-            @Override
-            public void run() {
-                long currentTime = SystemClock.elapsedRealtime();
-                long elapsedTime = currentTime - commandStartTimeMillis;
-                long remainingTime = targetDurationMillis - elapsedTime;
-                
-                // ✅ If we're within 50ms of target, trigger completion
-                if (remainingTime <= 50) {
-                    long actualDuration = currentTime - commandStartTimeMillis;
-                    long driftMillis = actualDuration - targetDurationMillis;
-                    
-                    Log.d(TAG, "========================================");
-                    Log.d(TAG, "⏰ PRECISE AUTO-CLOSE TRIGGERED");
-                    Log.d(TAG, "⏱️ Target duration: " + targetDurationMillis + " ms");
-                    Log.d(TAG, "⏱️ Actual duration: " + actualDuration + " ms");
-                    Log.d(TAG, "⏱️ Timing drift: " + driftMillis + " ms (" + (driftMillis > 0 ? "+" : "") + driftMillis + " ms)");
-                    Log.d(TAG, "========================================");
-                    
-                    onCommandComplete();
-                } else {
-                    // ✅ Reschedule with remaining time (drift correction)
-                    Log.d(TAG, "⏱️ Drift correction: Rescheduling with " + remainingTime + " ms remaining");
-                    preciseTimingHandler.postDelayed(this, remainingTime);
-                }
-            }
-        };
-        
-        preciseTimingHandler.postDelayed(autoCloseRunnable, targetDurationMillis);
-        
-        Log.d(TAG, "✅ Precise auto-close scheduled for " + durationSeconds + " seconds (" + targetDurationMillis + " ms)");
-    }
-    
-    private void onCommandComplete() {
-        Log.d(TAG, "========================================");
-        Log.d(TAG, "Command #" + (currentCommandIndex + 1) + " completed");
-        Log.d(TAG, "========================================");
-        
-        if (ttsService != null) {
-            ttsService.stopAudio();
-        }
-        
-        if (currentCommandIndex >= commands.size()) {
-            finishAllCommands();
-            return;
-        }
-        
-        CommandItem currentCommand = commands.get(currentCommandIndex);
-        
-        currentCommandIndex++;
-        
-        if (currentCommandIndex >= commands.size()) {
-            Log.d(TAG, "✅ All commands completed");
-            finishAllCommands();
-            return;
-        }
-        
-        if (currentCommand.gapTimeSeconds > 0) {
-            Log.d(TAG, "⏳ Gap time detected: " + currentCommand.gapTimeSeconds + " seconds (" + formatSeconds(currentCommand.gapTimeSeconds) + ")");
-            schedulePreciseNextCommand(currentCommand.gapTimeSeconds);
-            finishActivity();
-        } else {
-            Log.d(TAG, "▶️ No gap time - showing next command immediately");
-            showCurrentCommand();
-        }
-    }
-    
-    /**
-     * ✅ IMPROVED: Precise gap time scheduling using AlarmManager with exact timing
-     */
-    private void schedulePreciseNextCommand(int gapSeconds) {
-        Log.d(TAG, "========================================");
-        Log.d(TAG, "SCHEDULING NEXT COMMAND WITH PRECISE TIMING");
-        Log.d(TAG, "Gap time: " + gapSeconds + " seconds (" + formatSeconds(gapSeconds) + ")");
-        Log.d(TAG, "Next command index will be: " + currentCommandIndex);
-        Log.d(TAG, "========================================");
-        
+    private void startAlarmSound() {
         try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            
+            if (audioManager != null) {
+                int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0);
+            }
+            
+            Uri alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (alarmUri == null) {
+                alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
+            
+            mediaPlayer = new MediaPlayer();
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                AudioAttributes attributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+                mediaPlayer.setAudioAttributes(attributes);
+            } else {
+                mediaPlayer.setAudioStreamType(AudioManager.STREAM_ALARM);
+            }
+            
+            mediaPlayer.setDataSource(this, alarmUri);
+            mediaPlayer.setLooping(true);
+            mediaPlayer.prepare();
+            mediaPlayer.start();
+            
+            Log.d(TAG, "Alarm sound started");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error starting alarm sound", e);
+        }
+    }
+    
+    private void handleSnooze() {
+        stopAlarmSoundAndVibration();
+        scheduleSnoozeAlarm();
+        
+        Log.d(TAG, "Alarm snoozed for " + SNOOZE_MINUTES + " minutes");
+        finishActivity();
+    }
+    
+    private void handleProceed() {
+        stopAlarmSoundAndVibration();
+        startVoiceCommands();
+        
+        Log.d(TAG, "Proceeding to voice commands");
+        finishActivity();
+    }
+    
+    private void scheduleSnoozeAlarm() {
+        try {
+            long snoozeTime = System.currentTimeMillis() + (SNOOZE_MINUTES * 60 * 1000);
+            
             AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
             if (alarmManager == null) {
-                Log.e(TAG, "❌ AlarmManager not available");
+                Log.e(TAG, "AlarmManager not available");
                 return;
             }
             
-            // ✅ PRECISE: Calculate exact trigger time in milliseconds
-            long exactTriggerTime = System.currentTimeMillis() + (gapSeconds * 1000L);
+            Intent snoozeIntent = new Intent(this, MorningRoutineWakeUpAlarmReceiver.class);
+            snoozeIntent.putExtra("userId", userId);
+            snoozeIntent.putExtra("name", routineName);
+            snoozeIntent.putExtra("time", wakeUpTime);
+            snoozeIntent.putExtra("commands", commands);
+            snoozeIntent.putExtra("isSnooze", true);
+            snoozeIntent.putExtra("alarmType", "MORNING_WAKEUP_SNOOZE");
+            snoozeIntent.setAction("MORNING_WAKEUP_SNOOZE_" + userId + "_" + System.currentTimeMillis());
             
-            Intent intent = new Intent(this, MorningRoutineAlarmReceiver.class);
-            intent.putExtra("userId", userId);
-            intent.putExtra("name", routineName);
-            intent.putExtra("time", alarmTime);
-            intent.putExtra("commands", getIntent().getStringExtra("commands"));
-            intent.putExtra("alarmType", "MORNING_ROUTINE_NEXT");
-            intent.putExtra("isDeviceLocked", isDeviceLocked);
-            intent.putExtra("triggeredTime", System.currentTimeMillis());
-            intent.putExtra("startFromIndex", currentCommandIndex);
-            intent.setAction("MORNING_ROUTINE_NEXT_" + userId + "_" + currentCommandIndex + "_" + System.currentTimeMillis());
-            
-            int requestCode = Math.abs(("morning_next_" + userId + "_" + currentCommandIndex + "_" + System.currentTimeMillis()).hashCode());
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+            int requestCode = Math.abs(("morning_snooze_" + userId + "_" + System.currentTimeMillis()).hashCode());
+            PendingIntent snoozePendingIntent = PendingIntent.getBroadcast(
                 this,
                 requestCode,
-                intent,
+                snoozeIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
             
-            // ✅ Use most precise alarm method available
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, exactTriggerTime, pendingIntent);
-                Log.d(TAG, "✅ Scheduled using setExactAndAllowWhileIdle (MOST PRECISE)");
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                alarmManager.setExact(AlarmManager.RTC_WAKEUP, exactTriggerTime, pendingIntent);
-                Log.d(TAG, "✅ Scheduled using setExact (PRECISE)");
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, snoozeTime, snoozePendingIntent);
             } else {
-                alarmManager.set(AlarmManager.RTC_WAKEUP, exactTriggerTime, pendingIntent);
-                Log.d(TAG, "✅ Scheduled using set (STANDARD)");
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, snoozeTime, snoozePendingIntent);
             }
             
-            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault());
-            Log.d(TAG, "⏰ EXACT trigger time: " + sdf.format(new Date(exactTriggerTime)));
-            Log.d(TAG, "⏱️ Milliseconds precision: " + exactTriggerTime + " ms");
-            Log.d(TAG, "⏱️ Expected in: " + (gapSeconds * 1000L) + " ms exactly");
-            Log.d(TAG, "========================================");
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+            Log.d(TAG, "Snooze alarm scheduled for: " + sdf.format(new Date(snoozeTime)));
             
         } catch (Exception e) {
-            Log.e(TAG, "❌ Error scheduling next command", e);
+            Log.e(TAG, "Error scheduling snooze alarm", e);
+        }
+    }
+    
+    private void startVoiceCommands() {
+        try {
+            Log.d(TAG, "Starting voice commands sequence...");
+            
+            Intent voiceIntent = new Intent(this, MorningVoiceCommandActivity.class);
+            voiceIntent.putExtra("userId", userId);
+            voiceIntent.putExtra("name", routineName);
+            voiceIntent.putExtra("time", wakeUpTime);
+            voiceIntent.putExtra("commands", commands);
+            voiceIntent.putExtra("startFromIndex", 0);
+            voiceIntent.putExtra("triggeredTime", System.currentTimeMillis());
+            voiceIntent.putExtra("fromWakeUpAlarm", true);
+            
+            voiceIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK |
+                Intent.FLAG_ACTIVITY_CLEAR_TOP |
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            );
+            
+            startActivity(voiceIntent);
+            Log.d(TAG, "Voice commands activity started");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error starting voice commands", e);
+        }
+    }
+    
+    private void stopAlarmSoundAndVibration() {
+        Log.d(TAG, "Stopping alarm sound and vibration...");
+        
+        if (vibrator != null) {
+            try {
+                vibrator.cancel();
+            } catch (Exception e) {
+                Log.e(TAG, "Error stopping vibration", e);
+            }
+            vibrator = null;
+        }
+        
+        if (mediaPlayer != null) {
+            try {
+                if (mediaPlayer.isPlaying()) {
+                    mediaPlayer.stop();
+                }
+                mediaPlayer.release();
+            } catch (Exception e) {
+                Log.e(TAG, "Error stopping media player", e);
+            }
+            mediaPlayer = null;
+        }
+        
+        if (timeHandler != null && timeRunnable != null) {
+            timeHandler.removeCallbacks(timeRunnable);
         }
     }
     
@@ -682,26 +662,12 @@ public class MorningVoiceCommandActivity extends Activity {
     }
     
     private void finishActivity() {
-        Log.d(TAG, "========================================");
-        Log.d(TAG, "FINISHING ACTIVITY");
-        Log.d(TAG, "========================================");
+        Log.d(TAG, "Finishing wake-up alarm activity...");
         
-        if (autoCloseRunnable != null) {
-            preciseTimingHandler.removeCallbacks(autoCloseRunnable);
-        }
-        
-        if (ttsService != null) {
-            ttsService.stopAudio();
-            ttsService.cleanup();
-        }
-        
+        stopAlarmService();
+        cancelNotifications();
         removePersistentOverlay();
         releaseWakeLock();
-        
-        if (timeHandler != null && timeRunnable != null) {
-            timeHandler.removeCallbacks(timeRunnable);
-        }
-        
         clearWindowFlags();
         
         try {
@@ -716,21 +682,40 @@ public class MorningVoiceCommandActivity extends Activity {
         }
     }
     
-    private void finishAllCommands() {
-        Log.d(TAG, "========================================");
-        Log.d(TAG, "🎉 ALL COMMANDS FINISHED!");
-        Log.d(TAG, "Closing morning routine");
-        Log.d(TAG, "========================================");
-        finishActivity();
+    private void stopAlarmService() {
+        try {
+            Intent stopServiceIntent = new Intent(this, MorningRoutineWakeUpAlarmService.class);
+            stopServiceIntent.putExtra("serviceAction", "STOP_WAKEUP_ALARM");
+            stopServiceIntent.putExtra("userId", userId);
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(stopServiceIntent);
+            } else {
+                startService(stopServiceIntent);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error stopping service", e);
+        }
+    }
+    
+    private void cancelNotifications() {
+        try {
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (notificationManager != null) {
+                notificationManager.cancelAll();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error cancelling notifications", e);
+        }
     }
     
     private void releaseWakeLock() {
         if (wakeLock != null && wakeLock.isHeld()) {
             try {
                 wakeLock.release();
-                Log.d(TAG, "✅ Wake lock released");
+                Log.d(TAG, "Wake lock released");
             } catch (Exception e) {
-                Log.e(TAG, "❌ Error releasing wake lock", e);
+                Log.e(TAG, "Error releasing wake lock", e);
             }
         }
     }
@@ -749,6 +734,21 @@ public class MorningVoiceCommandActivity extends Activity {
         } catch (Exception e) {
             Log.e(TAG, "Error clearing window flags", e);
         }
+    }
+    
+    private void registerReceivers() {
+        IntentFilter screenFilter = new IntentFilter();
+        screenFilter.addAction(Intent.ACTION_SCREEN_OFF);
+        screenFilter.addAction(Intent.ACTION_SCREEN_ON);
+        screenFilter.addAction(Intent.ACTION_USER_PRESENT);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenStateReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(screenStateReceiver, screenFilter);
+        }
+        
+        Log.d(TAG, "✅ Screen state receivers registered");
     }
     
     private void startTimeUpdates() {
@@ -790,39 +790,9 @@ public class MorningVoiceCommandActivity extends Activity {
         }
     }
     
-    private String formatSeconds(int totalSeconds) {
-        if (totalSeconds <= 0) {
-            return "0s";
-        }
-        
-        int hours = totalSeconds / 3600;
-        int minutes = (totalSeconds % 3600) / 60;
-        int seconds = totalSeconds % 60;
-        
-        if (hours > 0) {
-            if (minutes > 0 && seconds > 0) {
-                return hours + "h " + minutes + "m " + seconds + "s";
-            } else if (minutes > 0) {
-                return hours + "h " + minutes + "m";
-            } else if (seconds > 0) {
-                return hours + "h " + seconds + "s";
-            } else {
-                return hours + "h";
-            }
-        } else if (minutes > 0) {
-            if (seconds > 0) {
-                return minutes + "m " + seconds + "s";
-            } else {
-                return minutes + "m";
-            }
-        } else {
-            return seconds + "s";
-        }
-    }
-    
     @Override
     public void onBackPressed() {
-        // Disable back button during voice commands
+        // Disable back button during alarm
         Log.d(TAG, "Back button pressed - ignoring");
     }
     
@@ -845,6 +815,7 @@ public class MorningVoiceCommandActivity extends Activity {
         super.onResume();
         Log.d(TAG, "▶️ onResume");
         
+        // Only check if overlay exists, don't recreate
         if (!isProceeding) {
             if (isOverlayCreated && persistentOverlay != null) {
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -861,6 +832,7 @@ public class MorningVoiceCommandActivity extends Activity {
         Log.d(TAG, "🎯 Window focus changed: " + hasFocus);
         
         if (hasFocus && !isProceeding) {
+            // ✅ Every time we get focus, ensure we're visible
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 if (isOverlayCreated && persistentOverlay != null) {
                     persistentOverlay.bringToFront();
@@ -884,9 +856,7 @@ public class MorningVoiceCommandActivity extends Activity {
     
     @Override
     protected void onDestroy() {
-        Log.d(TAG, "========================================");
         Log.d(TAG, "Activity destroying");
-        Log.d(TAG, "========================================");
         
         try {
             unregisterReceiver(screenStateReceiver);
@@ -894,15 +864,7 @@ public class MorningVoiceCommandActivity extends Activity {
             Log.e(TAG, "Error unregistering receiver", e);
         }
         
-        if (autoCloseRunnable != null) {
-            preciseTimingHandler.removeCallbacks(autoCloseRunnable);
-        }
-        
-        if (ttsService != null) {
-            ttsService.stopAudio();
-            ttsService.cleanup();
-        }
-        
+        stopAlarmSoundAndVibration();
         removePersistentOverlay();
         releaseWakeLock();
         clearWindowFlags();
@@ -910,15 +872,7 @@ public class MorningVoiceCommandActivity extends Activity {
         super.onDestroy();
         
         Log.d(TAG, "========================================");
-        Log.d(TAG, "✅ VOICE COMMAND ACTIVITY DESTROYED");
+        Log.d(TAG, "✅ ALARM ACTIVITY DESTROYED");
         Log.d(TAG, "========================================");
-    }
-    
-    private static class CommandItem {
-        String id;
-        int sequence;
-        String text;
-        int lockDurationSeconds;
-        int gapTimeSeconds;
     }
 }

@@ -2,7 +2,7 @@ import Sound from 'react-native-sound';
 import RNFetchBlob from 'rn-fetch-blob';
 import RNFS from 'react-native-fs';
 import { ELEVENLABS_API_KEY } from '@env';
-
+import { supabase } from '../../../supabase';
 
 const VOICE_ID = "V79Doapn9P53cEABwysz";
 const API_KEY = ELEVENLABS_API_KEY;
@@ -26,6 +26,62 @@ class AppreciationVoiceService {
       console.log('✅ AppreciationVoiceService initialized');
     } catch (error) {
       console.error('❌ Error initializing AppreciationVoiceService:', error);
+    }
+  };
+
+  // Fetch appreciation settings from Supabase
+  fetchAppreciationSettings = async () => {
+    try {
+      console.log('🔍 Fetching appreciation settings from database...');
+      
+      const { data, error } = await supabase
+        .from('appreciation_settings')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          console.log('ℹ️ No appreciation settings found');
+          return null;
+        }
+        throw error;
+      }
+
+      console.log('✅ Appreciation settings fetched:', {
+        type: data.type,
+        hasText: !!data.appreciation_text,
+        hasAudio: !!data.audio_file_url
+      });
+
+      return data;
+    } catch (error) {
+      console.error('❌ Error fetching appreciation settings:', error);
+      throw error;
+    }
+  };
+
+  // Download audio file from URL
+  downloadAudioFile = async (audioUrl, filename = 'appreciation_audio.mp3') => {
+    try {
+      console.log('📥 Downloading audio file from:', audioUrl);
+      
+      const filePath = `${this.cacheDir}/${filename}`;
+      
+      // Download file
+      const response = await RNFetchBlob.config({
+        fileCache: true,
+        path: filePath,
+      }).fetch('GET', audioUrl);
+
+      const downloadedPath = response.path();
+      console.log('✅ Audio file downloaded to:', downloadedPath);
+      
+      return downloadedPath;
+    } catch (error) {
+      console.error('❌ Error downloading audio file:', error);
+      throw error;
     }
   };
 
@@ -122,8 +178,8 @@ class AppreciationVoiceService {
     });
   };
 
-  // Play appreciation message with retry
-  playAppreciationMessage = async (appreciationData, retryCount = 0) => {
+  // Main method to play appreciation message
+  playAppreciationMessage = async (retryCount = 0) => {
     try {
       if (!this.isInitialized) {
         await this.initialize();
@@ -131,37 +187,50 @@ class AppreciationVoiceService {
 
       console.log(`🎯 Playing appreciation message (attempt ${retryCount + 1})`);
       
+      // Fetch settings from database
+      const settings = await this.fetchAppreciationSettings();
+      
+      if (!settings) {
+        console.log('ℹ️ No appreciation settings configured');
+        return false;
+      }
+
       let audioFilePath;
 
-      if (appreciationData.audioFilePath) {
-        // Check if uploaded audio file exists
-        console.log('📁 Checking uploaded audio file:', appreciationData.audioFilePath);
-        
-        const fileExists = await RNFS.exists(appreciationData.audioFilePath);
-        if (!fileExists) {
-          console.error('❌ Audio file not found:', appreciationData.audioFilePath);
-          throw new Error('Audio file not found');
-        }
-        
-        // Play uploaded audio file
-        console.log('▶️ Playing uploaded audio file');
-        audioFilePath = appreciationData.audioFilePath;
-        await this.playAudioFile(audioFilePath);
-        
-      } else if (appreciationData.text) {
-        // Generate speech using ElevenLabs
-        console.log('📝 Generating speech for text:', appreciationData.text);
-        audioFilePath = await this.generateSpeech(
-          appreciationData.text, 
-          `appreciation_${Date.now()}.mp3`
+      // Handle based on type
+      if (settings.type === 'audio' && settings.audio_file_url) {
+        // Download and play audio file
+        console.log('🎵 Processing audio type appreciation');
+        const timestamp = Date.now();
+        audioFilePath = await this.downloadAudioFile(
+          settings.audio_file_url,
+          `appreciation_${timestamp}.mp3`
         );
         
         await this.playAudioFile(audioFilePath);
         
-        // Clean up generated file after 10 seconds (don't delete uploaded files)
+        // Clean up downloaded file after 10 seconds
         setTimeout(() => {
           RNFetchBlob.fs.unlink(audioFilePath).catch(console.error);
         }, 10000);
+        
+      } else if (settings.type === 'text' && settings.appreciation_text) {
+        // Generate speech using ElevenLabs
+        console.log('📝 Processing text type appreciation:', settings.appreciation_text);
+        audioFilePath = await this.generateSpeech(
+          settings.appreciation_text, 
+          `appreciation_tts_${Date.now()}.mp3`
+        );
+        
+        await this.playAudioFile(audioFilePath);
+        
+        // Clean up generated file after 10 seconds
+        setTimeout(() => {
+          RNFetchBlob.fs.unlink(audioFilePath).catch(console.error);
+        }, 10000);
+      } else {
+        console.log('⚠️ Invalid appreciation settings');
+        return false;
       }
 
       return true;
@@ -172,7 +241,7 @@ class AppreciationVoiceService {
       if (retryCount < 2) {
         console.log(`🔄 Retrying in 1 second...`);
         await new Promise(resolve => setTimeout(resolve, 1000));
-        return await this.playAppreciationMessage(appreciationData, retryCount + 1);
+        return await this.playAppreciationMessage(retryCount + 1);
       }
       
       return false;
@@ -200,7 +269,8 @@ class AppreciationVoiceService {
       
       const files = await RNFetchBlob.fs.ls(this.cacheDir);
       const appreciationAudioFiles = files.filter(file => 
-        file.endsWith('.mp3') && file.startsWith('appreciation_')
+        file.endsWith('.mp3') && 
+        (file.startsWith('appreciation_') || file.startsWith('appreciation_tts_'))
       );
       
       for (const file of appreciationAudioFiles) {

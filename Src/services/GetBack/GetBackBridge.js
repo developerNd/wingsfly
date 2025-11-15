@@ -1,4 +1,5 @@
 import { NativeModules, Alert } from 'react-native';
+import getBackMediaSupabaseService from './getBackMediaSupabaseService';
 
 const { GetBackModule } = NativeModules;
 
@@ -42,7 +43,7 @@ class GetBackBridge {
 
   /**
    * Start Get Back lock session
-   * First checks if silent mode is enabled, prompts user if not
+   * ✅ UPDATED: Fetches confirmation video and random media from Supabase
    * @param {number} durationInMinutes - Duration of the lock session
    * @returns {Promise<boolean>} Success status
    */
@@ -53,7 +54,40 @@ class GetBackBridge {
         return false;
       }
 
-      console.log('Starting Get Back lock for', durationInMinutes, 'minutes');
+      console.log('🔒 Starting Get Back lock for', durationInMinutes, 'minutes');
+      
+      // ✅ NEW: Fetch confirmation video from Supabase
+      console.log('📥 Fetching confirmation video from Supabase...');
+      const confirmationResult = await getBackMediaSupabaseService.fetchConfirmationVideo();
+      
+      if (!confirmationResult.hasConfirmation) {
+        Alert.alert(
+          'Confirmation Video Required',
+          'No confirmation video found. Please contact admin.'
+        );
+        return false;
+      }
+      
+      const confirmationVideoUrl = confirmationResult.data.fileUrl;
+      console.log('✅ Confirmation video URL:', confirmationVideoUrl);
+      
+      // ✅ NEW: Fetch random media file from Supabase
+      console.log('📥 Fetching random media from Supabase...');
+      const randomMediaResult = await getBackMediaSupabaseService.getRandomMediaFile();
+      
+      let mediaFileUrl = null;
+      let mediaType = null;
+      
+      if (randomMediaResult.success && randomMediaResult.data) {
+        mediaFileUrl = randomMediaResult.data.fileUrl;
+        mediaType = randomMediaResult.data.type;
+        console.log('✅ Random media selected:', {
+          type: mediaType,
+          url: mediaFileUrl
+        });
+      } else {
+        console.log('⚠️ No media files available - session will play without media');
+      }
       
       // Check if silent mode is enabled
       const isSilent = await this.isSilentModeEnabled();
@@ -92,7 +126,13 @@ class GetBackBridge {
                             // Verify silent mode is now enabled
                             const isNowSilent = await this.isSilentModeEnabled();
                             if (isNowSilent) {
-                              const result = await GetBackModule.startGetBackLock(durationInMinutes);
+                              // ✅ Start with Supabase URLs
+                              const result = await GetBackModule.startGetBackLock(
+                                durationInMinutes,
+                                confirmationVideoUrl,
+                                mediaFileUrl,
+                                mediaType
+                              );
                               resolve(result);
                             } else {
                               Alert.alert(
@@ -113,11 +153,18 @@ class GetBackBridge {
         });
       }
       
-      // Silent mode is already enabled, proceed
-      const result = await GetBackModule.startGetBackLock(durationInMinutes);
+      // Silent mode is already enabled, proceed with Supabase URLs
+      console.log('🚀 Starting Get Back with media from Supabase');
+      const result = await GetBackModule.startGetBackLock(
+        durationInMinutes,
+        confirmationVideoUrl,
+        mediaFileUrl,
+        mediaType
+      );
       return result;
     } catch (error) {
       console.error('Error starting Get Back lock:', error);
+      Alert.alert('Error', 'Failed to start Get Back: ' + error.message);
       throw error;
     }
   }

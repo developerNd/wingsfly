@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -19,10 +18,6 @@ import android.widget.TextView;
 public class IntentionVoiceActivity extends Activity {
 
     private static final String TAG = "IntentionVoice";
-    private static final String PREFS_NAME = "IntentionPrefs";
-    private static final String KEY_INTENTION_TEXT = "intention_text";
-    private static final String KEY_AUDIO_FILE_PATH = "intention_audio_path";
-    private static final String KEY_AUDIO_FILE_NAME = "intention_audio_name";
     
     private TextView intentionTextView;
     private Button startSessionButton;
@@ -39,10 +34,8 @@ public class IntentionVoiceActivity extends Activity {
     private String category;
     private String evaluationType;
     
-    // Intention data
-    private String intentionText;
-    private String intentionAudioPath;
-    private String intentionAudioName;
+    // Intention data from database
+    private IntentionDatabase.IntentionData intentionData;
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,9 +49,18 @@ public class IntentionVoiceActivity extends Activity {
         setContentView(R.layout.activity_intention_voice);
         
         extractTaskData();
-        loadIntentionData();
+        loadIntentionDataFromDatabase();
         initializeViews();
-        initializeTTS();
+        
+        // Initialize TTS after views are set up
+        if (intentionData != null) {
+            initializeTTS();
+        } else {
+            Log.e(TAG, "No intention data available - skipping TTS");
+            // Enable button immediately if no intention data
+            startSessionButton.setEnabled(true);
+            startSessionButton.setAlpha(1.0f);
+        }
         
         Log.d(TAG, "Intention initialized for: " + taskTitle + " (Type: " + evaluationType + ")");
     }
@@ -136,19 +138,54 @@ public class IntentionVoiceActivity extends Activity {
         Log.d(TAG, "  - category: " + category);
     }
     
-    private void loadIntentionData() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        intentionText = prefs.getString(KEY_INTENTION_TEXT, "");
-        intentionAudioPath = prefs.getString(KEY_AUDIO_FILE_PATH, "");
-        intentionAudioName = prefs.getString(KEY_AUDIO_FILE_NAME, "");
+    /**
+     * Fetch intention data directly from Supabase database
+     */
+    private void loadIntentionDataFromDatabase() {
+        Log.d(TAG, "Loading intention data from Supabase database...");
         
-        // Set default if nothing is set
-        if (intentionText.isEmpty() && intentionAudioPath.isEmpty()) {
-            intentionText = "I am focused and ready to accomplish my goals";
+        // Fetch in background thread
+        new Thread(() -> {
+            intentionData = IntentionDatabase.fetchIntentionData();
+            
+            if (intentionData != null) {
+                Log.d(TAG, "✅ Intention data loaded: " + intentionData.toString());
+            } else {
+                Log.w(TAG, "⚠️ No intention data found - will use default");
+                // Create default text intention
+                intentionData = new IntentionDatabase.IntentionData(
+                    "default",
+                    "I am focused and ready to accomplish my goals",
+                    "",
+                    "",
+                    "text"
+                );
+            }
+        }).start();
+        
+        // Wait for data to load (with timeout)
+        int timeout = 5000; // 5 seconds
+        int elapsed = 0;
+        while (intentionData == null && elapsed < timeout) {
+            try {
+                Thread.sleep(100);
+                elapsed += 100;
+            } catch (InterruptedException e) {
+                Log.e(TAG, "Interrupted while waiting for intention data", e);
+                break;
+            }
         }
         
-        Log.d(TAG, "Loaded intention - Text: " + !intentionText.isEmpty() + 
-                  ", Audio: " + !intentionAudioPath.isEmpty());
+        if (intentionData == null) {
+            Log.w(TAG, "⚠️ Timeout loading intention data - using default");
+            intentionData = new IntentionDatabase.IntentionData(
+                "default",
+                "I am focused and ready to accomplish my goals",
+                "",
+                "",
+                "text"
+            );
+        }
     }
     
     private void initializeViews() {
@@ -156,16 +193,20 @@ public class IntentionVoiceActivity extends Activity {
         startSessionButton = findViewById(R.id.startSessionButton);
         audioIndicator = findViewById(R.id.audioIndicator);
         
-        // Set intention text (or audio file name)
-        if (intentionAudioPath != null && !intentionAudioPath.isEmpty()) {
-            // Show audio file name
-            String displayText = intentionAudioName != null && !intentionAudioName.isEmpty() 
-                ? "🎵 " + intentionAudioName 
-                : "🎵 Playing audio...";
-            intentionTextView.setText(displayText);
+        // Set intention text or audio file name
+        if (intentionData != null) {
+            if (intentionData.isAudioType()) {
+                // Show audio file name
+                String displayText = intentionData.audioFileName != null && !intentionData.audioFileName.isEmpty() 
+                    ? "🎵 " + intentionData.audioFileName 
+                    : "🎵 Playing audio...";
+                intentionTextView.setText(displayText);
+            } else {
+                // Show text
+                intentionTextView.setText(intentionData.intentionText);
+            }
         } else {
-            // Show text
-            intentionTextView.setText(intentionText);
+            intentionTextView.setText("Preparing intention...");
         }
         
         // Update button text based on task type
@@ -193,7 +234,10 @@ public class IntentionVoiceActivity extends Activity {
         
         // Play intention after short delay
         new Handler().postDelayed(() -> {
-            ttsService.speakIntention(intentionText, intentionAudioPath, () -> {
+            String intentionText = IntentionDatabase.getIntentionText(intentionData);
+            String audioUrl = IntentionDatabase.getAudioFileUrl(intentionData);
+            
+            ttsService.speakIntention(intentionText, audioUrl, () -> {
                 runOnUiThread(() -> {
                     // Hide audio indicator
                     audioIndicator.setVisibility(View.GONE);

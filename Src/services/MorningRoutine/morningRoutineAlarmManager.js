@@ -1,135 +1,208 @@
-import {NativeModules, Platform} from 'react-native';
-import morningRoutineStorageService from './morningRoutineStorageService';
+// services/MorningRoutine/morningRoutineAlarmManager.js
+import {NativeModules} from 'react-native';
+import {morningRoutineService} from '../api/morningRoutineService';
+import {nightRoutineService} from '../api/nightRoutineService';
 
 const {MorningRoutineAlarmModule} = NativeModules;
 
 class MorningRoutineAlarmManager {
-  // Schedule morning routine alarm
+  /**
+   * Schedule morning routine alarm based on wake-up time from night routine
+   * Fetches commands from database
+   */
   async scheduleMorningRoutine(userId) {
     try {
-      if (Platform.OS !== 'android') {
-        console.warn('Morning routine alarms only supported on Android');
-        return {success: false, error: 'Platform not supported'};
+      console.log('=== SCHEDULING MORNING ROUTINE ===');
+      console.log('User ID:', userId);
+
+      if (!userId) {
+        throw new Error('User ID is required');
       }
 
-      if (!MorningRoutineAlarmModule) {
-        console.error('MorningRoutineAlarmModule not available');
-        return {success: false, error: 'Native module not available'};
+      // 1. Get wake-up time from night routine
+      const nightRoutine = await nightRoutineService.getFormattedNightRoutine(userId);
+
+      if (!nightRoutine || !nightRoutine.wakeUpTime) {
+        console.log('⚠️ No wake-up time found in night routine');
+        throw new Error('Please set your wake-up time in Night Routine first');
       }
 
-      // Get morning routine data
-      const routine = await morningRoutineStorageService.getMorningRoutine(userId);
-      
-      if (!routine) {
-        console.error('No morning routine found for user:', userId);
-        return {success: false, error: 'No morning routine found'};
+      const wakeUpTime = nightRoutine.wakeUpTime;
+      console.log('✅ Wake-up time:', this.formatTime(wakeUpTime));
+
+      // 2. Fetch voice commands from database
+      const commands = await morningRoutineService.getFormattedCommandsForNative();
+
+      if (!commands || commands.length === 0) {
+        console.log('⚠️ No voice commands found in database');
+        throw new Error('No voice commands configured. Please contact admin.');
       }
 
-      if (!routine.isEnabled) {
-        console.log('Morning routine is disabled');
-        return {success: false, error: 'Routine is disabled'};
-      }
+      console.log(`✅ Fetched ${commands.length} voice commands from database`);
 
-      // Parse wake-up time
-      const wakeUpDate = new Date(routine.wakeUpTime);
-      const hours = wakeUpDate.getHours().toString().padStart(2, '0');
-      const minutes = wakeUpDate.getMinutes().toString().padStart(2, '0');
-      const timeString = `${hours}:${minutes}`;
+      // 3. Format time for native module (HH:mm format)
+      const timeString = this.formatTimeForNative(wakeUpTime);
+      console.log('📅 Formatted time for alarm:', timeString);
 
-      console.log('Scheduling morning routine at:', timeString);
-      
-      const alarmData = {
+      // 4. Prepare routine data for native module
+      const routineData = {
         userId: userId,
-        name: routine.name,
+        name: 'Morning Routine',
         time: timeString,
-        commands: routine.commands,
-        isEnabled: routine.isEnabled,
+        commands: commands,
+        isEnabled: true,
       };
 
-      const result = await MorningRoutineAlarmModule.scheduleMorningRoutineAlarm(alarmData);
-      
+      console.log('📤 Sending routine data to native module:', {
+        userId: routineData.userId,
+        name: routineData.name,
+        time: routineData.time,
+        commandCount: routineData.commands.length,
+        isEnabled: routineData.isEnabled,
+      });
+
+      // 5. Schedule alarm via native module
+      if (!MorningRoutineAlarmModule) {
+        throw new Error('Morning Routine Alarm Module not available');
+      }
+
+      const result = await MorningRoutineAlarmModule.scheduleMorningRoutineAlarm(
+        routineData,
+      );
+
       console.log('✅ Morning routine alarm scheduled successfully');
-      return {success: true, data: result};
-      
+      console.log('Next trigger time:', result.nextTriggerTimeFormatted);
+      console.log('=== SCHEDULING COMPLETE ===');
+
+      return {
+        success: true,
+        nextTriggerTime: result.nextTriggerTime,
+        nextTriggerTimeFormatted: result.nextTriggerTimeFormatted,
+        commandCount: commands.length,
+      };
     } catch (error) {
-      console.error('Error scheduling morning routine:', error);
-      return {success: false, error: error.message};
+      console.error('❌ Error scheduling morning routine:', error);
+      throw error;
     }
   }
 
-  // Cancel morning routine alarm
+  /**
+   * Cancel morning routine alarm
+   */
   async cancelMorningRoutine(userId) {
     try {
-      if (Platform.OS !== 'android') {
-        return {success: false, error: 'Platform not supported'};
+      console.log('🚫 Cancelling morning routine alarm for user:', userId);
+
+      if (!userId) {
+        throw new Error('User ID is required');
       }
 
       if (!MorningRoutineAlarmModule) {
-        return {success: false, error: 'Native module not available'};
+        throw new Error('Morning Routine Alarm Module not available');
       }
 
-      console.log('Cancelling morning routine for user:', userId);
-      
       await MorningRoutineAlarmModule.cancelMorningRoutineAlarm(userId);
-      
-      console.log('✅ Morning routine alarm cancelled');
-      return {success: true};
-      
+
+      console.log('✅ Morning routine alarm cancelled successfully');
+
+      return {
+        success: true,
+        message: 'Morning routine alarm cancelled',
+      };
     } catch (error) {
-      console.error('Error cancelling morning routine:', error);
-      return {success: false, error: error.message};
+      console.error('❌ Error cancelling morning routine:', error);
+      throw error;
     }
   }
 
-  // Update and reschedule
-  async updateAndRescheduleMorningRoutine(userId) {
+  /**
+   * Update morning routine (cancel and reschedule)
+   */
+  async updateMorningRoutine(userId) {
     try {
+      console.log('🔄 Updating morning routine for user:', userId);
+
       // Cancel existing alarm
       await this.cancelMorningRoutine(userId);
-      
-      // Reschedule with new data
+
+      // Schedule new alarm
       const result = await this.scheduleMorningRoutine(userId);
-      
+
+      console.log('✅ Morning routine updated successfully');
+
       return result;
-      
     } catch (error) {
-      console.error('Error updating morning routine:', error);
-      return {success: false, error: error.message};
+      console.error('❌ Error updating morning routine:', error);
+      throw error;
     }
   }
 
-  // Toggle morning routine on/off
-  async toggleMorningRoutine(userId, isEnabled) {
+  /**
+   * Check if morning routine is scheduled
+   */
+  async isRoutineScheduled(userId) {
     try {
-      // Update storage
-      await morningRoutineStorageService.toggleEnabled(userId, isEnabled);
-      
-      if (isEnabled) {
-        // Schedule alarm
-        return await this.scheduleMorningRoutine(userId);
-      } else {
-        // Cancel alarm
-        return await this.cancelMorningRoutine(userId);
-      }
-      
+      // Check if commands exist in database
+      const isEnabled = await morningRoutineService.isRoutineEnabled();
+
+      // Check if wake-up time is set
+      const nightRoutine = await nightRoutineService.getFormattedNightRoutine(userId);
+      const hasWakeUpTime = nightRoutine && nightRoutine.wakeUpTime;
+
+      const isScheduled = isEnabled && hasWakeUpTime;
+
+      console.log('🔍 Routine scheduled:', isScheduled);
+      return isScheduled;
     } catch (error) {
-      console.error('Error toggling morning routine:', error);
-      return {success: false, error: error.message};
+      console.error('❌ Error checking routine status:', error);
+      return false;
     }
   }
 
-  // Format time for display
-  formatTime(timeString) {
+  /**
+   * Get morning routine status
+   */
+  async getRoutineStatus(userId) {
     try {
-      const [hours, minutes] = timeString.split(':');
-      const hour = parseInt(hours, 10);
-      const ampm = hour >= 12 ? 'PM' : 'AM';
-      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-      
-      return `${displayHour}:${minutes} ${ampm}`;
+      const summary = await morningRoutineService.getRoutineSummary();
+      const nightRoutine = await nightRoutineService.getFormattedNightRoutine(userId);
+      const isScheduled = await this.isRoutineScheduled(userId);
+
+      return {
+        isScheduled: isScheduled,
+        commandCount: summary.commandCount,
+        totalDuration: summary.totalDuration,
+        wakeUpTime: nightRoutine?.wakeUpTime || null,
+        wakeUpTimeFormatted: nightRoutine?.wakeUpTime
+          ? this.formatTime(nightRoutine.wakeUpTime)
+          : null,
+      };
     } catch (error) {
-      return timeString;
+      console.error('❌ Error getting routine status:', error);
+      return {
+        isScheduled: false,
+        commandCount: 0,
+        totalDuration: 0,
+        wakeUpTime: null,
+        wakeUpTimeFormatted: null,
+      };
     }
+  }
+
+  // Helper methods
+  formatTime(date) {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+    return `${formattedHours}:${formattedMinutes} ${ampm}`;
+  }
+
+  formatTimeForNative(date) {
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
   }
 }
 

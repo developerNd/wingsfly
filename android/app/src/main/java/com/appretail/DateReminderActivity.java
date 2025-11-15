@@ -2,11 +2,9 @@ package com.wingsfly;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
@@ -18,6 +16,8 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
@@ -27,9 +27,6 @@ public class DateReminderActivity extends Activity {
 
     private static final String TAG = "DateReminderActivity";
     private static final String PREFS_NAME = "DateReminderPrefs";
-    private static final String KEY_MORNING_IMAGE_URI = "morning_image_uri";
-    private static final String KEY_EVENING_IMAGE_URI = "evening_image_uri";
-    private static final String KEY_AUTO_CLOSE = "auto_close";
     
     private PowerManager.WakeLock wakeLock;
     private TextView dateTextView;
@@ -57,9 +54,8 @@ public class DateReminderActivity extends Activity {
         closeButton = findViewById(R.id.closeButton);
         customImageView = findViewById(R.id.customImage);
         
-        // Get reminder type from intent (passed by receiver)
-        Intent intent = getIntent();
-        boolean isMorning = intent.getBooleanExtra("isMorning", true);
+        // Get reminder type from intent
+        boolean isMorning = getIntent().getBooleanExtra("isMorning", true);
         
         Log.d(TAG, "Activity started - Reminder type: " + (isMorning ? "MORNING" : "EVENING"));
         
@@ -75,7 +71,7 @@ public class DateReminderActivity extends Activity {
         
         // Auto-dismiss after 30 seconds if enabled
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        boolean autoClose = prefs.getBoolean(KEY_AUTO_CLOSE, false);
+        boolean autoClose = prefs.getBoolean("auto_close", false);
         
         if (autoClose) {
             dateTextView.postDelayed(this::closeReminder, 30000);
@@ -88,13 +84,11 @@ public class DateReminderActivity extends Activity {
     private void setupFullScreen() {
         Window window = getWindow();
         
-        // For Android 8.1 and above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
         }
         
-        // Set window flags
         window.addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
@@ -104,12 +98,10 @@ public class DateReminderActivity extends Activity {
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
         );
         
-        // Black status bar
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             window.setStatusBarColor(0xFF000000);
         }
         
-        // Hide system UI for true fullscreen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             window.getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -140,44 +132,49 @@ public class DateReminderActivity extends Activity {
     }
     
     private void loadCustomImage(boolean isMorning) {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            String imageKey = isMorning ? KEY_MORNING_IMAGE_URI : KEY_EVENING_IMAGE_URI;
-            String imageUriString = prefs.getString(imageKey, "");
-            
-            Log.d(TAG, "Loading " + (isMorning ? "MORNING" : "EVENING") + " image");
-            Log.d(TAG, "Image URI: " + imageUriString);
-            
-            if (imageUriString != null && !imageUriString.isEmpty()) {
-                Uri imageUri = Uri.parse(imageUriString);
+        new Thread(() -> {
+            try {
+                SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                String imageKey = isMorning ? "morning_image_uri" : "evening_image_uri";
+                String imageUrl = prefs.getString(imageKey, "");
                 
-                // Load image from URI
-                InputStream inputStream = getContentResolver().openInputStream(imageUri);
-                if (inputStream != null) {
+                Log.d(TAG, "Loading " + (isMorning ? "MORNING" : "EVENING") + " image");
+                Log.d(TAG, "Image URL: " + imageUrl);
+                
+                if (imageUrl != null && !imageUrl.isEmpty()) {
+                    // Download image from URL
+                    URL url = new URL(imageUrl);
+                    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                    connection.setDoInput(true);
+                    connection.connect();
+                    
+                    InputStream inputStream = connection.getInputStream();
                     Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
-                    customImageView.setImageBitmap(bitmap);
-                    customImageView.setVisibility(View.VISIBLE);
                     inputStream.close();
                     
+                    // Update UI on main thread
+                    runOnUiThread(() -> {
+                        customImageView.setImageBitmap(bitmap);
+                        customImageView.setVisibility(View.VISIBLE);
+                    });
+                    
                     Log.d(TAG, "✅ " + (isMorning ? "Morning" : "Evening") + " image loaded successfully");
+                } else {
+                    runOnUiThread(() -> customImageView.setVisibility(View.GONE));
+                    Log.d(TAG, "⚠️ No " + (isMorning ? "morning" : "evening") + " image URL");
                 }
-            } else {
-                customImageView.setVisibility(View.GONE);
-                Log.d(TAG, "⚠️ No " + (isMorning ? "morning" : "evening") + " image set");
+            } catch (Exception e) {
+                Log.e(TAG, "❌ Error loading custom image", e);
+                runOnUiThread(() -> customImageView.setVisibility(View.GONE));
             }
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Error loading custom image", e);
-            customImageView.setVisibility(View.GONE);
-        }
+        }).start();
     }
     
     private void updateDate() {
-        // Format: "17 Oct 2025"
         SimpleDateFormat dateFormat = new SimpleDateFormat("d MMM yyyy", Locale.getDefault());
         String formattedDate = dateFormat.format(new Date());
         dateTextView.setText(formattedDate);
         
-        // Format: "FRIDAY" - uppercase
         SimpleDateFormat dayFormat = new SimpleDateFormat("EEEE", Locale.getDefault());
         String dayOfWeek = dayFormat.format(new Date());
         dayOfWeekTextView.setText(dayOfWeek.toUpperCase());
@@ -190,7 +187,6 @@ public class DateReminderActivity extends Activity {
             int maxDaysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH);
             int remainingDays = maxDaysInMonth - currentDay;
             
-            // Get month name
             SimpleDateFormat monthFormat = new SimpleDateFormat("MMMM", Locale.getDefault());
             String monthName = monthFormat.format(calendar.getTime());
             
@@ -235,7 +231,6 @@ public class DateReminderActivity extends Activity {
     
     @Override
     public void onBackPressed() {
-        // Allow back button to close
         closeReminder();
     }
     
@@ -243,7 +238,6 @@ public class DateReminderActivity extends Activity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-            // Re-hide system UI if it comes back
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 getWindow().getDecorView().setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE

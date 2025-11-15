@@ -49,9 +49,6 @@ const PlanScreen = () => {
   const evaluationType = route.params?.evaluationType || null;
   const checklistData = route.params?.checklistData || null;
 
-  // NEW: Check if coming from Night Mode flow
-  const fromNightMode = route.params?.fromNightMode || false;
-
   // Helper function to get category icon
   const getCategoryIcon = categoryName => {
     if (!categoryName) return Icons.Work;
@@ -104,7 +101,11 @@ const PlanScreen = () => {
   const [toastType, setToastType] = useState('error');
 
   // Date picker states
-  const [startDate, setStartDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  });
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
 
   const isTimerEvaluation = evaluationType === 'timer';
@@ -288,7 +289,6 @@ const PlanScreen = () => {
         checklistData,
         screenType: 'PlanScreen',
         currentStep: currentStep, // Pass current step so we can return to it
-        fromNightMode: fromNightMode, // Pass along Night Mode flag
         scheduleData: {
           startDate: startDate.toISOString(),
           blockTimeData,
@@ -328,7 +328,7 @@ const PlanScreen = () => {
     }
   };
 
-  // VALIDATION AND NAVIGATION LOGIC - UPDATED
+  // VALIDATION AND NAVIGATION LOGIC
   const validateCurrentStep = () => {
     if (toastVisible) {
       hideToast();
@@ -399,10 +399,9 @@ const PlanScreen = () => {
     }
   };
 
-  // SAVE TASK LOGIC - UPDATED for Night Mode flow
+  // SAVE TASK LOGIC - REMOVED ALL MUSIC STOPPING CODE
   const handleSaveTask = async () => {
-    console.log('💾 PlanScreen: handleSaveTask called');
-    console.log('💾 PlanScreen: fromNightMode:', fromNightMode);
+    console.log('📝 PlanScreen: handleSaveTask called');
 
     if (!user) {
       Alert.alert('Error', 'Please log in to create Plan Your Day.');
@@ -478,7 +477,7 @@ const PlanScreen = () => {
       }
 
       const newPlan = await planYourDayService.createPlanYourDay(planData);
-      console.log('✅ PlanScreen: Plan created successfully:', newPlan);
+      console.log('✅ PlanScreen: Plan created successfully:', newPlan.id);
 
       if (blockTimeData && blockTimeData.startTime && startDate) {
         try {
@@ -496,12 +495,12 @@ const PlanScreen = () => {
 
           if (confirmationResult.success) {
             console.log(
-              'Task confirmation alarm scheduled:',
+              '✅ Task confirmation alarm scheduled:',
               confirmationResult.data,
             );
           }
         } catch (confirmError) {
-          console.error('Error scheduling task confirmation:', confirmError);
+          console.error('❌ Error scheduling task confirmation:', confirmError);
         }
       }
 
@@ -528,66 +527,37 @@ const PlanScreen = () => {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
           }
         } catch (reminderError) {
-          console.error(
-            '❌ PlanScreen: Error scheduling reminders:',
-            reminderError,
-          );
+          console.error('❌ Error scheduling reminders:', reminderError);
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      const taskType = isChecklistEvaluation ? 'checklist' : 'task';
+      const fromNightMode = route.params?.fromNightMode;
+      const audioInfo = route.params?.audioInfo;
+      const sessionData = route.params?.sessionData;
 
-      // UPDATED: Different navigation based on Night Mode flow
-      if (fromNightMode) {
-        console.log(
-          '🌙 PlanScreen: Coming from Night Mode - navigating back to Night Mode',
-        );
-        Alert.alert(
-          'Success',
-          `Plan Your Day ${taskType} created successfully!${reminderMessage}`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Navigate back to Night Mode with task created flag
-                navigation.navigate('YouTubeVideosScreen', {
-                  taskCreated: true,
-                  refresh: true,
-                });
-              },
+      const taskType = isChecklistEvaluation ? 'checklist' : 'task';
+      Alert.alert(
+        'Success',
+        `Plan Your Day ${taskType} created successfully!${reminderMessage}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate back to PlanYourDayScreen with taskCreated flag
+              navigation.navigate('PlanYourDayScreen', {
+                taskCreated: true,
+                newPlanCreated: true,
+                fromPlanCreation: true,
+                refresh: true,
+                fromNightMode: fromNightMode,
+                audioInfo: audioInfo,
+                sessionData: sessionData,
+              });
             },
-          ],
-        );
-      } else {
-        console.log(
-          '📱 PlanScreen: Regular flow - navigating to PlanYourDayScreen',
-        );
-        Alert.alert(
-          'Success',
-          `Plan Your Day ${taskType} created successfully!${reminderMessage}`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                navigation.reset({
-                  index: 0,
-                  routes: [
-                    {
-                      name: 'PlanYourDayScreen',
-                      params: {
-                        newPlanCreated: true,
-                        fromPlanCreation: true,
-                        refresh: true,
-                      },
-                    },
-                  ],
-                });
-              },
-            },
-          ],
-        );
-      }
+          },
+        ],
+      );
     } catch (error) {
       console.error('❌ PlanScreen: Error creating Plan Your Day:', error);
       Alert.alert('Error', 'Failed to create plan. Please try again.');
@@ -607,6 +577,14 @@ const PlanScreen = () => {
 
     if (isToday) {
       return 'Today';
+    }
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = date.toDateString() === tomorrow.toDateString();
+
+    if (isTomorrow) {
+      return 'Tomorrow';
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -790,7 +768,7 @@ const PlanScreen = () => {
     );
   };
 
-  // RENDER STEP CONTENT - NEW
+  // RENDER STEP CONTENT
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
@@ -1170,7 +1148,7 @@ const PlanScreen = () => {
     }
   };
 
-  // RENDER PROGRESS INDICATOR - NEW
+  // RENDER PROGRESS INDICATOR
   const renderProgressIndicator = () => {
     const dots = [];
     for (let i = 1; i <= TOTAL_STEPS; i++) {

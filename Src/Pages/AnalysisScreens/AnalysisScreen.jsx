@@ -23,7 +23,7 @@ import {HP, WP, FS} from '../../utils/dimentions';
 import {taskCompletionsService} from '../../services/api/taskCompletionsService';
 import {taskService} from '../../services/api/taskService';
 import {planYourDayService} from '../../services/api/planYourDayService';
-import {challengeService} from '../../services/api/challengeService';
+import {lockChallengeService} from '../../services/api/lockChallengeService';
 import {useAuth} from '../../contexts/AuthContext';
 import {shouldTaskAppearOnDate} from '../../utils/taskDateHelper';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -285,15 +285,13 @@ const TaskAnalyticsScreen = () => {
       return true;
     }
     
-    // FIXED: Check for timer progress - handle both direct timer_value and nested structure
-    // Direct timer_value (for simple timer tasks)
+    // Check for timer progress - handle both direct timer_value and nested structure
     if (completion.timer_value !== null && completion.timer_value !== undefined && completion.timer_value > 0) {
       return true;
     }
     
-    // ADDED: Check nested timer_value structure (for timer tracker/pomodoro tasks)
+    // Check nested timer_value structure
     if (completion.timer_value && typeof completion.timer_value === 'object') {
-      // Check if there's any completed time in the nested structure
       if (completion.timer_value.totalSeconds > 0 || 
           completion.timer_value.currentTime > 0 ||
           completion.timer_value.completedPomodoros > 0 ||
@@ -357,12 +355,6 @@ const TaskAnalyticsScreen = () => {
           const planStartDate = new Date(plan.start_date).toISOString().split('T')[0];
           const planEndDate = plan.end_date ? new Date(plan.end_date).toISOString().split('T')[0] : planStartDate;
           return date >= planStartDate && date <= planEndDate;
-        });
-      } else if (type === 'challenges') {
-        itemsForDay = items.filter(challenge => {
-          const challengeStartDate = new Date(challenge.start_date).toISOString().split('T')[0];
-          const challengeEndDate = new Date(challenge.end_date).toISOString().split('T')[0];
-          return date >= challengeStartDate && date <= challengeEndDate;
         });
       }
       
@@ -570,13 +562,13 @@ const TaskAnalyticsScreen = () => {
     };
   };
 
-  const processChallengeAnalytics = async (challenges, dateRange) => {
+  const processLockChallengeAnalytics = async (lockChallenges, dateRange) => {
     let totalChallenges = 0;
     let completedChallenges = 0;
     let inProgressChallenges = 0;
     let pendingChallenges = 0;
 
-    for (const challenge of challenges) {
+    for (const challenge of lockChallenges) {
       const challengeStartDate = new Date(challenge.start_date).toISOString().split('T')[0];
       const challengeEndDate = new Date(challenge.end_date).toISOString().split('T')[0];
       
@@ -586,9 +578,9 @@ const TaskAnalyticsScreen = () => {
 
       totalChallenges++;
 
-      const completedDays = await challengeService.getCompletedDays(challenge.id, user.id);
+      const completedDays = await lockChallengeService.getCompletedDays(challenge.id, user.id);
       const completedDaysCount = Object.keys(completedDays).length;
-      const totalDays = challenge.number_of_days;
+      const totalDays = challenge.duration_days;
 
       if (completedDaysCount === 0) {
         pendingChallenges++;
@@ -603,7 +595,7 @@ const TaskAnalyticsScreen = () => {
     const inProgressRate = totalChallenges > 0 ? Math.round((inProgressChallenges / totalChallenges) * 100) : 0;
     const pendingRate = totalChallenges > 0 ? Math.round((pendingChallenges / totalChallenges) * 100) : 0;
 
-    const streakData = await calculateChallengeStreaks(challenges, dateRange);
+    const streakData = await calculateLockChallengeStreaks(lockChallenges, dateRange);
 
     const dailyGoalsRate = completionRate;
     const weeklyTargetsRate = completionRate;
@@ -623,11 +615,11 @@ const TaskAnalyticsScreen = () => {
     };
   };
 
-  const calculateChallengeStreaks = async (challenges, dateRange) => {
+  const calculateLockChallengeStreaks = async (lockChallenges, dateRange) => {
     const dailyCompletions = [];
 
     for (const date of dateRange) {
-      const activeChallenges = challenges.filter(challenge => {
+      const activeChallenges = lockChallenges.filter(challenge => {
         const challengeStartDate = new Date(challenge.start_date).toISOString().split('T')[0];
         const challengeEndDate = new Date(challenge.end_date).toISOString().split('T')[0];
         return date >= challengeStartDate && date <= challengeEndDate;
@@ -641,13 +633,13 @@ const TaskAnalyticsScreen = () => {
       let allChallengesCompleted = true;
 
       for (const challenge of activeChallenges) {
-        const completedDays = await challengeService.getCompletedDays(challenge.id, user.id);
+        const completedDays = await lockChallengeService.getCompletedDays(challenge.id, user.id);
         
         const challengeStart = new Date(challenge.start_date);
         const currentDate = new Date(date);
         const daysDiff = Math.floor((currentDate - challengeStart) / (1000 * 60 * 60 * 24)) + 1;
 
-        if (daysDiff > 0 && daysDiff <= challenge.number_of_days) {
+        if (daysDiff > 0 && daysDiff <= challenge.duration_days) {
           if (!completedDays[daysDiff]) {
             allChallengesCompleted = false;
             break;
@@ -717,8 +709,8 @@ const TaskAnalyticsScreen = () => {
         const analytics = processPlanYourDayAnalytics(completions, plans, dateRange);
         setAnalyticsData(analytics);
       } else if (analyticsType === 'challenges') {
-        const challenges = await challengeService.getChallenges(user.id);
-        const analytics = await processChallengeAnalytics(challenges, dateRange);
+        const lockChallenges = await lockChallengeService.getLockChallenges(user.id);
+        const analytics = await processLockChallengeAnalytics(lockChallenges, dateRange);
         setAnalyticsData(analytics);
       }
 
@@ -790,7 +782,7 @@ const TaskAnalyticsScreen = () => {
       case 'plans':
         return 'Monitor your daily planning performance';
       case 'challenges':
-        return 'View your challenge progress overview';
+        return 'View your challenge progress';
       default:
         return 'Track your productivity insights';
     }

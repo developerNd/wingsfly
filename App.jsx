@@ -1,6 +1,6 @@
 import React, {useEffect, useState, useRef} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
-import {AppState, DeviceEventEmitter, Alert} from 'react-native';
+import {AppState, DeviceEventEmitter, Alert, NativeModules,} from 'react-native';
 import { supabase } from './supabase';
 import {AuthProvider, useAuth} from './Src/contexts/AuthContext';
 import {SessionProvider, useSession} from './Src/contexts/SessionContext';
@@ -23,6 +23,7 @@ import SleepTrackerModal from './Src/Components/SleepTrackerModal';
 import {sleepTrackerService} from './Src/services/api/SleepTrackerService';
 import NightModeScheduler from './Src/services/NightModeScheduler';
 import usageLimitVideoService from './Src/services/usageLimitVideoService';
+import PermissionManager from './Src/Components/PermissionManager';
 
 // Music Manager Component
 const MusicManager = () => {
@@ -1029,6 +1030,94 @@ const NightModeSchedulerManager = ({navigationRef}) => {
   return null;
 };
 
+/**
+ * Date Reminder Sync Manager - Syncs settings from database on app open
+ * Uses native module directly - doesn't depend on user context
+ */
+const DateReminderSyncManager = () => {
+  const hasInitialized = useRef(false);
+  const lastSyncTime = useRef(0);
+  const SYNC_COOLDOWN = 30000; // 30 seconds cooldown
+
+  // Helper function to perform sync
+  const performSync = async (context = 'unknown') => {
+    try {
+      console.log(`[DATE REMINDER SYNC] ${context}: Starting sync...`);
+      
+      const {DateReminderModule} = NativeModules;
+      
+      // The native module will check internally if reminders are enabled
+      const synced = await DateReminderModule.syncSettings();
+      
+      if (synced) {
+        console.log(`[DATE REMINDER SYNC] ${context}: ✅ Settings synced successfully`);
+        console.log(`[DATE REMINDER SYNC] ${context}: Updated times and images from database`);
+      } else {
+        console.log(`[DATE REMINDER SYNC] ${context}: ℹ️ No sync needed (disabled or no changes)`);
+      }
+      
+      lastSyncTime.current = Date.now();
+      return true;
+    } catch (error) {
+      console.error(`[DATE REMINDER SYNC] ${context}: ❌ Error syncing:`, error);
+      return false;
+    }
+  };
+
+  // Initial sync when component mounts
+  useEffect(() => {
+    const syncOnMount = async () => {
+      if (hasInitialized.current) {
+        console.log('[DATE REMINDER SYNC] Initial: Already synced');
+        return;
+      }
+
+      console.log('[DATE REMINDER SYNC] ========================================');
+      console.log('[DATE REMINDER SYNC] Initial: App opened - checking for updates');
+
+      await performSync('Initial');
+      hasInitialized.current = true;
+
+      console.log('[DATE REMINDER SYNC] ========================================');
+    };
+
+    // Delay to ensure app is fully loaded
+    const timer = setTimeout(syncOnMount, 3000);
+    return () => clearTimeout(timer);
+  }, []); // Run once on mount
+
+  // Sync when app comes from background
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('[DATE REMINDER SYNC] Foreground: App became active');
+        
+        // Check cooldown
+        const timeSinceLastSync = Date.now() - lastSyncTime.current;
+        if (timeSinceLastSync < SYNC_COOLDOWN) {
+          console.log(`[DATE REMINDER SYNC] Foreground: Cooldown active (${Math.floor(timeSinceLastSync / 1000)}s ago)`);
+          return;
+        }
+        
+        // Wait for app to settle
+        setTimeout(async () => {
+          console.log('[DATE REMINDER SYNC] Foreground: ========================================');
+          console.log('[DATE REMINDER SYNC] Foreground: Checking for updates');
+
+          await performSync('Foreground');
+
+          console.log('[DATE REMINDER SYNC] Foreground: ========================================');
+        }, 1500);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, []); // No dependencies - always use same handler
+
+  return null;
+};
+
 // Main App Content
 const AppContent = () => {
   const {user} = useAuth();
@@ -1193,6 +1282,7 @@ const AppContent = () => {
         console.log('[NAVIGATION] NavigationContainer is ready');
       }}>
       <SessionProvider>
+        <PermissionManager />
         <MusicManager />
         <IntentionBroadcastListener navigationRef={navigationRef} />
         <EditScreenListener navigationRef={navigationRef} />
@@ -1204,6 +1294,7 @@ const AppContent = () => {
         <UsageLimitVideoSyncManager />
         <SessionTrackingManager />
         <NightModeSchedulerManager navigationRef={navigationRef} />
+        <DateReminderSyncManager />
       </SessionProvider>
     </NavigationContainer>
   );

@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, useCallback} from 'react';
 import {
   Text,
   View,
@@ -14,17 +14,18 @@ import Headers from '../../Components/Headers';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import getBackMediaStorageService from '../../services/GetBack/getBackMediaStorageService';
+import getBackMediaSupabaseService from '../../services/GetBack/getBackMediaSupabaseService';
 
 const GetBackScreen = ({navigation}) => {
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [hasMedia, setHasMedia] = useState(false);
   const [hasConfirmation, setHasConfirmation] = useState(false);
   const [mediaCount, setMediaCount] = useState({total: 0, videoCount: 0, audioCount: 0});
+  const [loadingMedia, setLoadingMedia] = useState(true);
   const sliderWidth = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
 
-  const MIN_DURATION = 5;
+  const MIN_DURATION = 1;
   const MAX_DURATION = 1440;
   const THUMB_SIZE = WP(12);
 
@@ -39,31 +40,44 @@ const GetBackScreen = ({navigation}) => {
     return unsubscribe;
   }, [navigation]);
 
-  const checkMediaStatus = async () => {
+  // ✅ NEW: Fetch media from Supabase instead of AsyncStorage
+  const checkMediaStatus = useCallback(async () => {
     try {
-      const [hasConfiguredMedia, hasConfirmationVideo, count] = await Promise.all([
-        getBackMediaStorageService.hasGetBackMedia(),
-        getBackMediaStorageService.hasConfirmationVideo(),
-        getBackMediaStorageService.getMediaCount(),
+      setLoadingMedia(true);
+      console.log('📥 Fetching Get Back media from Supabase...');
+      
+      const [confirmationResult, mediaResult] = await Promise.all([
+        getBackMediaSupabaseService.fetchConfirmationVideo(),
+        getBackMediaSupabaseService.fetchGetBackMedia(),
       ]);
       
-      setHasMedia(hasConfiguredMedia);
-      setHasConfirmation(hasConfirmationVideo);
-      setMediaCount(count);
+      console.log('✅ Confirmation result:', confirmationResult);
+      console.log('✅ Media result:', mediaResult);
+      
+      setHasConfirmation(confirmationResult.hasConfirmation);
+      setHasMedia(mediaResult.hasMedia);
+      setMediaCount({
+        total: mediaResult.files.length,
+        videoCount: mediaResult.videoCount,
+        audioCount: mediaResult.audioCount
+      });
+      
     } catch (error) {
-      console.error('Error checking media status:', error);
+      console.error('❌ Error checking media status:', error);
+      setHasMedia(false);
+      setHasConfirmation(false);
+      setMediaCount({total: 0, videoCount: 0, audioCount: 0});
+    } finally {
+      setLoadingMedia(false);
     }
-  };
+  }, []);
 
   const handleStartGetBack = async () => {
     if (!hasConfirmation) {
       Alert.alert(
         'Confirmation Video Required',
-        'Please set up a confirmation video first in media settings.',
-        [
-          {text: 'Cancel', style: 'cancel'},
-          {text: 'Go to Settings', onPress: () => navigation.navigate('GetBackMediaSettingsScreen')}
-        ]
+        'Please ask admin to set up a confirmation video first in the dashboard.',
+        [{text: 'OK'}]
       );
       return;
     }
@@ -71,11 +85,8 @@ const GetBackScreen = ({navigation}) => {
     if (!hasMedia) {
       Alert.alert(
         'Media Required',
-        'Please add at least one audio or video file in media settings.',
-        [
-          {text: 'Cancel', style: 'cancel'},
-          {text: 'Go to Settings', onPress: () => navigation.navigate('GetBackMediaSettingsScreen')}
-        ]
+        'Please ask admin to add at least one audio or video file in the dashboard.',
+        [{text: 'OK'}]
       );
       return;
     }
@@ -123,9 +134,17 @@ const GetBackScreen = ({navigation}) => {
     const logValue = logMin + (logMax - logMin) * normalizedValue;
     const minutes = Math.round(Math.exp(logValue));
     
+    // For very small values (1-10 minutes), allow 1-minute increments
+    if (minutes <= 10) {
+      return Math.max(1, minutes);
+    }
+    
+    // For 11-60 minutes, use 5-minute increments
     if (minutes < 60) {
       return Math.round(minutes / 5) * 5;
     }
+    
+    // For 60+ minutes, use 15-minute increments
     return Math.round(minutes / 15) * 15;
   };
 
@@ -241,7 +260,7 @@ const GetBackScreen = ({navigation}) => {
 
           {/* Time Range Labels */}
           <View style={styles.rangeLabels}>
-            <Text style={styles.rangeLabel}>5 min</Text>
+            <Text style={styles.rangeLabel}>1 min</Text>
             <Text style={styles.rangeLabel}>24 hours</Text>
           </View>
 
@@ -249,59 +268,83 @@ const GetBackScreen = ({navigation}) => {
           <View style={styles.statusContainer}>
             <View style={styles.statusItem}>
               <Icon 
-                name={hasConfirmation ? 'check-circle' : 'cancel'} 
+                name={
+                  loadingMedia ? 'hourglass-empty' :
+                  hasConfirmation ? 'check-circle' : 'cancel'
+                } 
                 size={WP(5)} 
-                color={hasConfirmation ? '#4CAF50' : '#FF5252'} 
+                color={
+                  loadingMedia ? '#999' :
+                  hasConfirmation ? '#4CAF50' : '#FF5252'
+                } 
               />
               <Text style={[
                 styles.statusText,
                 hasConfirmation && styles.statusTextActive
               ]}>
-                Confirmation Video
+                {loadingMedia ? 'Checking...' : 'Confirmation Video'}
               </Text>
             </View>
 
             <View style={styles.statusItem}>
               <Icon 
-                name={hasMedia ? 'check-circle' : 'cancel'} 
+                name={
+                  loadingMedia ? 'hourglass-empty' :
+                  hasMedia ? 'check-circle' : 'cancel'
+                } 
                 size={WP(5)} 
-                color={hasMedia ? '#4CAF50' : '#FF5252'} 
+                color={
+                  loadingMedia ? '#999' :
+                  hasMedia ? '#4CAF50' : '#FF5252'
+                } 
               />
               <Text style={[
                 styles.statusText,
                 hasMedia && styles.statusTextActive
               ]}>
-                Media Files ({mediaCount.total})
+                {loadingMedia ? 'Checking...' : `Media Files (${mediaCount.total})`}
               </Text>
             </View>
           </View>
 
-          {/* Media Settings Button */}
-          <TouchableOpacity
-            style={styles.mediaSettingsButton}
-            onPress={() => navigation.navigate('GetBackSettingsScreen')}
-            activeOpacity={0.7}>
+          {/* Media Info Display - ✅ UPDATED */}
+          <View style={styles.mediaInfoContainer}>
             <View style={styles.mediaSettingsContent}>
               <View style={styles.mediaSettingsLeft}>
                 <Icon 
-                  name="video-library" 
+                  name={
+                    loadingMedia ? 'hourglass-empty' :
+                    hasMedia && hasConfirmation ? 'cloud-done' : 'cloud-off'
+                  } 
                   size={WP(6)} 
-                  color={hasMedia && hasConfirmation ? '#4CAF50' : colors.Primary} 
+                  color={
+                    loadingMedia ? '#999' :
+                    hasMedia && hasConfirmation ? '#4CAF50' : colors.Primary
+                  } 
                 />
                 <View style={styles.mediaSettingsTextContainer}>
                   <Text style={styles.mediaSettingsTitle}>
-                    {hasMedia && hasConfirmation ? 'Media Configured' : 'Configure Media'}
+                    {loadingMedia ? 'Loading media...' :
+                     hasMedia && hasConfirmation ? 'Media Configured' : 'No media available'}
                   </Text>
                   <Text style={styles.mediaSettingsSubtitle}>
-                    {hasMedia && hasConfirmation 
+                    {loadingMedia ? 'Checking Supabase...' :
+                     hasMedia && hasConfirmation 
                       ? `${mediaCount.videoCount} videos, ${mediaCount.audioCount} audio + confirmation`
-                      : 'Set up confirmation video and media files'}
+                      : 'Admin can upload from dashboard'}
                   </Text>
                 </View>
               </View>
-              <Icon name="chevron-right" size={WP(6)} color="#999" />
+              {!loadingMedia && (
+                <TouchableOpacity 
+                  onPress={checkMediaStatus}
+                  style={styles.refreshButton}
+                >
+                  <Icon name="refresh" size={WP(5)} color="#999" />
+                </TouchableOpacity>
+              )}
             </View>
-          </TouchableOpacity>
+          </View>
         </View>
 
         {/* Focus Image Section */}
@@ -355,12 +398,15 @@ const GetBackScreen = ({navigation}) => {
         <TouchableOpacity
           style={[
             styles.startButton,
-            (!hasMedia || !hasConfirmation) && styles.startButtonDisabled
+            (loadingMedia || !hasMedia || !hasConfirmation) && styles.startButtonDisabled
           ]}
           onPress={handleStartGetBack}
+          disabled={loadingMedia || !hasMedia || !hasConfirmation}
           activeOpacity={0.8}>
           <Icon name="play-arrow" size={WP(6)} color={colors.White} />
-          <Text style={styles.startButtonText}>Start Get Back</Text>
+          <Text style={styles.startButtonText}>
+            {loadingMedia ? 'Loading...' : 'Start Get Back'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -520,7 +566,7 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontFamily: 'OpenSans-SemiBold',
   },
-  mediaSettingsButton: {
+  mediaInfoContainer: {
     backgroundColor: '#F5F5F5',
     borderRadius: WP(3),
     padding: WP(4),
@@ -552,6 +598,9 @@ const styles = StyleSheet.create({
     fontSize: FS(1.3),
     fontFamily: 'OpenSans-Regular',
     color: '#999',
+  },
+  refreshButton: {
+    padding: WP(2),
   },
   focusSection: {
     marginTop: HP(3),

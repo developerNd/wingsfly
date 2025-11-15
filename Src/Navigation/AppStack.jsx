@@ -73,22 +73,17 @@ import AlarmScreen from '../Pages/SettingsScreens/AlarmScreen';
 import CreateAlarmScreen from '../Pages/SettingsScreens/CreateAlarmScreen';
 import VoiceCommandListScreen from '../Pages/SettingsScreens/VoiceCommandListScreen';
 import CreateVoiceCommandScreen from '../Pages/SettingsScreens/CreateVoiceCommandScreen';
-import IntentionSettingsScreen from '../Pages/SettingsScreens/IntentionSettingsScreen';
-import AppreciationSettingsScreen from '../Pages/SettingsScreens/AppreciationSettingsScreen';
 import DigitalDetoxScreen from '../Pages/SettingsScreens/DigitalDetoxScreen';
 import GetBackScreen from '../Pages/SettingsScreens/GetBackScreen';
-import GetBackSettingsScreen from '../Pages/SettingsScreens/GetBackSettingsScreen';
 import GetBackConfirmationScreen from '../Pages/SettingsScreens/GetBackConfirmationScreen';
 import DateReminderSettingsScreen from '../Pages/SettingsScreens/DateReminderSettingsScreen';
 import YouTubeVideosScreen from '../Pages/SettingsScreens/YouTubeVideosScreen';
 import YouTubeIntegrationScreen from '../Pages/SettingsScreens/YouTubeIntegrationScreen';
 import NightRoutineScreen from '../Pages/SettingsScreens/NightRoutineScreen';
-import MorningRoutineScreen from '../Pages/SettingsScreens/Morningroutinescreen';
 import FullScreenAudioPlay from '../Pages/SettingsScreens/FullScreenAudioPlay';
 import FullScreenVideoPlayer from '../Pages/SettingsScreens/FullScreenVideoPlayer';
 import MorningVideosScreen from '../Pages/SettingsScreens/MorningVideosScreen';
 import LeaderboardScreen from '../Pages/SettingsScreens/LeaderboardScreen';
-import AudioFilesScreen from '../Pages/SettingsScreens/AudioFilesScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -496,22 +491,6 @@ function AppStack({route}) {
           )}
         </Stack.Screen>
 
-        <Stack.Screen name="IntentionSettingsScreen">
-          {props => (
-            <ScreenWithNotes>
-              <IntentionSettingsScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
-        <Stack.Screen name="AppreciationSettingsScreen">
-          {props => (
-            <ScreenWithNotes>
-              <AppreciationSettingsScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
         <Stack.Screen name="DigitalDetoxScreen">
           {props => (
             <ScreenWithNotes>
@@ -524,14 +503,6 @@ function AppStack({route}) {
           {props => (
             <ScreenWithNotes>
               <GetBackScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
-        <Stack.Screen name="GetBackSettingsScreen">
-          {props => (
-            <ScreenWithNotes>
-              <GetBackSettingsScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
@@ -564,14 +535,6 @@ function AppStack({route}) {
           {props => (
             <ScreenWithNotes>
               <YouTubeIntegrationScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
-        <Stack.Screen name="MorningRoutineScreen">
-          {props => (
-            <ScreenWithNotes>
-              <MorningRoutineScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>
@@ -612,14 +575,6 @@ function AppStack({route}) {
           {props => (
             <ScreenWithNotes>
               <LeaderboardScreen {...props} />
-            </ScreenWithNotes>
-          )}
-        </Stack.Screen>
-
-        <Stack.Screen name="AudioFilesScreen">
-          {props => (
-            <ScreenWithNotes>
-              <AudioFilesScreen {...props} />
             </ScreenWithNotes>
           )}
         </Stack.Screen>

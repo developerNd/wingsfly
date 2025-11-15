@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
+
+    <!-- Time Display -->
+    <TextView
+        android:id="@+id/currentTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="80dp"
+        android:text="00:00"
+        android:textColor="#000000"
+        android:textSize="72sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif-light" />
+
+    <!-- Date Display -->
+    <TextView
+        android:id="@+id/currentDate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/currentTime"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="8dp"
+        android:text="Monday, 1 January"
+        android:textColor="#666666"
+        android:textSize="18sp"
+        android:fontFamily="sans-serif" />
+
+    <!-- Routine Name -->
+    <TextView
+        android:id="@+id/routineName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/currentDate"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="32dp"
+        android:text="Morning Routine"
+        android:textColor="#FFA726"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif" />
+
+    <!-- Message Text -->
+    <TextView
+        android:id="@+id/messageText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/routineName"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="16dp"
+        android:layout_marginLeft="32dp"
+        android:layout_marginRight="32dp"
+        android:text="Good morning! Time to start your day"
+        android:textColor="#333333"
+        android:textSize="18sp"
+        android:textAlignment="center"
+        android:fontFamily="sans-serif" />
+
+    <!-- Buttons Container -->
+    <LinearLayout
+        android:id="@+id/buttonsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="80dp"
+        android:layout_marginLeft="32dp"
+        android:layout_marginRight="32dp"
+        android:orientation="vertical">
+
+        <!-- Proceed Button -->
+        <Button
+            android:id="@+id/proceedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/button_proceed"
+            android:text="Proceed"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="20dp"
+            android:fontFamily="sans-serif" />
+
+        <!-- Snooze Button -->
+        <Button
+            android:id="@+id/snoozeButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/button_snooze"
+            android:text="Snooze (5 min)"
+            android:textColor="#666666"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:paddingTop="18dp"
+            android:paddingBottom="18dp"
+            android:fontFamily="sans-serif" />
+
+    </LinearLayout>
+
+    <!-- Sun Icon -->
+    <ImageView
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:layout_above="@id/buttonsContainer"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="32dp"
+        android:src="@android:drawable/ic_btn_speak_now"
+        android:tint="#FFA726" />
+
+</RelativeLayout>

@@ -8,10 +8,10 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-  TextInput,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import Headers from '../../Components/Headers';
 import {colors} from '../../Helper/Contants';
 import {HP, WP, FS} from '../../utils/dimentions';
@@ -19,18 +19,20 @@ import CustomToast from '../../Components/CustomToast';
 import {useAuth} from '../../contexts/AuthContext';
 import {nightRoutineService} from '../../services/api/nightRoutineService';
 import NightModeScheduler from '../../services/NightModeScheduler';
+import morningRoutineAlarmManager from '../../services/MorningRoutine/morningRoutineAlarmManager';
 
 const NightRoutineScreen = ({navigation}) => {
   const {user} = useAuth();
 
   // Time states
-  const [wakeUpTime, setWakeUpTime] = useState(new Date());
   const [bedTime, setBedTime] = useState(new Date());
+  const [wakeUpTime, setWakeUpTime] = useState(new Date());
+  const [showBedTimePicker, setShowBedTimePicker] = useState(false);
   const [showWakeUpPicker, setShowWakeUpPicker] = useState(false);
 
-  // Sleep duration in hours (as input by user)
-  const [sleepHours, setSleepHours] = useState('8');
-  const [sleepMinutes, setSleepMinutes] = useState('0');
+  // Sleep duration (calculated automatically)
+  const [sleepHours, setSleepHours] = useState(0);
+  const [sleepMinutes, setSleepMinutes] = useState(0);
 
   // Loading states
   const [isLoading, setIsLoading] = useState(true);
@@ -46,10 +48,10 @@ const NightRoutineScreen = ({navigation}) => {
     loadNightRoutine();
   }, []);
 
-  // Calculate bedtime whenever wake-up time or sleep duration changes
+  // Calculate sleep duration whenever bedtime or wake-up time changes
   useEffect(() => {
-    calculateBedTime();
-  }, [wakeUpTime, sleepHours, sleepMinutes]);
+    calculateSleepDuration();
+  }, [bedTime, wakeUpTime]);
 
   const loadNightRoutine = async () => {
     try {
@@ -59,24 +61,19 @@ const NightRoutineScreen = ({navigation}) => {
       );
 
       if (routine) {
+        setBedTime(routine.bedTime);
         setWakeUpTime(routine.wakeUpTime);
-
-        // Calculate sleep duration from existing routine
-        const duration = calculateSleepDurationFromTimes(
-          routine.wakeUpTime,
-          routine.bedTime,
-        );
-        setSleepHours(duration.hours.toString());
-        setSleepMinutes(duration.minutes.toString());
-
         console.log('✅ Loaded existing night routine');
       } else {
         // Set default times if no routine exists
+        const defaultBedTime = new Date();
+        defaultBedTime.setHours(22, 0, 0, 0); // 10:00 PM
+
         const defaultWakeUp = new Date();
-        defaultWakeUp.setHours(7, 0, 0, 0);
+        defaultWakeUp.setHours(7, 0, 0, 0); // 7:00 AM
+
+        setBedTime(defaultBedTime);
         setWakeUpTime(defaultWakeUp);
-        setSleepHours('8');
-        setSleepMinutes('0');
 
         console.log('ℹ️ No existing routine, using defaults');
       }
@@ -88,11 +85,13 @@ const NightRoutineScreen = ({navigation}) => {
     }
   };
 
-  const calculateSleepDurationFromTimes = (wakeUp, bed) => {
-    let wakeUpMinutes = wakeUp.getHours() * 60 + wakeUp.getMinutes();
-    let bedTimeMinutes = bed.getHours() * 60 + bed.getMinutes();
+  const calculateSleepDuration = () => {
+    // Calculate sleep duration in minutes
+    let wakeUpMinutes = wakeUpTime.getHours() * 60 + wakeUpTime.getMinutes();
+    let bedTimeMinutes = bedTime.getHours() * 60 + bedTime.getMinutes();
 
-    if (wakeUpMinutes < bedTimeMinutes) {
+    // If wake-up time is earlier in the day than bedtime, add 24 hours
+    if (wakeUpMinutes <= bedTimeMinutes) {
       wakeUpMinutes += 24 * 60;
     }
 
@@ -100,21 +99,8 @@ const NightRoutineScreen = ({navigation}) => {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
 
-    return {hours, minutes};
-  };
-
-  const calculateBedTime = () => {
-    const hours = parseInt(sleepHours) || 0;
-    const minutes = parseInt(sleepMinutes) || 0;
-
-    // Create a new date object based on wake-up time
-    const calculatedBedTime = new Date(wakeUpTime);
-
-    // Subtract sleep duration from wake-up time
-    calculatedBedTime.setHours(calculatedBedTime.getHours() - hours);
-    calculatedBedTime.setMinutes(calculatedBedTime.getMinutes() - minutes);
-
-    setBedTime(calculatedBedTime);
+    setSleepHours(hours);
+    setSleepMinutes(minutes);
   };
 
   const showToast = (message, type = 'success') => {
@@ -128,9 +114,7 @@ const NightRoutineScreen = ({navigation}) => {
   };
 
   const getTotalSleepMinutes = () => {
-    const hours = parseInt(sleepHours) || 0;
-    const minutes = parseInt(sleepMinutes) || 0;
-    return hours * 60 + minutes;
+    return sleepHours * 60 + sleepMinutes;
   };
 
   const formatTime = date => {
@@ -142,32 +126,17 @@ const NightRoutineScreen = ({navigation}) => {
     return `${formattedHours}:${formattedMinutes} ${ampm}`;
   };
 
+  const onBedTimeChange = (event, selectedDate) => {
+    setShowBedTimePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setBedTime(selectedDate);
+    }
+  };
+
   const onWakeUpTimeChange = (event, selectedDate) => {
     setShowWakeUpPicker(Platform.OS === 'ios');
     if (selectedDate) {
       setWakeUpTime(selectedDate);
-    }
-  };
-
-  const handleSleepHoursChange = text => {
-    // Only allow numbers
-    const numericValue = text.replace(/[^0-9]/g, '');
-    if (
-      numericValue === '' ||
-      (parseInt(numericValue) >= 0 && parseInt(numericValue) <= 23)
-    ) {
-      setSleepHours(numericValue);
-    }
-  };
-
-  const handleSleepMinutesChange = text => {
-    // Only allow numbers
-    const numericValue = text.replace(/[^0-9]/g, '');
-    if (
-      numericValue === '' ||
-      (parseInt(numericValue) >= 0 && parseInt(numericValue) <= 59)
-    ) {
-      setSleepMinutes(numericValue);
     }
   };
 
@@ -201,17 +170,32 @@ const NightRoutineScreen = ({navigation}) => {
       };
 
       console.log('=== SAVING NIGHT ROUTINE ===');
+      console.log('Bed Time:', formatTime(bedTime));
       console.log('Wake-up Time:', formatTime(wakeUpTime));
-      console.log('Bed Time (Calculated):', formatTime(bedTime));
-      console.log('Sleep Duration:', `${sleepHours}h ${sleepMinutes}m`);
+      console.log(
+        'Sleep Duration (Calculated):',
+        `${sleepHours}h ${sleepMinutes}m`,
+      );
 
+      // 1. Save night routine
       await nightRoutineService.saveNightRoutine(routineData);
 
-      // Update the Night Mode Scheduler
+      // 2. Update the Night Mode Scheduler
       console.log('🌙 Updating Night Mode Scheduler...');
       await NightModeScheduler.updateNightRoutine(user?.id);
 
-      showToast('Night routine saved successfully!', 'success');
+      // 3. ✅ NEW: Schedule Morning Routine Alarm based on wake-up time
+      console.log('🌅 Scheduling Morning Routine Alarm...');
+      try {
+        await morningRoutineAlarmManager.scheduleMorningRoutine(user?.id);
+        console.log('✅ Morning routine alarm scheduled successfully');
+      } catch (morningError) {
+        console.warn('⚠️ Morning routine scheduling failed:', morningError.message);
+        // Don't fail the whole save if morning routine fails
+        // User can still use night mode
+      }
+
+      showToast('Routines saved successfully!', 'success');
 
       // Navigate back after a short delay
       setTimeout(() => {
@@ -257,17 +241,42 @@ const NightRoutineScreen = ({navigation}) => {
         <View style={styles.content}>
           {/* Info Card */}
           <View style={styles.infoCard}>
-            <MaterialIcons
-              name="nightlight-round"
-              size={WP(8)}
-              color={colors.Primary}
-            />
+            <Ionicons name="moon" size={WP(8)} color={colors.Primary} />
             <Text style={styles.infoTitle}>Set Your Sleep Schedule</Text>
             <Text style={styles.infoDescription}>
-              Set your wake-up time and desired sleep duration. We'll calculate
-              your ideal bedtime automatically.
+              Set your bedtime and wake-up time. We'll automatically schedule your morning routine.
             </Text>
           </View>
+
+          {/* Bedtime Card */}
+          <TouchableOpacity
+            style={styles.timeCard}
+            onPress={() => setShowBedTimePicker(true)}
+            activeOpacity={0.7}
+            disabled={isSaving}>
+            <View style={styles.timeCardContent}>
+              <View style={styles.timeCardLeft}>
+                <View
+                  style={[styles.iconContainer, {backgroundColor: '#5C6BC0'}]}>
+                  <MaterialIcons
+                    name="bedtime"
+                    size={WP(6)}
+                    color={colors.White}
+                  />
+                </View>
+                <Text style={styles.timeCardTitle}>Bedtime</Text>
+              </View>
+              <View style={styles.timeCardRight}>
+                <Text style={styles.timeText}>{formatTime(bedTime)}</Text>
+                <MaterialIcons
+                  name="keyboard-arrow-right"
+                  size={WP(6)}
+                  color={colors.Shadow}
+                  style={styles.arrowIcon}
+                />
+              </View>
+            </View>
+          </TouchableOpacity>
 
           {/* Wake-up Time Card */}
           <TouchableOpacity
@@ -299,8 +308,8 @@ const NightRoutineScreen = ({navigation}) => {
             </View>
           </TouchableOpacity>
 
-          {/* Sleep Duration Input Card */}
-          <View style={styles.durationInputCard}>
+          {/* Calculated Sleep Duration Display */}
+          <View style={styles.durationDisplayCard}>
             <View style={styles.durationHeader}>
               <MaterialIcons
                 name="access-time"
@@ -310,31 +319,17 @@ const NightRoutineScreen = ({navigation}) => {
               <Text style={styles.durationTitle}>Sleep Duration</Text>
             </View>
 
-            <View style={styles.durationInputContent}>
-              <View style={styles.inputBox}>
-                <TextInput
-                  style={styles.durationInput}
-                  value={sleepHours}
-                  onChangeText={handleSleepHoursChange}
-                  keyboardType="numeric"
-                  maxLength={2}
-                  editable={!isSaving}
-                />
-                <Text style={styles.inputLabel}>Hours</Text>
+            <View style={styles.durationDisplay}>
+              <View style={styles.durationBox}>
+                <Text style={styles.durationValue}>{sleepHours}</Text>
+                <Text style={styles.durationLabel}>Hours</Text>
               </View>
 
-              <Text style={styles.inputSeparator}>:</Text>
+              <Text style={styles.durationSeparator}>:</Text>
 
-              <View style={styles.inputBox}>
-                <TextInput
-                  style={styles.durationInput}
-                  value={sleepMinutes}
-                  onChangeText={handleSleepMinutesChange}
-                  keyboardType="numeric"
-                  maxLength={2}
-                  editable={!isSaving}
-                />
-                <Text style={styles.inputLabel}>Minutes</Text>
+              <View style={styles.durationBox}>
+                <Text style={styles.durationValue}>{sleepMinutes}</Text>
+                <Text style={styles.durationLabel}>Minutes</Text>
               </View>
             </View>
 
@@ -349,28 +344,6 @@ const NightRoutineScreen = ({navigation}) => {
                 <Text style={[styles.qualityText, {color: sleepQuality.color}]}>
                   {sleepQuality.message}
                 </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Calculated Bedtime Display */}
-          <View style={styles.bedtimeCard}>
-            <View style={styles.bedtimeContent}>
-              <View style={styles.bedtimeLeft}>
-                <View
-                  style={[styles.iconContainer, {backgroundColor: '#5C6BC0'}]}>
-                  <MaterialIcons
-                    name="bedtime"
-                    size={WP(6)}
-                    color={colors.White}
-                  />
-                </View>
-                <View style={styles.bedtimeTextContainer}>
-                  <Text style={styles.bedtimeLabel}>Bedtime</Text>
-                </View>
-              </View>
-              <View style={styles.bedtimeRight}>
-                <Text style={styles.bedtimeValue}>{formatTime(bedTime)}</Text>
               </View>
             </View>
           </View>
@@ -390,30 +363,36 @@ const NightRoutineScreen = ({navigation}) => {
                   size={WP(5)}
                   color={colors.White}
                 />
-                <Text style={styles.saveButtonText}>Save Night Routine</Text>
+                <Text style={styles.saveButtonText}>Save Routine</Text>
               </>
             )}
           </TouchableOpacity>
 
           {/* Tips Section */}
           <View style={styles.tipsSection}>
-            <Text style={styles.tipsTitle}>💡 Sleep Tips</Text>
+            <Text style={styles.tipsTitle}>💡 What Happens Next</Text>
+            <View style={styles.tipItem}>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>
+                Night Mode will start at your bedtime
+              </Text>
+            </View>
+            <View style={styles.tipItem}>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>
+                Morning routine alarm will trigger at wake-up time
+              </Text>
+            </View>
+            <View style={styles.tipItem}>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>
+                Voice commands are managed by admin
+              </Text>
+            </View>
             <View style={styles.tipItem}>
               <Text style={styles.tipBullet}>•</Text>
               <Text style={styles.tipText}>
                 Aim for 7-9 hours of sleep per night
-              </Text>
-            </View>
-            <View style={styles.tipItem}>
-              <Text style={styles.tipBullet}>•</Text>
-              <Text style={styles.tipText}>
-                Keep consistent sleep and wake times
-              </Text>
-            </View>
-            <View style={styles.tipItem}>
-              <Text style={styles.tipBullet}>•</Text>
-              <Text style={styles.tipText}>
-                Avoid screens 30 minutes before bedtime
               </Text>
             </View>
           </View>
@@ -422,6 +401,17 @@ const NightRoutineScreen = ({navigation}) => {
         {/* Bottom Spacing */}
         <View style={{height: HP(4)}} />
       </ScrollView>
+
+      {/* Bedtime Picker */}
+      {showBedTimePicker && (
+        <DateTimePicker
+          value={bedTime}
+          mode="time"
+          is24Hour={false}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onBedTimeChange}
+        />
+      )}
 
       {/* Wake-up Time Picker */}
       {showWakeUpPicker && (
@@ -548,11 +538,11 @@ const styles = StyleSheet.create({
   arrowIcon: {
     opacity: 0.6,
   },
-  durationInputCard: {
+  durationDisplayCard: {
     backgroundColor: colors.White,
     borderRadius: WP(3),
     padding: WP(4),
-    marginBottom: HP(2),
+    marginBottom: HP(3),
     elevation: 3,
     shadowColor: colors.Shadow,
     shadowOffset: {
@@ -572,43 +562,39 @@ const styles = StyleSheet.create({
     fontFamily: 'OpenSans-SemiBold',
     color: colors.Black,
     marginLeft: WP(2),
+    flex: 1,
   },
-  durationInputContent: {
+  durationDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: HP(2),
+    backgroundColor: '#F8F9FF',
+    borderRadius: WP(2),
   },
-  inputBox: {
+  durationBox: {
     alignItems: 'center',
     minWidth: WP(25),
   },
-  durationInput: {
+  durationValue: {
     fontSize: FS(4),
     fontFamily: 'OpenSans-Bold',
     color: colors.Primary,
-    borderBottomWidth: 2,
-    borderBottomColor: colors.Primary,
-    paddingHorizontal: WP(4),
-    paddingVertical: HP(0.5),
-    minWidth: WP(20),
-    textAlign: 'center',
   },
-  inputLabel: {
+  durationLabel: {
     fontSize: FS(1.3),
     fontFamily: 'OpenSans-Medium',
     color: colors.Shadow,
     marginTop: HP(0.5),
   },
-  inputSeparator: {
+  durationSeparator: {
     fontSize: FS(4),
     fontFamily: 'OpenSans-Bold',
     color: colors.Primary,
     marginHorizontal: WP(2),
-    marginBottom: HP(2),
   },
   qualityIndicator: {
-    marginTop: HP(1),
+    marginTop: HP(1.5),
     paddingTop: HP(2),
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
@@ -622,62 +608,6 @@ const styles = StyleSheet.create({
     fontSize: FS(1.4),
     fontFamily: 'OpenSans-Medium',
     marginLeft: WP(2),
-  },
-  bedtimeCard: {
-    backgroundColor: colors.White,
-    borderRadius: WP(3),
-    padding: WP(4),
-    marginBottom: HP(3),
-    elevation: 3,
-    shadowColor: colors.Shadow,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  bedtimeContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  bedtimeLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  bedtimeTextContainer: {
-    marginLeft: WP(3),
-  },
-  bedtimeLabel: {
-    fontSize: FS(1.7),
-    fontFamily: 'OpenSans-SemiBold',
-    color: colors.Black,
-    marginBottom: HP(0.4),
-  },
-  autoCalcBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3E5F5',
-    paddingVertical: HP(0.3),
-    paddingHorizontal: WP(2),
-    borderRadius: WP(1.5),
-    alignSelf: 'flex-start',
-  },
-  autoCalcText: {
-    fontSize: FS(1.1),
-    fontFamily: 'OpenSans-Medium',
-    color: '#9C27B0',
-    marginLeft: WP(1),
-  },
-  bedtimeRight: {
-    alignItems: 'flex-end',
-  },
-  bedtimeValue: {
-    fontSize: FS(1.8),
-    fontFamily: 'OpenSans-Bold',
-    color: colors.Primary,
   },
   saveButton: {
     backgroundColor: colors.Primary,
