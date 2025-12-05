@@ -299,11 +299,334 @@ private fun sendNightModeEventWithRetry(
     }, delayMs)
 }
 
+/**
+ * ✅ NEW: Handle Block Time intent from BlockTimeLockActivity
+ */
+private fun handleBlockTimeIntent(intent: Intent?) {
+    val androidVersion = Build.VERSION.SDK_INT
+    val androidRelease = Build.VERSION.RELEASE
+    val deviceManufacturer = Build.MANUFACTURER
+    val deviceModel = Build.MODEL
+    val deviceBrand = Build.BRAND
+    
+    Log.e(TAG, "")
+    Log.e(TAG, "⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰")
+    Log.e(TAG, "⏰ MAINACTIVITY - handleBlockTimeIntent CALLED")
+    Log.e(TAG, "⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰")
+    Log.e(TAG, "")
+    Log.e(TAG, "📱 DEVICE INFO:")
+    Log.e(TAG, "   Manufacturer: $deviceManufacturer")
+    Log.e(TAG, "   Brand: $deviceBrand")
+    Log.e(TAG, "   Model: $deviceModel")
+    Log.e(TAG, "   Android Version: $androidRelease (API $androidVersion)")
+    Log.e(TAG, "")
+    Log.e(TAG, "📦 INTENT INFO:")
+    Log.e(TAG, "   Intent is null: ${intent == null}")
+    
+    if (intent != null) {
+        Log.e(TAG, "   Intent action: ${intent.action}")
+        Log.e(TAG, "   Has extras: ${intent.extras != null}")
+        
+        if (intent.extras != null) {
+            Log.e(TAG, "   All extras:")
+            for (key in intent.extras!!.keySet()) {
+                Log.e(TAG, "      - $key = ${intent.extras!!.get(key)}")
+            }
+        }
+    }
+    Log.e(TAG, "")
+    
+    if (intent?.action == "TRIGGER_BLOCK_TIME") {
+        Log.e(TAG, "✅ Action matches TRIGGER_BLOCK_TIME")
+        
+        val triggerBlockTime = intent.getBooleanExtra("trigger_block_time", true)
+        val fromAlarm = intent.getBooleanExtra("from_alarm", false)
+        val appWasKilled = intent.getBooleanExtra("app_was_killed", false)
+        val fromLockScreen = intent.getBooleanExtra("from_lock_screen", false)
+        
+        Log.e(TAG, "")
+        Log.e(TAG, "🎯 TRIGGER FLAGS:")
+        Log.e(TAG, "   trigger_block_time: $triggerBlockTime")
+        Log.e(TAG, "   from_alarm: $fromAlarm")
+        Log.e(TAG, "   app_was_killed: $appWasKilled")
+        Log.e(TAG, "   from_lock_screen: $fromLockScreen")
+        Log.e(TAG, "")
+        
+        if (triggerBlockTime) {
+            Log.e(TAG, "✅ triggerBlockTime is TRUE - Processing...")
+            
+            // Extract task data
+            val taskId = intent.getStringExtra("task_id") ?: ""
+            val taskTitle = intent.getStringExtra("task_title") ?: "Block Time Task"
+            val taskDescription = intent.getStringExtra("task_description") ?: ""
+            val evaluationType = intent.getStringExtra("evaluation_type") ?: "timer"
+            val startTime = intent.getStringExtra("start_time") ?: ""
+            val category = intent.getStringExtra("category") ?: ""
+            val source = intent.getStringExtra("source") ?: "tasks"
+            val taskDataJson = intent.getStringExtra("task_data") ?: "{}"
+
+            Log.e(TAG, "")
+            Log.e(TAG, "📋 TASK INFO:")
+            Log.e(TAG, "   Task ID: $taskId")
+            Log.e(TAG, "   Title: $taskTitle")
+            Log.e(TAG, "   Type: $evaluationType")
+            Log.e(TAG, "   Start Time: $startTime")
+            Log.e(TAG, "   Source: $source")
+            Log.e(TAG, "")
+
+            // Store trigger data in SharedPreferences
+            Log.e(TAG, "💾 Storing to SharedPreferences...")
+            val blockTimePrefs = getSharedPreferences("BlockTimeTrigger", Context.MODE_PRIVATE)
+            val editor = blockTimePrefs.edit()
+            editor.putBoolean("should_trigger", true)
+            editor.putBoolean("from_alarm", fromAlarm)
+            editor.putBoolean("app_was_killed", appWasKilled)
+            editor.putBoolean("from_lock_screen", fromLockScreen)
+            editor.putString("task_id", taskId)
+            editor.putString("task_title", taskTitle)
+            editor.putString("task_description", taskDescription)
+            editor.putString("evaluation_type", evaluationType)
+            editor.putString("start_time", startTime)
+            editor.putString("category", category)
+            editor.putString("source", source)
+            editor.putString("task_data", taskDataJson)
+            editor.putLong("trigger_time", System.currentTimeMillis())
+            val saved = editor.commit()
+            
+            Log.e(TAG, "💾 SharedPreferences save result: $saved")
+            Log.e(TAG, "")
+
+            // Verify it was saved
+            Log.e(TAG, "✅ Verifying saved data...")
+            val shouldTrigger = blockTimePrefs.getBoolean("should_trigger", false)
+            val savedTaskId = blockTimePrefs.getString("task_id", "")
+            val savedEvalType = blockTimePrefs.getString("evaluation_type", "")
+            Log.e(TAG, "   should_trigger: $shouldTrigger")
+            Log.e(TAG, "   task_id: $savedTaskId")
+            Log.e(TAG, "   evaluation_type: $savedEvalType")
+            Log.e(TAG, "")
+
+            // Send event to React Native with retry logic
+            Log.e(TAG, "📡 Attempting to send event to React Native...")
+            sendBlockTimeEventWithRetry(
+                taskId, taskTitle, taskDescription, evaluationType,
+                startTime, category, source, taskDataJson,
+                fromAlarm, fromLockScreen, appWasKilled, 0
+            )
+            
+        } else {
+            Log.e(TAG, "⚠️ triggerBlockTime is FALSE - Skipping processing")
+        }
+    } else {
+        Log.e(TAG, "⚠️ Action does NOT match TRIGGER_BLOCK_TIME")
+        Log.e(TAG, "   Expected: TRIGGER_BLOCK_TIME")
+        Log.e(TAG, "   Got: ${intent?.action}")
+    }
+    
+    Log.e(TAG, "")
+    Log.e(TAG, "⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰⏰")
+    Log.e(TAG, "")
+}
+
+/**
+ * ✅ ENHANCED: Send Block Time event with retry logic and complete task data logging
+ */
+private fun sendBlockTimeEventWithRetry(
+    taskId: String,
+    taskTitle: String,
+    taskDescription: String,
+    evaluationType: String,
+    startTime: String,
+    category: String,
+    source: String,
+    taskDataJson: String,
+    fromAlarm: Boolean,
+    fromLockScreen: Boolean,
+    appWasKilled: Boolean,
+    attempt: Int
+) {
+    val maxAttempts = 5
+    val delayMs = when(attempt) {
+        0 -> 500L
+        1 -> 1000L
+        2 -> 2000L
+        3 -> 3000L
+        else -> 5000L
+    }
+
+    Log.e(TAG, "⏳ Scheduling Block Time event send attempt ${attempt + 1}/$maxAttempts in ${delayMs}ms")
+
+    Handler(Looper.getMainLooper()).postDelayed({
+        try {
+            Log.e(TAG, "")
+            Log.e(TAG, "📡 BLOCK TIME EVENT SEND ATTEMPT ${attempt + 1}/$maxAttempts")
+            Log.e(TAG, "")
+            
+            val reactContext = reactInstanceManager?.currentReactContext
+            
+            Log.e(TAG, "   reactInstanceManager: ${reactInstanceManager != null}")
+            Log.e(TAG, "   reactContext: ${reactContext != null}")
+            
+            if (reactContext != null) {
+                Log.e(TAG, "   ✅ React Native context is READY!")
+                
+                // ✅ CRITICAL: Log complete task data JSON for debugging
+                Log.e(TAG, "")
+                Log.e(TAG, "📦 COMPLETE TASK DATA JSON:")
+                Log.e(TAG, "   Length: ${taskDataJson.length} characters")
+                Log.e(TAG, "   Content preview (first 500 chars):")
+                Log.e(TAG, "   ${taskDataJson.take(500)}")
+                
+                // ✅ NEW: Try to parse and log Pomodoro settings from JSON
+                try {
+                    val jsonObject = org.json.JSONObject(taskDataJson)
+                    Log.e(TAG, "")
+                    Log.e(TAG, "⏰ POMODORO SETTINGS IN TASK DATA:")
+                    Log.e(TAG, "   focus_duration: ${jsonObject.optInt("focus_duration", -1)}")
+                    Log.e(TAG, "   short_break_duration: ${jsonObject.optInt("short_break_duration", -1)}")
+                    Log.e(TAG, "   long_break_duration: ${jsonObject.optInt("long_break_duration", -1)}")
+                    Log.e(TAG, "   focus_sessions_per_round: ${jsonObject.optInt("focus_sessions_per_round", -1)}")
+                    Log.e(TAG, "   auto_start_short_breaks: ${jsonObject.optBoolean("auto_start_short_breaks", false)}")
+                    Log.e(TAG, "   auto_start_focus_sessions: ${jsonObject.optBoolean("auto_start_focus_sessions", false)}")
+                    Log.e(TAG, "   pomodoro_duration: ${jsonObject.optInt("pomodoro_duration", -1)}")
+                    
+                    // Check if duration_data exists
+                    if (jsonObject.has("duration_data")) {
+                        val durationData = jsonObject.getJSONObject("duration_data")
+                        Log.e(TAG, "   duration_data.totalMinutes: ${durationData.optInt("totalMinutes", -1)}")
+                        Log.e(TAG, "   duration_data.hours: ${durationData.optInt("hours", -1)}")
+                        Log.e(TAG, "   duration_data.minutes: ${durationData.optInt("minutes", -1)}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "   ⚠️ Could not parse task data JSON: ${e.message}")
+                }
+                Log.e(TAG, "")
+                
+                val params = Arguments.createMap().apply {
+    putString("task_id", taskId)
+    putString("task_title", taskTitle)
+    putString("task_description", taskDescription)
+    putString("evaluation_type", evaluationType)
+    putString("start_time", startTime)
+    putString("category", category)
+    putString("source", source)
+    putString("task_data", taskDataJson)
+    putBoolean("from_alarm", fromAlarm)
+    putBoolean("from_lock_screen", fromLockScreen)
+    putBoolean("app_was_killed", appWasKilled)
+    putDouble("timestamp", System.currentTimeMillis().toDouble())
+    
+    // ✅ CRITICAL FIX: Extract Pomodoro settings from JSON and add to params
+    try {
+        val jsonObject = org.json.JSONObject(taskDataJson)
+        
+        // Extract Pomodoro settings
+        val focusDuration = jsonObject.optInt("focus_duration", -1)
+        val shortBreak = jsonObject.optInt("short_break_duration", -1)
+        val longBreak = jsonObject.optInt("long_break_duration", -1)
+        val sessionsPerRound = jsonObject.optInt("focus_sessions_per_round", -1)
+        val autoStartBreaks = jsonObject.optBoolean("auto_start_short_breaks", false)
+        val autoStartFocus = jsonObject.optBoolean("auto_start_focus_sessions", false)
+        val pomodoroDuration = jsonObject.optInt("pomodoro_duration", -1)
+        
+        Log.e(TAG, "⏰ Extracting Pomodoro settings to params:")
+        Log.e(TAG, "   focus_duration: $focusDuration")
+        Log.e(TAG, "   short_break: $shortBreak")
+        Log.e(TAG, "   long_break: $longBreak")
+        
+        // Add to params
+        if (focusDuration != -1) putInt("focus_duration", focusDuration)
+        if (shortBreak != -1) putInt("short_break_duration", shortBreak)
+        if (longBreak != -1) putInt("long_break_duration", longBreak)
+        if (sessionsPerRound != -1) putInt("focus_sessions_per_round", sessionsPerRound)
+        if (pomodoroDuration != -1) putInt("pomodoro_duration", pomodoroDuration)
+        putBoolean("auto_start_short_breaks", autoStartBreaks)
+        putBoolean("auto_start_focus_sessions", autoStartFocus)
+        
+        // Extract duration_data
+        if (jsonObject.has("duration_data")) {
+            val durationData = jsonObject.getJSONObject("duration_data")
+            val totalMinutes = durationData.optInt("totalMinutes", -1)
+            val hours = durationData.optInt("hours", -1)
+            val minutes = durationData.optInt("minutes", -1)
+            
+            if (totalMinutes != -1) putInt("duration_total_minutes", totalMinutes)
+            if (hours != -1) putInt("duration_hours", hours)
+            if (minutes != -1) putInt("duration_minutes", minutes)
+        }
+        
+        Log.e(TAG, "✅ Pomodoro settings added to params")
+    } catch (e: Exception) {
+        Log.e(TAG, "⚠️ Could not extract Pomodoro settings: ${e.message}")
+    }
+}
+
+                Log.e(TAG, "")
+                Log.e(TAG, "📤 Emitting TRIGGER_BLOCK_TIME event...")
+                Log.e(TAG, "   Event data:")
+                Log.e(TAG, "      task_id: $taskId")
+                Log.e(TAG, "      task_title: $taskTitle")
+                Log.e(TAG, "      evaluation_type: $evaluationType")
+                Log.e(TAG, "      source: $source")
+                Log.e(TAG, "      task_data length: ${taskDataJson.length} chars")
+
+                reactContext
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    ?.emit("TRIGGER_BLOCK_TIME", params)
+                
+                Log.e(TAG, "")
+                Log.e(TAG, "✅✅✅ BLOCK TIME EVENT SENT SUCCESSFULLY! ✅✅✅")
+                Log.e(TAG, "")
+                
+                // Clear the SharedPreferences flag after successful send
+                val blockTimePrefs = getSharedPreferences("BlockTimeTrigger", Context.MODE_PRIVATE)
+                blockTimePrefs.edit().putBoolean("should_trigger", false).commit()
+                
+                Log.e(TAG, "🧹 Cleared 'should_trigger' flag from SharedPreferences")
+                
+            } else if (attempt < maxAttempts - 1) {
+                Log.e(TAG, "   ⚠️ React Native context NOT ready yet")
+                Log.e(TAG, "   🔄 Will retry (attempt ${attempt + 2}/$maxAttempts)...")
+                sendBlockTimeEventWithRetry(
+                    taskId, taskTitle, taskDescription, evaluationType,
+                    startTime, category, source, taskDataJson,
+                    fromAlarm, fromLockScreen, appWasKilled, attempt + 1
+                )
+            } else {
+                Log.e(TAG, "")
+                Log.e(TAG, "❌❌❌ FAILED: React Native context not ready after $maxAttempts attempts!")
+                Log.e(TAG, "")
+                Log.e(TAG, "💾 Block Time data is saved in SharedPreferences")
+                Log.e(TAG, "   It will be checked when React Native becomes ready")
+                Log.e(TAG, "")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "")
+            Log.e(TAG, "❌ ERROR in Block Time event send attempt ${attempt + 1}: ${e.message}")
+            Log.e(TAG, "")
+            e.printStackTrace()
+            
+            if (attempt < maxAttempts - 1) {
+                Log.e(TAG, "🔄 Will retry due to error (attempt ${attempt + 2}/$maxAttempts)...")
+                sendBlockTimeEventWithRetry(
+                    taskId, taskTitle, taskDescription, evaluationType,
+                    startTime, category, source, taskDataJson,
+                    fromAlarm, fromLockScreen, appWasKilled, attempt + 1
+                )
+            } else {
+                Log.e(TAG, "")
+                Log.e(TAG, "❌❌❌ FAILED: All retry attempts exhausted!")
+                Log.e(TAG, "")
+            }
+        }
+    }, delayMs)
+}
+
     override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
     Log.d(TAG, "========================================")
-    Log.d(TAG, "MainActivity onCreate - FIXED VERSION")
+    Log.d(TAG, "MainActivity onCreate - UPDATED VERSION")
     Log.d(TAG, "========================================")
     
     prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -316,15 +639,17 @@ private fun sendNightModeEventWithRetry(
     }
 
     handleNightModeIntent(intent)
+
+    handleBlockTimeIntent(intent)
     
     val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
     val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
     val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
     val detoxUnlockedExtra = intent?.getBooleanExtra("detox_unlocked", false) ?: false
     
-    // ✅ CRITICAL: Check persistent unlock state
+    // ✅ CRITICAL FIX: Check persistent unlock state with Long.MAX_VALUE support
     val unlockedUntil = prefs.getLong(KEY_APP_UNLOCKED_UNTIL, 0)
-    val isPersisentlyUnlocked = unlockedUntil > System.currentTimeMillis()
+    val isPersisentlyUnlocked = unlockedUntil == Long.MAX_VALUE || unlockedUntil > System.currentTimeMillis()
     
     Log.d(TAG, "🔍 Detox Status on Create:")
     Log.d(TAG, "  - Detox active (prefs): $detoxActive")
@@ -372,10 +697,35 @@ private fun sendNightModeEventWithRetry(
         setIntent(intent)
 
         handleNightModeIntent(intent)
+
+        handleBlockTimeIntent(intent)
         
         Log.d(TAG, "========================================")
         Log.d(TAG, "MainActivity onNewIntent")
         Log.d(TAG, "========================================")
+
+        // ✅ ADD THIS: Handle floating button tap to open notes
+    if (intent?.getBooleanExtra("openNotes", false) == true) {
+        Log.d(TAG, "📝 Opening notes from floating button")
+        
+        // Send event to React Native to open notes
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                val reactContext = reactInstanceManager?.currentReactContext
+                
+                if (reactContext != null) {
+                    reactContext
+                        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                        ?.emit("openNotesFromFloating", null)
+                    Log.d(TAG, "✅ Notes open event sent")
+                } else {
+                    Log.e(TAG, "❌ React context not available")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error sending notes event: ${e.message}")
+            }
+        }, 300)
+    }
         
         val detoxActive = prefs.getBoolean(KEY_DETOX_ACTIVE, false)
         val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
@@ -423,9 +773,9 @@ private fun sendNightModeEventWithRetry(
     val detoxEndTime = prefs.getLong(KEY_DETOX_END_TIME, 0)
     val hasTimeRemaining = detoxEndTime > System.currentTimeMillis()
     
-    // ✅ CRITICAL: Check persistent unlock state
+    // ✅ CRITICAL FIX: Check persistent unlock state with Long.MAX_VALUE support
     val unlockedUntil = prefs.getLong(KEY_APP_UNLOCKED_UNTIL, 0)
-    val isPersisentlyUnlocked = unlockedUntil > System.currentTimeMillis()
+    val isPersisentlyUnlocked = unlockedUntil == Long.MAX_VALUE || unlockedUntil > System.currentTimeMillis()
     
     Log.d(TAG, "   Persistent unlock until: $unlockedUntil")
     Log.d(TAG, "   Is persistently unlocked: $isPersisentlyUnlocked")

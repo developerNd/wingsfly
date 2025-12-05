@@ -48,6 +48,9 @@ class MainApplication : Application(), ReactApplication {
               add(YouTubeNightModePackage())
               add(NightModeSchedulerPackage())
               add(MorningRoutineAlarmModulePackage())
+              add(FloatingButtonPackage())
+              add(FCMPackage())
+              add(BlockTimeSchedulerPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

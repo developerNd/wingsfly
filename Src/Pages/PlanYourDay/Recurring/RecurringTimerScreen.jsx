@@ -30,6 +30,7 @@ import {colors, Icons} from '../../../Helper/Contants';
 import {taskService} from '../../../services/api/taskService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
+import BlockTimeScheduler from '../../../services/Alarm/BlockTimeScheduler';
 
 const RecurringTimerScreen = () => {
   const navigation = useNavigation();
@@ -37,7 +38,9 @@ const RecurringTimerScreen = () => {
   const {user} = useAuth();
 
   // Step tracking state
-  const [currentStep, setCurrentStep] = useState(route.params?.currentStep || 1);
+  const [currentStep, setCurrentStep] = useState(
+    route.params?.currentStep || 1,
+  );
   const TOTAL_STEPS = 4;
 
   // Task form states
@@ -50,14 +53,17 @@ const RecurringTimerScreen = () => {
     title: 'Work and Career',
     image: Icons.Work,
   };
-  const [selectedCategory, setSelectedCategory] = useState(selectedCategoryParam);
+  const [selectedCategory, setSelectedCategory] = useState(
+    selectedCategoryParam,
+  );
 
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
 
   // Dropdown and time states
-  const [selectedDropdownValue, setSelectedDropdownValue] = useState('At Least');
+  const [selectedDropdownValue, setSelectedDropdownValue] =
+    useState('At Least');
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedTime, setSelectedTime] = useState({
     hours: 0,
@@ -114,25 +120,37 @@ const RecurringTimerScreen = () => {
         const params = route.params;
 
         if (params.habit !== undefined) setHabit(params.habit);
-        if (params.description !== undefined) setDescription(params.description);
-        if (params.selectedCategory !== undefined) setSelectedCategory(params.selectedCategory);
+        if (params.description !== undefined)
+          setDescription(params.description);
+        if (params.selectedCategory !== undefined)
+          setSelectedCategory(params.selectedCategory);
         if (params.priority !== undefined) setPriority(params.priority);
         if (params.note !== undefined) setNote(params.note);
-        if (params.isPendingTask !== undefined) setIsPendingTask(params.isPendingTask);
-        if (params.selectedDropdownValue !== undefined) setSelectedDropdownValue(params.selectedDropdownValue);
-        if (params.selectedTime !== undefined) setSelectedTime(params.selectedTime);
-        if (params.addReminder !== undefined) setAddReminder(params.addReminder);
-        if (params.addToGoogleCalendar !== undefined) setAddToGoogleCalendar(params.addToGoogleCalendar);
+        if (params.isPendingTask !== undefined)
+          setIsPendingTask(params.isPendingTask);
+        if (params.selectedDropdownValue !== undefined)
+          setSelectedDropdownValue(params.selectedDropdownValue);
+        if (params.selectedTime !== undefined)
+          setSelectedTime(params.selectedTime);
+        if (params.addReminder !== undefined)
+          setAddReminder(params.addReminder);
+        if (params.addToGoogleCalendar !== undefined)
+          setAddToGoogleCalendar(params.addToGoogleCalendar);
         if (params.reminderData) setReminderData(params.reminderData);
 
         if (params.startDate) {
-          const date = typeof params.startDate === 'string' ? new Date(params.startDate) : params.startDate;
+          const date =
+            typeof params.startDate === 'string'
+              ? new Date(params.startDate)
+              : params.startDate;
           setStartDate(date);
         }
 
         if (params.scheduleData) {
-          if (params.scheduleData.blockTimeData) setBlockTimeData(params.scheduleData.blockTimeData);
-          if (params.scheduleData.durationData) setDurationData(params.scheduleData.durationData);
+          if (params.scheduleData.blockTimeData)
+            setBlockTimeData(params.scheduleData.blockTimeData);
+          if (params.scheduleData.durationData)
+            setDurationData(params.scheduleData.durationData);
         }
 
         if (params.blockTimeData) setBlockTimeData(params.blockTimeData);
@@ -269,7 +287,9 @@ const RecurringTimerScreen = () => {
       hours,
       minutes,
       totalMinutes: durationMinutes,
-      formattedDuration: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
+        minutes,
+      ).padStart(2, '0')}`,
     };
   };
 
@@ -285,11 +305,16 @@ const RecurringTimerScreen = () => {
 
       let calculatedDuration = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        calculatedDuration = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
+        calculatedDuration = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
       }
 
       if (!calculatedDuration) {
-        showToast('Please select a block time first to calculate duration for Pomodoro');
+        showToast(
+          'Please select a block time first to calculate duration for Pomodoro',
+        );
         return;
       }
 
@@ -328,16 +353,24 @@ const RecurringTimerScreen = () => {
   };
 
   // SAVE TASK LOGIC
+  // SAVE TASK LOGIC
   const handleSaveTask = async () => {
+    console.log('========================================');
+    console.log('📝 RecurringTimerScreen: handleSaveTask called');
+    console.log('========================================');
+
     if (!user) {
-      Alert.alert('Error', 'Please log in to create tasks.');
+      showToast('Please log in to create tasks', 'error');
       return;
     }
 
     try {
       let finalDurationForPomodoro = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        finalDurationForPomodoro = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
+        finalDurationForPomodoro = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
       }
 
       const taskData = {
@@ -367,7 +400,9 @@ const RecurringTimerScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
         blockTimeEnabled: !!blockTimeData,
@@ -384,15 +419,20 @@ const RecurringTimerScreen = () => {
       };
 
       if (addPomodoro && pomodoroSettings) {
-        taskData.pomodoroDuration = finalDurationForPomodoro ? finalDurationForPomodoro.totalMinutes : null;
+        taskData.pomodoroDuration = finalDurationForPomodoro
+          ? finalDurationForPomodoro.totalMinutes
+          : null;
         taskData.focusDuration = pomodoroSettings.focusTime;
         taskData.shortBreakDuration = pomodoroSettings.shortBreak;
         taskData.longBreakDuration = pomodoroSettings.longBreak;
         taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
-        taskData.autoStartShortBreaks = pomodoroSettings.autoStartShortBreaks || false;
-        taskData.autoStartFocusSessions = pomodoroSettings.autoStartFocusSessions || false;
+        taskData.autoStartShortBreaks =
+          pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions =
+          pomodoroSettings.autoStartFocusSessions || false;
         taskData.pomodoroSessionsCompleted = 0;
-        taskData.pomodoroTotalSessions = pomodoroSettings.focusSessionsPerRound || 4;
+        taskData.pomodoroTotalSessions =
+          pomodoroSettings.focusSessionsPerRound || 4;
       }
 
       if (addReminder && reminderData) {
@@ -411,22 +451,135 @@ const RecurringTimerScreen = () => {
         taskData.reminderData = null;
       }
 
+      console.log('💾 Saving Recurring Timer Task...');
+
       const savedTask = await taskService.createTask(taskData);
+      console.log(
+        '✅ RecurringTimerScreen: Task created successfully:',
+        savedTask.id,
+      );
+
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - For recurring timer tasks
+      if (blockTimeData && blockTimeData.startTime && startDate) {
+        try {
+          console.log('========================================');
+          console.log(
+            '⏰ [BlockTime] Auto-scheduling Block Time alarm for RECURRING TIMER task',
+          );
+          console.log('========================================');
+          console.log('📋 Task ID:', savedTask.id);
+          console.log('📋 Start Time:', blockTimeData.startTime);
+          console.log(
+            '📋 Start Date:',
+            new Date(startDate).toISOString().split('T')[0],
+          );
+          console.log('📋 Evaluation Type: timer (Recurring)');
+          console.log('📋 Frequency Type: Every Day');
+
+          const dateString = new Date(startDate).toISOString().split('T')[0];
+          const time24h = convertTo24Hour(blockTimeData.startTime);
+
+          // ✅ Create complete block time task object with ALL Pomodoro settings
+          const blockTimeTask = {
+            id: savedTask.id,
+            title: habit.trim(),
+            description: description.trim(),
+            category: selectedCategory.title || selectedCategory,
+            evaluation_type: 'timer',
+            block_time_enabled: true,
+            block_time_data: JSON.stringify({
+              start_time: time24h,
+              end_time: convertTo24Hour(blockTimeData.endTime),
+              enabled: true,
+            }),
+            source: 'recurring_task',
+            frequency_type: 'Every Day',
+            start_date: dateString,
+            // ✅ Include ALL Pomodoro settings for proper restoration
+            pomodoro_duration: finalDurationForPomodoro?.totalMinutes,
+            focus_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusTime
+                : null,
+            short_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.shortBreak
+                : null,
+            long_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.longBreak
+                : null,
+            focus_sessions_per_round:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusSessionsPerRound
+                : null,
+            auto_start_short_breaks:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartShortBreaks
+                : null,
+            auto_start_focus_sessions:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartFocusSessions
+                : null,
+            // ✅ Include duration data
+            duration_data: finalDurationForPomodoro || durationData,
+            // ✅ Include timer-specific data for recurring tasks
+            timer_duration: selectedTime,
+            timer_condition: selectedDropdownValue,
+          };
+
+          console.log(
+            '📦 Block Time Task Object:',
+            JSON.stringify(blockTimeTask, null, 2),
+          );
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log('========================================');
+            console.log('✅ [BlockTime] Alarm scheduled successfully!');
+            console.log('📱 Request Code:', alarmResult.result.requestCode);
+            console.log(
+              '⏰ Trigger Time:',
+              new Date(alarmResult.result.triggerTime).toLocaleString(),
+            );
+            console.log('========================================');
+          } else {
+            console.warn(
+              '⚠️ [BlockTime] Failed to schedule alarm:',
+              alarmResult.reason || alarmResult.error,
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+          // Don't block task creation if Block Time scheduling fails
+        }
+      }
 
       let reminderMessage = '';
       if (taskData.reminderEnabled && taskData.reminderData) {
         try {
           const userProfile = {
-            username: user?.user_metadata?.display_name || user?.user_metadata?.username || user?.email?.split('@')[0],
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
             display_name: user?.user_metadata?.display_name,
             user_metadata: user?.user_metadata,
             email: user?.email,
           };
 
-          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
-            {...taskData, userProfile: userProfile},
-            savedTask,
-          );
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {...taskData, userProfile: userProfile},
+              savedTask,
+            );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
@@ -437,20 +590,54 @@ const RecurringTimerScreen = () => {
         }
       }
 
-      Alert.alert('Success', `Recurring task created successfully!${reminderMessage}`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [{name: 'BottomTab', params: {newTaskCreated: true}}],
-            });
-          },
-        },
-      ]);
+      console.log('========================================');
+      console.log('🎉 Recurring task creation completed successfully!');
+      console.log('========================================');
+
+      // Show success toast
+      showToast('Task created successfully!', 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [{name: 'BottomTab', params: {newTaskCreated: true}}],
+        });
+      }, 1500);
     } catch (error) {
-      console.error('Error saving recurring task:', error);
-      Alert.alert('Error', 'Failed to create recurring task. Please try again.');
+      console.error(
+        '❌ RecurringTimerScreen: Error saving recurring task:',
+        error,
+      );
+      console.error('❌ Error details:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      Alert.alert(
+        'Error',
+        'Failed to create recurring task. Please try again.',
+      );
+    }
+  };
+
+  // Helper function to convert 12-hour time to 24-hour format
+  const convertTo24Hour = time12h => {
+    try {
+      const [time, period] = time12h.trim().split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) {
+        hour24 = hours + 12;
+      } else if (period === 'AM' && hours === 12) {
+        hour24 = 0;
+      }
+
+      return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(
+        2,
+        '0',
+      )}:00`;
+    } catch (error) {
+      console.error('Error converting time:', error);
+      return '00:00:00';
     }
   };
 
@@ -488,7 +675,20 @@ const RecurringTimerScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -502,7 +702,9 @@ const RecurringTimerScreen = () => {
     if (hours === 0 && minutes === 0) {
       return '00:00';
     }
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    return `${hours.toString().padStart(2, '0')}:${minutes
+      .toString()
+      .padStart(2, '0')}`;
   };
 
   const handleStartDateSelect = date => {
@@ -576,9 +778,23 @@ const RecurringTimerScreen = () => {
 
   const renderToggle = (isEnabled, onToggle) => {
     return (
-      <TouchableOpacity style={styles.toggleContainer} onPress={onToggle} activeOpacity={0.7}>
-        <View style={[styles.toggleTrack, isEnabled ? styles.toggleTrackActive : styles.toggleTrackInactive]}>
-          <View style={[styles.toggleSwitch, isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive]} />
+      <TouchableOpacity
+        style={styles.toggleContainer}
+        onPress={onToggle}
+        activeOpacity={0.7}>
+        <View
+          style={[
+            styles.toggleTrack,
+            isEnabled ? styles.toggleTrackActive : styles.toggleTrackInactive,
+          ]}>
+          <View
+            style={[
+              styles.toggleSwitch,
+              isEnabled
+                ? styles.toggleSwitchActive
+                : styles.toggleSwitchInactive,
+            ]}
+          />
         </View>
       </TouchableOpacity>
     );
@@ -603,18 +819,31 @@ const RecurringTimerScreen = () => {
           activeOpacity={onRowPress ? 0.7 : hasToggle || hasPlus ? 1 : 0.7}
           onPress={onRowPress || (() => {})}>
           <View style={styles.optionLeft}>
-            <Image source={iconSource} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={iconSource}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>{title}</Text>
-              {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
+              {subtitle && (
+                <Text style={styles.optionSubtitle}>{subtitle}</Text>
+              )}
             </View>
           </View>
 
           <View style={styles.optionRight}>
             {hasToggle && renderToggle(toggleState, onTogglePress)}
             {hasPlus && (
-              <TouchableOpacity onPress={onPlusPress} style={styles.plusButton} activeOpacity={0.7}>
-                <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+              <TouchableOpacity
+                onPress={onPlusPress}
+                style={styles.plusButton}
+                activeOpacity={0.7}>
+                <Image
+                  source={Icons.Plus}
+                  style={styles.plusIcon}
+                  resizeMode="contain"
+                />
               </TouchableOpacity>
             )}
             {customRight && customRight}
@@ -636,7 +865,9 @@ const RecurringTimerScreen = () => {
               <Text
                 style={[
                   styles.inputLabel,
-                  isHabitLabelActive ? styles.inputLabelActive : styles.inputLabelInactive,
+                  isHabitLabelActive
+                    ? styles.inputLabelActive
+                    : styles.inputLabelInactive,
                 ]}>
                 Habit
               </Text>
@@ -665,7 +896,9 @@ const RecurringTimerScreen = () => {
               <TouchableOpacity
                 style={styles.timeDisplayContainer}
                 onPress={() => setShowTimePicker(true)}>
-                <Text style={styles.timeDisplayText}>{formatDisplayTime(selectedTime)}</Text>
+                <Text style={styles.timeDisplayText}>
+                  {formatDisplayTime(selectedTime)}
+                </Text>
               </TouchableOpacity>
               <Text style={styles.dayText}>a day.</Text>
             </View>
@@ -692,7 +925,11 @@ const RecurringTimerScreen = () => {
             <View style={styles.optionContainer}>
               <View style={styles.optionRow}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Category} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Category}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Category</Text>
                   </View>
@@ -701,7 +938,11 @@ const RecurringTimerScreen = () => {
                   <Text style={styles.categoryText}>
                     {selectedCategory?.title || selectedCategory}
                   </Text>
-                  <Image source={Icons.Taskhome} style={styles.categoryIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Taskhome}
+                    style={styles.categoryIcon}
+                    resizeMode="contain"
+                  />
                 </View>
               </View>
             </View>
@@ -717,7 +958,9 @@ const RecurringTimerScreen = () => {
               null,
               null,
               <View style={styles.dateContainer}>
-                <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+                <Text style={styles.dateText}>
+                  {formatDisplayDate(startDate)}
+                </Text>
               </View>,
               () => setShowStartDatePicker(true),
             )}
@@ -737,7 +980,8 @@ const RecurringTimerScreen = () => {
               true,
               handleDurationPress,
               durationData
-                ? durationData.formattedDuration || `${durationData.hours}h ${durationData.minutes}m`
+                ? durationData.formattedDuration ||
+                    `${durationData.hours}h ${durationData.minutes}m`
                 : null,
             )}
 
@@ -749,21 +993,29 @@ const RecurringTimerScreen = () => {
               null,
               true,
               handleBlockTimePress,
-              blockTimeData ? `${blockTimeData.startTime} - ${blockTimeData.endTime}` : null,
+              blockTimeData
+                ? `${blockTimeData.startTime} - ${blockTimeData.endTime}`
+                : null,
             )}
 
             {/* Add Pomodoro */}
             <View style={styles.optionContainer}>
               <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Clock} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Clock}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Add Pomodoro</Text>
                     {addPomodoro && pomodoroSettings && (
                       <Text style={styles.optionSubtitle}>
                         {`${pomodoroSettings.focusTime || 25}min focus, ${
                           pomodoroSettings.shortBreak || 5
-                        }min break, ${pomodoroSettings.focusSessionsPerRound || 4} sessions`}
+                        }min break, ${
+                          pomodoroSettings.focusSessionsPerRound || 4
+                        } sessions`}
                       </Text>
                     )}
                   </View>
@@ -786,16 +1038,27 @@ const RecurringTimerScreen = () => {
                 styles.optionContainer,
                 showPriorityDropdown && styles.priorityContainerExpanded,
               ]}>
-              <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handlePriorityPress}>
+              <TouchableOpacity
+                style={styles.optionRow}
+                activeOpacity={0.7}
+                onPress={handlePriorityPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Flag} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Flag}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Priority</Text>
                   </View>
                 </View>
                 <View style={styles.optionRight}>
                   <MaterialIcons
-                    name={showPriorityDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    name={
+                      showPriorityDropdown
+                        ? 'keyboard-arrow-up'
+                        : 'keyboard-arrow-down'
+                    }
                     size={WP(6)}
                     color="#646464"
                   />
@@ -811,11 +1074,16 @@ const RecurringTimerScreen = () => {
                         style={[
                           styles.priorityButton,
                           {backgroundColor: option.backgroundColor},
-                          priority === option.value && styles.priorityButtonSelected,
+                          priority === option.value &&
+                            styles.priorityButtonSelected,
                         ]}
                         onPress={() => handlePrioritySelect(option)}
                         activeOpacity={0.8}>
-                        <Text style={[styles.priorityButtonText, {color: option.textColor}]}>
+                        <Text
+                          style={[
+                            styles.priorityButtonText,
+                            {color: option.textColor},
+                          ]}>
                           {option.label}
                         </Text>
                       </TouchableOpacity>
@@ -827,9 +1095,16 @@ const RecurringTimerScreen = () => {
 
             {/* Note */}
             <View style={styles.optionContainer}>
-              <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handleNotePress}>
+              <TouchableOpacity
+                style={styles.optionRow}
+                activeOpacity={0.7}
+                onPress={handleNotePress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Note} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Note}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Note</Text>
                     {note && (
@@ -846,7 +1121,11 @@ const RecurringTimerScreen = () => {
             <View style={styles.optionContainer}>
               <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Pending} style={styles.optionIcon1} resizeMode="contain" />
+                  <Image
+                    source={Icons.Pending}
+                    style={styles.optionIcon1}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Pending Task</Text>
                     <Text style={styles.pendingSubtitle}>
@@ -859,7 +1138,11 @@ const RecurringTimerScreen = () => {
                     style={styles.radioButton}
                     onPress={() => setIsPendingTask(!isPendingTask)}
                     activeOpacity={0.7}>
-                    <View style={[styles.radioOuter, isPendingTask && styles.radioOuterSelected]}>
+                    <View
+                      style={[
+                        styles.radioOuter,
+                        isPendingTask && styles.radioOuterSelected,
+                      ]}>
                       {isPendingTask && <View style={styles.radioInner} />}
                     </View>
                   </TouchableOpacity>
@@ -879,7 +1162,11 @@ const RecurringTimerScreen = () => {
                 activeOpacity={0.7}
                 onPress={handleLinkToGoalPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Link} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Link}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Link To Goal</Text>
                   </View>
@@ -889,7 +1176,11 @@ const RecurringTimerScreen = () => {
                     style={styles.plusButton}
                     activeOpacity={0.7}
                     onPress={handleLinkToGoalPress}>
-                    <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+                    <Image
+                      source={Icons.Plus}
+                      style={styles.plusIcon}
+                      resizeMode="contain"
+                    />
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -927,7 +1218,9 @@ const RecurringTimerScreen = () => {
                 <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                   <View style={styles.optionLeft}>
                     <View style={styles.optionTextContainer}>
-                      <Text style={styles.optionTitle}>Add to Google Calendar</Text>
+                      <Text style={styles.optionTitle}>
+                        Add to Google Calendar
+                      </Text>
                     </View>
                   </View>
                   <View>
@@ -939,7 +1232,8 @@ const RecurringTimerScreen = () => {
               </View>
 
               {addToGoogleCalendar && (
-                <View style={[styles.optionContainer, styles.connectedContainer]}>
+                <View
+                  style={[styles.optionContainer, styles.connectedContainer]}>
                   <TouchableOpacity style={styles.optionRow}>
                     <View style={styles.optionLeft}>
                       <View style={styles.optionTextContainer}>
@@ -966,7 +1260,7 @@ const RecurringTimerScreen = () => {
         dots.push(
           <View key={i} style={styles.progressDotCompleted}>
             <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
-          </View>
+          </View>,
         );
       } else if (i === currentStep) {
         dots.push(
@@ -974,13 +1268,13 @@ const RecurringTimerScreen = () => {
             <View style={styles.progressDotActiveInner}>
               <Text style={styles.progressDotTextActive}>{i}</Text>
             </View>
-          </View>
+          </View>,
         );
       } else {
         dots.push(
           <View key={i} style={styles.progressDotInactive}>
             <Text style={styles.progressDotTextInactive}>{i}</Text>
-          </View>
+          </View>,
         );
       }
 
@@ -998,7 +1292,10 @@ const RecurringTimerScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="New Task" onBackPress={currentStep > 1 ? handleBackPress : null} />
+        <Headers
+          title="New Task"
+          onBackPress={currentStep > 1 ? handleBackPress : null}
+        />
       </View>
 
       {/* Content */}
@@ -1006,8 +1303,8 @@ const RecurringTimerScreen = () => {
         {renderStepContent()}
 
         {/* Next/Done Button */}
-        <TouchableOpacity 
-          style={styles.nextButton} 
+        <TouchableOpacity
+          style={styles.nextButton}
           onPress={handleNextPress}
           activeOpacity={0.8}>
           <Text style={styles.nextButtonText}>

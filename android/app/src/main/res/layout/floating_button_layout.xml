@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <!-- Main Notes Button -->
+    <ImageView
+        android:id="@+id/floating_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_notes"
+        android:background="@drawable/circular_button_notes_bg"
+        android:scaleType="centerInside"
+        android:padding="14dp"
+        android:elevation="8dp"
+        android:contentDescription="Quick Notes" />
+
+    <!-- Close/X Button (Hidden by default, shown when menu is open) -->
+    <ImageButton
+        android:id="@+id/close_menu_button_on_main"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_close_white"
+        android:background="@drawable/circular_close_button_bg"
+        android:scaleType="centerInside"
+        android:padding="8dp"
+        android:elevation="9dp"
+        android:visibility="gone"
+        android:contentDescription="Close Menu" />
+
+</FrameLayout>

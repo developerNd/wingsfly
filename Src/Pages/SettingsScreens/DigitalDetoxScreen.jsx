@@ -21,7 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import DigitalDetoxBridge from '../../services/DigitalDetox/DigitalDetoxBridge';
 import detoxMediaSupabaseService from '../../services/DigitalDetox/detoxMediaSupabaseService';
 
-const { DigitalDetoxModule } = NativeModules;
+const {DigitalDetoxModule} = NativeModules;
 
 const DigitalDetoxScreen = ({navigation}) => {
   const [durationMinutes, setDurationMinutes] = useState(30);
@@ -30,6 +30,11 @@ const DigitalDetoxScreen = ({navigation}) => {
   const [mediaUrl, setMediaUrl] = useState(null);
   const [isDetoxActive, setIsDetoxActive] = useState(false);
   const [loadingMedia, setLoadingMedia] = useState(true);
+
+  // ✅ NEW: DND state (only for permission check)
+  const [hasDndPermission, setHasDndPermission] = useState(false);
+  const [checkingDnd, setCheckingDnd] = useState(true);
+
   const sliderWidth = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
   const statusCheckInterval = useRef(null);
@@ -37,7 +42,7 @@ const DigitalDetoxScreen = ({navigation}) => {
   const isMounted = useRef(true);
   const isCheckingStatus = useRef(false);
   const lastCheckTime = useRef(0);
-  
+
   const eventSubscription = useRef(null);
 
   const MIN_DURATION = 1;
@@ -45,6 +50,48 @@ const DigitalDetoxScreen = ({navigation}) => {
   const THUMB_SIZE = WP(12);
   const CHECK_INTERVAL = 5000;
   const MIN_CHECK_DELAY = 2000;
+
+  // ✅ SIMPLIFIED: Only check permission status
+  const checkDndStatus = useCallback(async (showLoading = true) => {
+    if (!isMounted.current) return;
+
+    try {
+      if (showLoading) {
+        setCheckingDnd(true);
+      }
+
+      const hasPerm = await DigitalDetoxBridge.hasDndPermission();
+
+      if (isMounted.current) {
+        setHasDndPermission(hasPerm);
+        console.log('📢 DND Permission:', hasPerm);
+      }
+    } catch (error) {
+      console.error('Error checking DND permission:', error);
+      if (isMounted.current) {
+        setHasDndPermission(false);
+      }
+    } finally {
+      if (isMounted.current && showLoading) {
+        setCheckingDnd(false);
+      }
+    }
+  }, []);
+
+  // ✅ SIMPLIFIED: Only request permission (not toggle on/off)
+  const handleDndToggle = useCallback(async () => {
+    try {
+      await DigitalDetoxBridge.requestDndPermission();
+
+      // Check permission status after user returns from settings
+      setTimeout(() => {
+        checkDndStatus(false);
+      }, 1000);
+    } catch (error) {
+      console.error('Error requesting DND permission:', error);
+      Alert.alert('Error', 'Failed to open DND permission settings');
+    }
+  }, [checkDndStatus]);
 
   const checkDetoxStatus = useCallback(async () => {
     if (isCheckingStatus.current) {
@@ -62,20 +109,20 @@ const DigitalDetoxScreen = ({navigation}) => {
       console.log('⏭️ Skipping check - component unmounted');
       return;
     }
-    
+
     try {
       isCheckingStatus.current = true;
       lastCheckTime.current = now;
-      
+
       console.log('🔍 Checking detox status...');
-      
+
       const active = await Promise.race([
         DigitalDetoxBridge.isDetoxActive(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 5000)
-        )
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 5000),
+        ),
       ]);
-      
+
       if (isMounted.current) {
         console.log('📊 Detox status result:', active);
         setIsDetoxActive(active);
@@ -94,21 +141,20 @@ const DigitalDetoxScreen = ({navigation}) => {
     }
   }, [isDetoxActive]);
 
-  // ✅ NEW: Fetch media from Supabase instead of local storage
   const checkMediaStatus = useCallback(async () => {
     if (!isMounted.current) return;
-    
+
     try {
       setLoadingMedia(true);
       console.log('📥 Fetching media from Supabase...');
-      
+
       const result = await Promise.race([
         detoxMediaSupabaseService.fetchLatestDetoxMedia(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 10000)
-        )
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 10000),
+        ),
       ]);
-      
+
       if (isMounted.current) {
         if (result.success && result.hasMedia) {
           console.log('✅ Media found:', result.data);
@@ -141,27 +187,35 @@ const DigitalDetoxScreen = ({navigation}) => {
   const setupDetoxCompletionListener = useCallback(() => {
     try {
       console.log('📢 Setting up detox completion listener');
-      
+
       const eventEmitter = new NativeEventEmitter(DigitalDetoxModule);
-      
+
       eventSubscription.current = eventEmitter.addListener(
         'DETOX_COMPLETED',
-        () => {
+        async () => {
           console.log('📢 DETOX_COMPLETED event received!');
           if (isMounted.current) {
             setIsDetoxActive(false);
+
+            // ✅ Disable DND when detox completes
+            const hasDndPerm = await DigitalDetoxBridge.hasDndPermission();
+            if (hasDndPerm) {
+              await DigitalDetoxBridge.disableDnd();
+              console.log('✅ DND disabled after detox completion');
+            }
+
             setTimeout(() => {
               if (isMounted.current) {
                 Alert.alert(
                   'Detox Complete',
-                  'Your digital detox session has ended. Great job staying focused!'
+                  'Your digital detox session has ended. Great job staying focused!',
                 );
               }
-            }, 500);
+            }, 1000);
           }
-        }
+        },
       );
-      
+
       console.log('✅ Detox completion listener setup complete');
     } catch (error) {
       console.error('Error setting up detox completion listener:', error);
@@ -171,45 +225,54 @@ const DigitalDetoxScreen = ({navigation}) => {
   useEffect(() => {
     console.log('📱 DigitalDetoxScreen mounted');
     isMounted.current = true;
-    
+
     setupDetoxCompletionListener();
-    
-    // Fetch media on mount
+
+    // Fetch media and check statuses on mount
     checkMediaStatus();
     checkDetoxStatus();
+    checkDndStatus(); // ✅ NEW
 
     return () => {
       console.log('📱 DigitalDetoxScreen unmounting');
       isMounted.current = false;
-      
+
       if (eventSubscription.current) {
         eventSubscription.current.remove();
         eventSubscription.current = null;
       }
-      
+
       if (statusCheckInterval.current) {
         clearInterval(statusCheckInterval.current);
         statusCheckInterval.current = null;
       }
     };
-  }, [setupDetoxCompletionListener, checkMediaStatus, checkDetoxStatus]);
+  }, [
+    setupDetoxCompletionListener,
+    checkMediaStatus,
+    checkDetoxStatus,
+    checkDndStatus,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
       console.log('🎯 Screen focused - refreshing media and status');
-      
+
       if (statusCheckInterval.current) {
         clearInterval(statusCheckInterval.current);
         statusCheckInterval.current = null;
       }
 
-      // Refresh media from Supabase on focus
+      // Refresh all statuses on focus
       checkMediaStatus();
       checkDetoxStatus();
+      checkDndStatus(); // ✅ Check once on focus
 
+      // ✅ FIX: Only check detox status in interval, NOT DND (prevents flicker)
       statusCheckInterval.current = setInterval(() => {
         if (isMounted.current) {
           checkDetoxStatus();
+          // DND status only updates on user action or app resume
         }
       }, CHECK_INTERVAL);
 
@@ -221,7 +284,7 @@ const DigitalDetoxScreen = ({navigation}) => {
         }
         isCheckingStatus.current = false;
       };
-    }, [checkDetoxStatus, checkMediaStatus])
+    }, [checkDetoxStatus, checkMediaStatus, checkDndStatus]),
   );
 
   useEffect(() => {
@@ -234,8 +297,9 @@ const DigitalDetoxScreen = ({navigation}) => {
         if (isMounted.current) {
           setTimeout(() => {
             if (isMounted.current) {
-              checkMediaStatus(); // Refresh media
+              checkMediaStatus();
               checkDetoxStatus();
+              checkDndStatus(false); // ✅ Check without loading spinner
             }
           }, 1000);
         }
@@ -246,51 +310,67 @@ const DigitalDetoxScreen = ({navigation}) => {
     return () => {
       subscription.remove();
     };
-  }, [checkDetoxStatus, checkMediaStatus]);
+  }, [checkDetoxStatus, checkMediaStatus, checkDndStatus]);
 
   const handleStartDetox = async () => {
     try {
+      // ✅ CHECK 1: Active detox session
       if (isDetoxActive) {
         Alert.alert(
           'Detox Already Active',
           'A digital detox session is already running.',
-          [{ text: 'OK' }]
+          [{text: 'OK'}],
         );
         return;
       }
 
-      // ✅ Fetch fresh media before starting detox
-      console.log('🔄 Fetching fresh media before starting detox...');
-      const mediaResult = await detoxMediaSupabaseService.fetchLatestDetoxMedia();
-      
-      const mediaFilePath = mediaResult.hasMedia ? mediaResult.data.fileUrl : null;
-      const mediaTypeToPass = mediaResult.hasMedia ? mediaResult.data.type : null;
-      
-      console.log('🎬 Starting detox with media:', { 
-        hasMedia: mediaResult.hasMedia,
-        type: mediaTypeToPass,
-        url: mediaFilePath 
-      });
+      // ✅ CHECK 2: DND Permission (MANDATORY)
+      if (!hasDndPermission) {
+        Alert.alert(
+          'DND Permission Required',
+          'Please enable Do Not Disturb access first. This is required for Digital Detox sessions.',
+          [
+            {text: 'Cancel', style: 'cancel'},
+            {
+              text: 'Enable Now',
+              onPress: handleDndToggle,
+            },
+          ],
+        );
+        return;
+      }
 
+      // ✅ All checks passed - AUTO-ENABLE DND and start detox
+      console.log('🔕 Enabling DND automatically...');
+      const dndEnabled = await DigitalDetoxBridge.enableDnd('alarms_only');
+      if (dndEnabled) {
+        console.log('✅ DND enabled for detox session');
+      }
+
+      // Start detox (DND already enabled)
       const success = await DigitalDetoxBridge.startDetoxLock(
         durationMinutes,
-        mediaFilePath,
-        mediaTypeToPass
+        null,
+        null,
+        false, // Don't show DND prompts - we already handled it above
+        'alarms_only',
       );
-      
+
       if (success) {
         console.log('✅ Digital Detox lock started successfully');
         setIsDetoxActive(true);
-        
+
         setTimeout(() => {
           if (isMounted.current) {
             checkDetoxStatus();
           }
         }, 2000);
       } else {
+        // If failed, restore DND state
+        await DigitalDetoxBridge.disableDnd();
         Alert.alert(
           'Error',
-          'Failed to start Digital Detox. Please ensure you have granted all necessary permissions.'
+          'Failed to start Digital Detox. Please ensure you have granted all necessary permissions.',
         );
       }
     } catch (error) {
@@ -299,7 +379,7 @@ const DigitalDetoxScreen = ({navigation}) => {
     }
   };
 
-  const formatDuration = (minutes) => {
+  const formatDuration = minutes => {
     if (minutes < 60) {
       return `${minutes} min`;
     }
@@ -314,28 +394,28 @@ const DigitalDetoxScreen = ({navigation}) => {
   const getEndTime = () => {
     const now = new Date();
     const endTime = new Date(now.getTime() + durationMinutes * 60000);
-    
+
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = days[endTime.getDay()];
-    
+
     let hours = endTime.getHours();
     const minutes = endTime.getMinutes();
     const ampm = hours >= 12 ? 'pm' : 'am';
     hours = hours % 12;
     hours = hours ? hours : 12;
-    
+
     const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-    
+
     return `${dayName} ${hours}:${minutesStr} ${ampm}`;
   };
 
-  const sliderToMinutes = (percentage) => {
+  const sliderToMinutes = percentage => {
     const normalizedValue = percentage / 100;
     const logMin = Math.log(MIN_DURATION);
     const logMax = Math.log(MAX_DURATION);
     const logValue = logMin + (logMax - logMin) * normalizedValue;
     const minutes = Math.round(Math.exp(logValue));
-    
+
     if (minutes < 10) {
       return Math.max(1, Math.round(minutes));
     }
@@ -345,7 +425,7 @@ const DigitalDetoxScreen = ({navigation}) => {
     return Math.round(minutes / 15) * 15;
   };
 
-  const minutesToSlider = (minutes) => {
+  const minutesToSlider = minutes => {
     const logMin = Math.log(MIN_DURATION);
     const logMax = Math.log(MAX_DURATION);
     const logValue = Math.log(minutes);
@@ -363,13 +443,13 @@ const DigitalDetoxScreen = ({navigation}) => {
       },
       onPanResponderMove: (evt, gestureState) => {
         if (isDetoxActive) return;
-        
+
         const maxPosition = sliderWidth.current - THUMB_SIZE;
         const newValue = Math.max(
-          0, 
-          Math.min(maxPosition, pan._offset + gestureState.dx)
+          0,
+          Math.min(maxPosition, pan._offset + gestureState.dx),
         );
-        
+
         pan.setValue(newValue - pan._offset);
         const percentage = (newValue / maxPosition) * 100;
         const minutes = sliderToMinutes(percentage);
@@ -380,15 +460,16 @@ const DigitalDetoxScreen = ({navigation}) => {
           pan.flattenOffset();
         }
       },
-    })
+    }),
   ).current;
 
-  const handleSliderLayout = (event) => {
+  const handleSliderLayout = event => {
     const {width} = event.nativeEvent.layout;
     sliderWidth.current = width;
-    
+
     const maxPosition = width - THUMB_SIZE;
-    const initialPosition = (minutesToSlider(durationMinutes) / 100) * maxPosition;
+    const initialPosition =
+      (minutesToSlider(durationMinutes) / 100) * maxPosition;
     pan.setValue(initialPosition);
   };
 
@@ -406,7 +487,6 @@ const DigitalDetoxScreen = ({navigation}) => {
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
-        
         {isDetoxActive && (
           <View style={styles.activeDetoxBanner}>
             <Icon name="lock" size={WP(5)} color={colors.White} />
@@ -421,102 +501,171 @@ const DigitalDetoxScreen = ({navigation}) => {
             <Text style={styles.heroEmoji}>🌸</Text>
             <Text style={styles.heroEmoji}>🦋</Text>
             <Text style={styles.heroEmoji}>🌻</Text>
-          
+
             <Text style={styles.heroTitle}>Begin your detox</Text>
           </View>
         </View>
 
-        <View style={[styles.detoxCard, isDetoxActive && styles.detoxCardDisabled]}>
+        {/* ✅ NEW: DND Control Card - ONLY show if permission NOT granted */}
+        {!hasDndPermission && !checkingDnd && (
+          <TouchableOpacity
+            style={[styles.dndCard, isDetoxActive && styles.dndCardDisabled]}
+            onPress={handleDndToggle}
+            activeOpacity={isDetoxActive ? 1 : 0.7}
+            disabled={isDetoxActive}>
+            <View style={styles.dndContent}>
+              <View style={styles.dndLeft}>
+                <Icon
+                  name="notifications-off"
+                  size={WP(6)}
+                  color={colors.Primary}
+                />
+                <View style={styles.dndTextContainer}>
+                  <Text
+                    style={[
+                      styles.dndTitle,
+                      isDetoxActive && styles.textDisabled,
+                    ]}>
+                    Enable Do Not Disturb
+                  </Text>
+                  <Text
+                    style={[
+                      styles.dndSubtitle,
+                      isDetoxActive && styles.textDisabled,
+                    ]}>
+                    Grant permission for the best experience.
+                  </Text>
+                </View>
+              </View>
+              <Icon name="arrow-forward" size={WP(5)} color="#999" />
+            </View>
+          </TouchableOpacity>
+        )}
+
+        <View
+          style={[styles.detoxCard, isDetoxActive && styles.detoxCardDisabled]}>
           <Text style={styles.cardTitle}>Your detox</Text>
-          
+
           <View style={styles.durationDisplay}>
-            <Text style={[styles.durationValue, isDetoxActive && styles.textDisabled]}>
+            <Text
+              style={[
+                styles.durationValue,
+                isDetoxActive && styles.textDisabled,
+              ]}>
               {formatDuration(durationMinutes)}
             </Text>
           </View>
 
           <View style={styles.endTimeDisplay}>
-            <Text style={[styles.endTimeLabel, isDetoxActive && styles.textDisabled]}>
+            <Text
+              style={[
+                styles.endTimeLabel,
+                isDetoxActive && styles.textDisabled,
+              ]}>
               Phoneless till {getEndTime()}
             </Text>
           </View>
 
-          <View 
-            style={styles.sliderContainer}
-            onLayout={handleSliderLayout}
-          >
+          <View style={styles.sliderContainer} onLayout={handleSliderLayout}>
             <View style={styles.sliderTrack}>
-              <View 
+              <View
                 style={[
                   styles.sliderFill,
                   {width: `${currentPercentage}%`},
-                  isDetoxActive && styles.sliderFillDisabled
-                ]} 
+                  isDetoxActive && styles.sliderFillDisabled,
+                ]}
               />
             </View>
-            
+
             <View style={styles.thumbContainer}>
               <Animated.View
                 style={[
                   styles.thumbIcon,
                   {
-                    transform: [{translateX: pan}]
+                    transform: [{translateX: pan}],
                   },
-                  isDetoxActive && styles.thumbIconDisabled
+                  isDetoxActive && styles.thumbIconDisabled,
                 ]}
-                {...panResponder.panHandlers}
-              >
-                <Icon name="power-settings-new" size={WP(5)} color={colors.White} />
+                {...panResponder.panHandlers}>
+                <Icon
+                  name="power-settings-new"
+                  size={WP(5)}
+                  color={colors.White}
+                />
               </Animated.View>
             </View>
           </View>
 
           <View style={styles.rangeLabels}>
-            <Text style={[styles.rangeLabel, isDetoxActive && styles.textDisabled]}>5 min</Text>
-            <Text style={[styles.rangeLabel, isDetoxActive && styles.textDisabled]}>24 hours</Text>
+            <Text
+              style={[styles.rangeLabel, isDetoxActive && styles.textDisabled]}>
+              5 min
+            </Text>
+            <Text
+              style={[styles.rangeLabel, isDetoxActive && styles.textDisabled]}>
+              24 hours
+            </Text>
           </View>
 
           <View style={styles.statusContainer}>
-            <Icon name="apps" size={WP(5)} color={isDetoxActive ? "#ccc" : "#999"} />
-            <Text style={[styles.statusText, isDetoxActive && styles.textDisabled]}>
+            <Icon
+              name="apps"
+              size={WP(5)}
+              color={isDetoxActive ? '#ccc' : '#999'}
+            />
+            <Text
+              style={[styles.statusText, isDetoxActive && styles.textDisabled]}>
               Apps: {isDetoxActive ? 'Will be disabled' : 'Disabled'}
             </Text>
           </View>
 
-          {/* ✅ UPDATED: Show media status from Supabase */}
           <View style={styles.mediaInfoContainer}>
             <View style={styles.mediaSettingsContent}>
               <View style={styles.mediaSettingsLeft}>
-                <Icon 
+                <Icon
                   name={
-                    loadingMedia ? 'hourglass-empty' : 
-                    hasMedia ? (mediaType === 'video' ? 'videocam' : 'music-note') : 
-                    'cloud-off'
-                  } 
-                  size={WP(6)} 
+                    loadingMedia
+                      ? 'hourglass-empty'
+                      : hasMedia
+                      ? mediaType === 'video'
+                        ? 'videocam'
+                        : 'music-note'
+                      : 'cloud-off'
+                  }
+                  size={WP(6)}
                   color={
-                    loadingMedia ? '#999' :
-                    hasMedia ? colors.Primary : '#ccc'
-                  } 
+                    loadingMedia ? '#999' : hasMedia ? colors.Primary : '#ccc'
+                  }
                 />
                 <View style={styles.mediaSettingsTextContainer}>
-                  <Text style={[styles.mediaSettingsTitle, isDetoxActive && styles.textDisabled]}>
-                    {loadingMedia ? 'Loading media...' :
-                     hasMedia ? `${mediaType === 'video' ? 'Video' : 'Audio'} ready` : 
-                     'No media available'}
+                  <Text
+                    style={[
+                      styles.mediaSettingsTitle,
+                      isDetoxActive && styles.textDisabled,
+                    ]}>
+                    {loadingMedia
+                      ? 'Loading media...'
+                      : hasMedia
+                      ? `${mediaType === 'video' ? 'Video' : 'Audio'} ready`
+                      : 'No media available'}
                   </Text>
-                  <Text style={[styles.mediaSettingsSubtitle, isDetoxActive && styles.textDisabled]}>
-                    {loadingMedia ? 'Checking Supabase...' :
-                     hasMedia ? 'Will play during detox session' : 
-                     'Admin can upload from dashboard'}
+                  <Text
+                    style={[
+                      styles.mediaSettingsSubtitle,
+                      isDetoxActive && styles.textDisabled,
+                    ]}>
+                    {loadingMedia
+                      ? 'Checking Supabase...'
+                      : hasMedia
+                      ? 'Will play during detox session'
+                      : 'Admin can upload from dashboard'}
                   </Text>
                 </View>
               </View>
               {!loadingMedia && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={checkMediaStatus}
-                  style={styles.refreshButton}
-                >
+                  style={styles.refreshButton}>
                   <Icon name="refresh" size={WP(5)} color="#999" />
                 </TouchableOpacity>
               )}
@@ -537,13 +686,20 @@ const DigitalDetoxScreen = ({navigation}) => {
 
       <View style={styles.bottomButtonContainer}>
         <TouchableOpacity
-          style={[styles.startButton, isDetoxActive && styles.startButtonDisabled]}
+          style={[
+            styles.startButton,
+            (isDetoxActive || !hasDndPermission) && styles.startButtonDisabled,
+          ]}
           onPress={handleStartDetox}
-          activeOpacity={isDetoxActive ? 1 : 0.8}
-          disabled={isDetoxActive}>
+          activeOpacity={isDetoxActive || !hasDndPermission ? 1 : 0.8}
+          disabled={isDetoxActive || !hasDndPermission}>
           <Icon name="power-settings-new" size={WP(6)} color={colors.White} />
           <Text style={styles.startButtonText}>
-            {isDetoxActive ? 'Detox Active' : 'Start'}
+            {isDetoxActive
+              ? 'Detox Active'
+              : !hasDndPermission
+              ? 'DND Required'
+              : 'Start'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -611,11 +767,63 @@ const styles = StyleSheet.create({
     marginTop: HP(14),
     marginRight: WP(27),
   },
+  // ✅ NEW: DND Card styles
+  dndCard: {
+    backgroundColor: colors.White,
+    borderRadius: WP(4),
+    padding: WP(4),
+    marginTop: HP(2),
+    elevation: 3,
+    shadowColor: colors.Shadow,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  dndCardDisabled: {
+    opacity: 0.6,
+  },
+  dndContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dndLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  dndTextContainer: {
+    marginLeft: WP(3),
+    flex: 1,
+  },
+  dndTitle: {
+    fontSize: FS(1.6),
+    fontFamily: 'OpenSans-SemiBold',
+    color: '#363636',
+    marginBottom: HP(0.3),
+  },
+  dndSubtitle: {
+    fontSize: FS(1.3),
+    fontFamily: 'OpenSans-Regular',
+    color: '#999',
+  },
+  dndHint: {
+    fontSize: FS(1.2),
+    fontFamily: 'OpenSans-Regular',
+    color: '#999',
+    marginTop: HP(1),
+    fontStyle: 'italic',
+  },
   detoxCard: {
     backgroundColor: colors.White,
     borderRadius: WP(4),
     padding: WP(5),
-    marginTop: HP(3),
+    marginTop: HP(2),
     elevation: 4,
     shadowColor: colors.Shadow,
     shadowOffset: {

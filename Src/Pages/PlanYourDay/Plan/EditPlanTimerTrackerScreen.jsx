@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
-  Alert, 
+  Alert,
   FlatList,
   Platform,
 } from 'react-native';
@@ -30,6 +30,7 @@ import {planYourDayService} from '../../../services/api/planYourDayService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
 import taskConfirmationAlarmManager from '../../../services/TaskConfirmation/taskConfirmationAlarmManager';
+import BlockTimeScheduler from '../../../services/Alarm/BlockTimeScheduler';
 
 const EditPlanTimerTrackerScreen = () => {
   const navigation = useNavigation();
@@ -69,6 +70,10 @@ const EditPlanTimerTrackerScreen = () => {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderData, setReminderData] = useState(null);
 
+  // Priority states
+  const [priority, setPriority] = useState('');
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -81,6 +86,22 @@ const EditPlanTimerTrackerScreen = () => {
   const isTaskNameLabelActive = taskNameFocused || taskName.length > 0;
   const isDescriptionLabelActive = descriptionFocused || description.length > 0;
 
+  // Priority options
+  const priorityOptions = [
+    {
+      label: 'Must',
+      value: 'Must',
+      backgroundColor: '#EFCCCC',
+      textColor: '#AF0000',
+    },
+    {
+      label: 'Important',
+      value: 'Important',
+      backgroundColor: '#D0D1E3',
+      textColor: colors.Primary,
+    },
+  ];
+
   // Load existing plan data on mount
   useEffect(() => {
     loadPlanData();
@@ -89,15 +110,18 @@ const EditPlanTimerTrackerScreen = () => {
   const loadPlanData = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch complete plan data from database
       const plan = await planYourDayService.getPlanYourDayById(planId);
-      
+
       if (plan) {
         // Basic information
         setTaskName(plan.title || '');
         setDescription(plan.note || plan.description || '');
         setCategory(plan.category || 'Work and Career');
+
+        // Priority
+        setPriority(plan.priority || 'Important');
 
         // Start date
         if (plan.start_date) {
@@ -120,9 +144,10 @@ const EditPlanTimerTrackerScreen = () => {
         // Reminder data
         if (plan.reminder_enabled && plan.reminder_data) {
           setAddReminder(true);
-          setReminderData(typeof plan.reminder_data === 'string'
-            ? JSON.parse(plan.reminder_data)
-            : plan.reminder_data
+          setReminderData(
+            typeof plan.reminder_data === 'string'
+              ? JSON.parse(plan.reminder_data)
+              : plan.reminder_data,
           );
         }
 
@@ -131,10 +156,12 @@ const EditPlanTimerTrackerScreen = () => {
       }
 
       setLoading(false);
-      
+
       // NEW: Auto-open Start Time picker if triggered from reschedule
       if (route.params?.fromReschedule && !hasAutoOpened) {
-        console.log('[EDIT TIMER TRACKER] Auto-opening Start Time picker from reschedule');
+        console.log(
+          '[EDIT TIMER TRACKER] Auto-opening Start Time picker from reschedule',
+        );
         setHasAutoOpened(true);
         // Small delay to ensure UI is ready
         setTimeout(() => {
@@ -143,7 +170,7 @@ const EditPlanTimerTrackerScreen = () => {
       }
     } catch (error) {
       console.error('Error loading plan data:', error);
-      Alert.alert('Error', 'Failed to load plan data');
+      showToast('Failed to load plan data', 'error');
       setLoading(false);
       navigation.goBack();
     }
@@ -153,17 +180,22 @@ const EditPlanTimerTrackerScreen = () => {
   useFocusEffect(
     React.useCallback(() => {
       if (route.params && route.params.timerTrackerData) {
-        const data = deserializeDatesFromNavigation(route.params.timerTrackerData);
-        
+        const data = deserializeDatesFromNavigation(
+          route.params.timerTrackerData,
+        );
+
         if (data.taskName) setTaskName(data.taskName);
         if (data.description) setDescription(data.description);
         if (data.startDate) setStartDate(data.startDate);
         if (data.endDate) setEndDate(data.endDate);
-        if (data.endDateSelected !== undefined) setEndDateSelected(data.endDateSelected);
+        if (data.endDateSelected !== undefined)
+          setEndDateSelected(data.endDateSelected);
         if (data.startTime) setStartTime(data.startTime);
         if (data.reminderData) setReminderData(data.reminderData);
         if (data.addReminder !== undefined) setAddReminder(data.addReminder);
-        if (data.addToGoogleCalendar !== undefined) setAddToGoogleCalendar(data.addToGoogleCalendar);
+        if (data.addToGoogleCalendar !== undefined)
+          setAddToGoogleCalendar(data.addToGoogleCalendar);
+        if (data.priority !== undefined) setPriority(data.priority);
       }
     }, [route.params]),
   );
@@ -213,16 +245,16 @@ const EditPlanTimerTrackerScreen = () => {
   };
 
   // Format time for display
-  const formatTimeForDisplay = (timeString) => {
+  const formatTimeForDisplay = timeString => {
     if (!timeString) return 'Set Time';
-    
+
     const timeParts = timeString.split(':');
     let hour = parseInt(timeParts[0]);
     const minute = timeParts[1];
-    
+
     const period = hour >= 12 ? 'PM' : 'AM';
     hour = hour % 12 || 12;
-    
+
     return `${hour}:${minute} ${period}`;
   };
 
@@ -237,9 +269,9 @@ const EditPlanTimerTrackerScreen = () => {
       const hours = String(selectedTime.getHours()).padStart(2, '0');
       const minutes = String(selectedTime.getMinutes()).padStart(2, '0');
       const timeString = `${hours}:${minutes}:00`;
-      
+
       setStartTime(timeString);
-      
+
       if (Platform.OS === 'ios') {
         setShowStartTimePicker(false);
       }
@@ -273,7 +305,20 @@ const EditPlanTimerTrackerScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -315,6 +360,16 @@ const EditPlanTimerTrackerScreen = () => {
     }
   };
 
+  // Priority handlers
+  const handlePriorityPress = () => {
+    setShowPriorityDropdown(!showPriorityDropdown);
+  };
+
+  const handlePrioritySelect = selectedPriority => {
+    setPriority(selectedPriority.value);
+    setShowPriorityDropdown(false);
+  };
+
   // Reminder handlers
   const handleReminderToggle = () => {
     if (addReminder) {
@@ -334,8 +389,26 @@ const EditPlanTimerTrackerScreen = () => {
     setShowReminderModal(false);
   };
 
-  // UPDATED: Handle Update press with task confirmation alarm scheduling
+  // Helper function to convert 24-hour time to 12-hour format for display
+  const convertTo12Hour = time24h => {
+    try {
+      if (!time24h) return null;
+      const [hours, minutes] = time24h.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hour12 = hours % 12 || 12;
+      return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
+    } catch (error) {
+      console.error('Error converting time to 12-hour format:', error);
+      return null;
+    }
+  };
+
+  // UPDATED: Handle Update press with Block Time scheduling
   const handleUpdatePress = async () => {
+    console.log('========================================');
+    console.log('📝 [EditTimerTracker] Starting task update');
+    console.log('========================================');
+
     if (toastVisible) {
       hideToast();
     }
@@ -347,30 +420,45 @@ const EditPlanTimerTrackerScreen = () => {
     }
 
     if (!user) {
-      Alert.alert('Error', 'Please log in to update Plan Your Day.');
+      showToast('Please log in to create Plan Your Day', 'error');
       return;
     }
 
     try {
+      // Prepare block time data (only if start time is set)
+      const blockTimeData = startTime
+        ? {
+            enabled: true,
+            start_time: startTime,
+          }
+        : null;
+
       // Prepare updated plan data (using correct database column names)
       const updatedPlanData = {
         title: taskName.trim(),
         description: description.trim(),
         note: description.trim() || '',
         category: category,
+        priority: priority || 'Important',
+        tags: ['Plan', priority || 'Important'],
 
         // Scheduling settings
         start_date: startDate
           ? new Date(startDate).toISOString().split('T')[0]
           : null,
-        end_date: endDateSelected && endDate
-          ? new Date(endDate).toISOString().split('T')[0]
-          : null,
+        end_date:
+          endDateSelected && endDate
+            ? new Date(endDate).toISOString().split('T')[0]
+            : null,
         is_end_date_enabled: endDateSelected,
         start_time: startTime,
+        time: startTime ? convertTo12Hour(startTime) : null, // ✅ Convert 24-hour startTime to 12-hour format for time column
 
         // Evaluation type
         evaluation_type: 'timerTracker',
+
+        // Block Time data (no separate enabled column needed)
+        block_time_data: blockTimeData,
 
         // Additional features
         add_to_google_calendar: addToGoogleCalendar || false,
@@ -385,34 +473,110 @@ const EditPlanTimerTrackerScreen = () => {
         updatedPlanData.reminder_data = null;
       }
 
-      console.log('Updating Plan Your Day Timer Tracker:', updatedPlanData);
+      console.log('💾 Updating Plan Your Day Timer Tracker:', updatedPlanData);
 
       // Update plan in database
-      const updatedPlan = await planYourDayService.updatePlanYourDay(planId, updatedPlanData);
-      console.log('Plan updated successfully:', updatedPlan);
+      const updatedPlan = await planYourDayService.updatePlanYourDay(
+        planId,
+        updatedPlanData,
+      );
+      console.log('✅ Plan updated successfully:', updatedPlan.id);
 
-      // Schedule task confirmation alarm if start time is available
-      if (startTime && startDate) {
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - Triggers if start time is set
+      if (blockTimeData && startTime && startDate) {
         try {
-          console.log('Scheduling task confirmation alarm for timer tracker...');
-          
-          const confirmationResult = await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
+          console.log('========================================');
+          console.log('⏰ [BlockTime] Auto-scheduling Block Time alarm');
+          console.log('========================================');
+          console.log('📋 Task ID:', updatedPlan.id);
+          console.log('📋 Start Time:', startTime);
+          console.log(
+            '📋 Start Date:',
+            new Date(startDate).toISOString().split('T')[0],
+          );
+
+          const dateString = new Date(startDate).toISOString().split('T')[0];
+
+          // ✅ FIX: Stringify block_time_data for native module
+          const blockTimeTask = {
             id: updatedPlan.id,
             title: taskName.trim(),
             description: description.trim(),
-            start_date: new Date(startDate).toISOString().split('T')[0],
-            start_time: startTime, // Already in HH:MM:SS format
             category: category,
-            evaluationType: 'timerTracker',
-          });
+            evaluation_type: 'timerTracker',
+            block_time_data: JSON.stringify({
+              // ✅ STRINGIFY HERE
+              start_time: startTime,
+              enabled: true,
+            }),
+            source: 'plan_your_day',
+            frequency_type: 'Once',
+            start_date: dateString,
+          };
+
+          console.log(
+            '📦 Block Time Task Object:',
+            JSON.stringify(blockTimeTask, null, 2),
+          );
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log('========================================');
+            console.log('✅ [BlockTime] Alarm scheduled successfully!');
+            console.log('📱 Request Code:', alarmResult.result.requestCode);
+            console.log(
+              '⏰ Trigger Time:',
+              new Date(alarmResult.result.triggerTime).toLocaleString(),
+            );
+            console.log('========================================');
+          } else {
+            console.warn(
+              '⚠️ [BlockTime] Failed to schedule alarm:',
+              alarmResult.reason || alarmResult.error,
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+          // Don't block task update if Block Time scheduling fails
+        }
+      }
+
+      // Schedule task confirmation alarm
+      if (startTime && startDate) {
+        try {
+          console.log('📅 Scheduling task confirmation alarm...');
+
+          const confirmationResult =
+            await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
+              id: updatedPlan.id,
+              title: taskName.trim(),
+              description: description.trim(),
+              start_date: new Date(startDate).toISOString().split('T')[0],
+              start_time: startTime,
+              category: category,
+              evaluationType: 'timerTracker',
+            });
 
           if (confirmationResult.success) {
-            console.log('Task confirmation alarm scheduled:', confirmationResult.data);
+            console.log(
+              '✅ Task confirmation alarm scheduled:',
+              confirmationResult.data,
+            );
           } else {
-            console.warn('Failed to schedule confirmation alarm:', confirmationResult.error);
+            console.warn(
+              '⚠️ Failed to schedule confirmation alarm:',
+              confirmationResult.error,
+            );
           }
         } catch (confirmError) {
-          console.error('Error scheduling task confirmation:', confirmError);
+          console.error('❌ Error scheduling task confirmation:', confirmError);
         }
       }
 
@@ -421,44 +585,54 @@ const EditPlanTimerTrackerScreen = () => {
       if (updatedPlanData.reminder_enabled && updatedPlanData.reminder_data) {
         try {
           const userProfile = {
-            username: user?.user_metadata?.display_name || user?.user_metadata?.username || user?.email?.split('@')[0],
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
             display_name: user?.user_metadata?.display_name,
             user_metadata: user?.user_metadata,
             email: user?.email,
           };
 
-          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
-            {
-              ...updatedPlanData,
-              userProfile: userProfile,
-            },
-            updatedPlan,
-          );
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {
+                ...updatedPlanData,
+                userProfile: userProfile,
+              },
+              updatedPlan,
+            );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
+            console.log('✅ Reminders scheduled:', scheduledReminders.length);
           }
         } catch (reminderError) {
-          console.error('Error scheduling reminders:', reminderError);
+          console.error('❌ Error scheduling reminders:', reminderError);
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      // Show success message
-      Alert.alert('Success', `Plan Your Day Timer Tracker updated successfully!${reminderMessage}`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [{name: 'BottomTab', params: {planUpdated: true}}],
-            });
-          },
-        },
-      ]);
+      console.log('========================================');
+      console.log('🎉 Task update completed successfully!');
+      console.log('========================================');
+
+      // Build success message
+      let successMessage = 'Task updated successfully!';
+
+      // Show success toast
+      showToast(successMessage, 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [{name: 'BottomTab', params: {planUpdated: true}}],
+        });
+      }, 1500);
     } catch (error) {
-      console.error('Error updating Plan Your Day Timer Tracker:', error);
-      Alert.alert('Error', 'Failed to update plan. Please try again.');
+      console.error('❌ Error updating Plan Your Day Timer Tracker:', error);
+      showToast('Failed to update plan. Please try again.', 'error');
     }
   };
 
@@ -477,7 +651,9 @@ const EditPlanTimerTrackerScreen = () => {
           <View
             style={[
               styles.toggleSwitch,
-              isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
+              isEnabled
+                ? styles.toggleSwitchActive
+                : styles.toggleSwitchInactive,
             ]}
           />
         </View>
@@ -497,6 +673,7 @@ const EditPlanTimerTrackerScreen = () => {
     subtitle = null,
     customRight = null,
     onRowPress = null,
+    hasDropdown = false,
   ) => {
     return (
       <View style={styles.optionContainer}>
@@ -513,9 +690,18 @@ const EditPlanTimerTrackerScreen = () => {
               />
             )}
             <View style={styles.optionTextContainer}>
-              <Text style={[styles.optionTitle, !iconSource && styles.addTitle]}>{title}</Text>
+              <Text
+                style={[styles.optionTitle, !iconSource && styles.addTitle]}>
+                {title}
+              </Text>
               {subtitle && (
-                <Text style={[styles.optionSubtitle, !iconSource && styles.optionSubtitle1]}>{subtitle}</Text>
+                <Text
+                  style={[
+                    styles.optionSubtitle,
+                    !iconSource && styles.optionSubtitle1,
+                  ]}>
+                  {subtitle}
+                </Text>
               )}
             </View>
           </View>
@@ -533,6 +719,13 @@ const EditPlanTimerTrackerScreen = () => {
                   resizeMode="contain"
                 />
               </TouchableOpacity>
+            )}
+            {hasDropdown && (
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={WP(6)}
+                color="#646464"
+              />
             )}
             {customRight && customRight}
           </View>
@@ -584,6 +777,70 @@ const EditPlanTimerTrackerScreen = () => {
     );
   };
 
+  // Priority section component
+  const renderPrioritySection = () => {
+    return (
+      <View
+        style={[
+          styles.optionContainer,
+          showPriorityDropdown && styles.priorityContainerExpanded,
+        ]}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handlePriorityPress}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Flag}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Priority</Text>
+            </View>
+          </View>
+          <View style={styles.optionRight}>
+            <MaterialIcons
+              name={
+                showPriorityDropdown
+                  ? 'keyboard-arrow-up'
+                  : 'keyboard-arrow-down'
+              }
+              size={WP(6)}
+              color="#646464"
+            />
+          </View>
+        </TouchableOpacity>
+
+        {showPriorityDropdown && (
+          <View style={styles.priorityDropdown}>
+            <View style={styles.priorityButtonsContainer}>
+              {priorityOptions.map((option, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.priorityButton,
+                    {backgroundColor: option.backgroundColor},
+                    priority === option.value && styles.priorityButtonSelected,
+                  ]}
+                  onPress={() => handlePrioritySelect(option)}
+                  activeOpacity={0.8}>
+                  <Text
+                    style={[
+                      styles.priorityButtonText,
+                      {color: option.textColor},
+                    ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -601,7 +858,10 @@ const EditPlanTimerTrackerScreen = () => {
           data={[1, 2, 3, 4, 5, 6, 7, 8]}
           keyExtractor={(item, index) => `skeleton-${index}`}
           renderItem={() => <TaskSkeleton />}
-          contentContainerStyle={{paddingHorizontal: WP(4.533), paddingTop: HP(2)}}
+          contentContainerStyle={{
+            paddingHorizontal: WP(4.533),
+            paddingTop: HP(2),
+          }}
           showsVerticalScrollIndicator={false}
         />
       </View>
@@ -697,13 +957,18 @@ const EditPlanTimerTrackerScreen = () => {
           null,
           null,
           <View style={styles.dateContainer}>
-            <Text style={styles.dateText}>{formatTimeForDisplay(startTime)}</Text>
+            <Text style={styles.dateText}>
+              {formatTimeForDisplay(startTime)}
+            </Text>
           </View>,
           handleStartTimePress,
         )}
 
         {/* End Date Section */}
         {renderEndDateSection()}
+
+        {/* Priority Section */}
+        {renderPrioritySection()}
 
         {/* Add a Reminder */}
         {renderOptionRow(
@@ -715,11 +980,13 @@ const EditPlanTimerTrackerScreen = () => {
           false,
           null,
           reminderData && addReminder
-            ? `${reminderData.type === 'notification'
-                ? '🔔 Notification'
-                : reminderData.type === 'alarm'
-                ? '⏰ Alarm'
-                : '🔕 No reminder'} at ${reminderData.time}`
+            ? `${
+                reminderData.type === 'notification'
+                  ? '🔔 Notification'
+                  : reminderData.type === 'alarm'
+                  ? '⏰ Alarm'
+                  : '🔕 No reminder'
+              } at ${reminderData.time}`
             : null,
         )}
 
@@ -897,6 +1164,10 @@ const styles = StyleSheet.create({
     borderColor: '#F0F0F0',
     minHeight: HP(4.375),
   },
+  priorityContainerExpanded: {
+    minHeight: HP(12),
+    paddingBottom: HP(1.5),
+  },
   noBottomBorder: {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
@@ -1063,6 +1334,29 @@ const styles = StyleSheet.create({
     fontSize: FS(1.8),
     fontFamily: 'OpenSans-SemiBold',
     color: '#646464',
+  },
+  priorityDropdown: {
+    paddingTop: HP(1),
+    paddingHorizontal: WP(10),
+  },
+  priorityButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  priorityButton: {
+    paddingVertical: HP(1.2),
+    borderRadius: WP(2),
+    width: WP(28.5),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priorityButtonSelected: {
+    opacity: 0.8,
+    transform: [{scale: 0.95}],
+  },
+  priorityButtonText: {
+    fontSize: FS(1.5),
+    fontFamily: 'OpenSans-SemiBold',
   },
   calendarContainer: {
     marginBottom: HP(0.9),

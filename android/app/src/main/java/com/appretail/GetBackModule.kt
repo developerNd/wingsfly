@@ -1,6 +1,7 @@
 package com.wingsfly
 
 import android.app.AppOpsManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -20,9 +21,177 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
     
     override fun getName(): String = MODULE_NAME
     
+    // ========================================
+    // DND (Do Not Disturb) METHODS
+    // ========================================
+    
     /**
-     * Check if silent mode (or vibrate mode) is enabled
+     * Check if app has DND access permission
      */
+    @ReactMethod
+    fun hasDndPermission(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val hasAccess = notificationManager.isNotificationPolicyAccessGranted
+                
+                Log.d(TAG, "DND Permission status: $hasAccess")
+                promise.resolve(hasAccess)
+            } else {
+                Log.d(TAG, "DND not supported on Android < 6.0")
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking DND permission: ${e.message}", e)
+            promise.reject("CHECK_DND_PERMISSION_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Request DND access permission (opens Settings)
+     */
+    @ReactMethod
+    fun requestDndPermission(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                if (notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.d(TAG, "DND permission already granted")
+                    promise.resolve(true)
+                    return
+                }
+                
+                Log.d(TAG, "Opening DND permission settings")
+                val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                reactContext.startActivity(intent)
+                
+                promise.resolve(false)
+            } else {
+                Log.d(TAG, "DND not supported on Android < 6.0")
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting DND permission: ${e.message}", e)
+            promise.reject("REQUEST_DND_PERMISSION_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Check if DND is currently enabled
+     */
+    @ReactMethod
+    fun isDndEnabled(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                if (!notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.w(TAG, "Cannot check DND status - permission not granted")
+                    promise.resolve(false)
+                    return
+                }
+                
+                val currentFilter = notificationManager.currentInterruptionFilter
+                val isDndActive = currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL
+                
+                Log.d(TAG, "DND status: $isDndActive (filter: $currentFilter)")
+                promise.resolve(isDndActive)
+            } else {
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking DND status: ${e.message}", e)
+            promise.reject("CHECK_DND_STATUS_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Enable DND mode
+     */
+    @ReactMethod
+    fun enableDnd(mode: String, promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                if (!notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.e(TAG, "Cannot enable DND - permission not granted")
+                    promise.reject("NO_DND_PERMISSION", "DND permission not granted")
+                    return
+                }
+                
+                val interruptionFilter = when (mode) {
+                    "total_silence" -> NotificationManager.INTERRUPTION_FILTER_NONE
+                    "alarms_only" -> NotificationManager.INTERRUPTION_FILTER_ALARMS
+                    "priority_only" -> NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                    else -> NotificationManager.INTERRUPTION_FILTER_ALARMS
+                }
+                
+                Log.d(TAG, "Enabling DND with mode: $mode (filter: $interruptionFilter)")
+                notificationManager.setInterruptionFilter(interruptionFilter)
+                
+                val currentFilter = notificationManager.currentInterruptionFilter
+                val success = currentFilter == interruptionFilter
+                
+                if (success) {
+                    Log.d(TAG, "✅ DND enabled successfully")
+                } else {
+                    Log.w(TAG, "⚠️ DND may not have been set properly")
+                }
+                
+                promise.resolve(success)
+            } else {
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enabling DND: ${e.message}", e)
+            promise.reject("ENABLE_DND_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Disable DND mode
+     */
+    @ReactMethod
+    fun disableDnd(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                if (!notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.e(TAG, "Cannot disable DND - permission not granted")
+                    promise.reject("NO_DND_PERMISSION", "DND permission not granted")
+                    return
+                }
+                
+                Log.d(TAG, "Disabling DND")
+                notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                
+                val currentFilter = notificationManager.currentInterruptionFilter
+                val success = currentFilter == NotificationManager.INTERRUPTION_FILTER_ALL
+                
+                if (success) {
+                    Log.d(TAG, "✅ DND disabled successfully")
+                } else {
+                    Log.w(TAG, "⚠️ DND may not have been disabled properly")
+                }
+                
+                promise.resolve(success)
+            } else {
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error disabling DND: ${e.message}", e)
+            promise.reject("DISABLE_DND_ERROR", e.message)
+        }
+    }
+    
+    // ========================================
+    // SILENT MODE METHODS (Deprecated)
+    // ========================================
+    
     @ReactMethod
     fun isSilentModeEnabled(promise: Promise) {
         try {
@@ -40,9 +209,6 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
         }
     }
     
-    /**
-     * Open sound settings for user to enable silent mode
-     */
     @ReactMethod
     fun openSoundSettings(promise: Promise) {
         try {
@@ -57,13 +223,10 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
         }
     }
     
-    /**
-     * ✅ UPDATED: Start Get Back lock with URLs from Supabase
-     * @param durationInMinutes - Session duration
-     * @param confirmationVideoUrl - URL to confirmation video from Supabase
-     * @param mediaFileUrl - URL to media file (video/audio) from Supabase (nullable)
-     * @param mediaType - Type of media: "video" or "audio" (nullable)
-     */
+    // ========================================
+    // GET BACK LOCK METHODS
+    // ========================================
+    
     @ReactMethod
     fun startGetBackLock(
         durationInMinutes: Int, 
@@ -92,7 +255,6 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
                     Log.e(TAG, "❌ Overlay permission NOT granted")
                     promise.reject("NO_OVERLAY_PERMISSION", "Please grant overlay permission first in Settings")
                     
-                    // Open settings to grant permission
                     try {
                         val intent = Intent(
                             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -140,7 +302,7 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
                 reactContext.startService(serviceIntent)
             }
             
-            // ✅ Start the activity with media URLs from Supabase
+            // Start the activity with media URLs from Supabase
             val activityIntent = Intent(reactContext, GetBackLockActivity::class.java)
             activityIntent.putExtra("duration_minutes", safeDuration)
             activityIntent.putExtra("confirmation_video_url", confirmationVideoUrl)
@@ -170,7 +332,6 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
             val intent = Intent("com.wingsfly.STOP_GET_BACK")
             reactContext.sendBroadcast(intent)
             
-            // Stop the service
             val serviceIntent = Intent(reactContext, GetBackService::class.java)
             reactContext.stopService(serviceIntent)
             
@@ -202,7 +363,6 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
                 permissions.putBoolean("overlay", true)
             }
             
-            // Check usage stats permission
             val usageStatsGranted = try {
                 val appOps = reactContext.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
                 val mode = appOps.checkOpNoThrow(
@@ -217,7 +377,14 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
             
             permissions.putBoolean("usageStats", usageStatsGranted)
             
-            // Check silent mode
+            // Check DND permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                permissions.putBoolean("dnd", notificationManager.isNotificationPolicyAccessGranted)
+            } else {
+                permissions.putBoolean("dnd", false)
+            }
+            
             val audioManager = reactContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val ringerMode = audioManager.ringerMode
             val isSilent = ringerMode == AudioManager.RINGER_MODE_SILENT || 
@@ -242,12 +409,12 @@ class GetBackModule(private val reactContext: ReactApplicationContext) :
                     )
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     reactContext.startActivity(intent)
-                    promise.resolve(false) // Not granted yet, opened settings
+                    promise.resolve(false)
                 } else {
-                    promise.resolve(true) // Already granted
+                    promise.resolve(true)
                 }
             } else {
-                promise.resolve(true) // Not needed on older Android
+                promise.resolve(true)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting overlay permission: ${e.message}", e)

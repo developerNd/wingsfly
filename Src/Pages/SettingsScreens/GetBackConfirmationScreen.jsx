@@ -8,8 +8,6 @@ import {
   Alert,
   ActivityIndicator,
   Dimensions,
-  NativeModules,
-  NativeEventEmitter,
   DeviceEventEmitter,
   Platform,
 } from 'react-native';
@@ -34,16 +32,19 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
 
   useEffect(() => {
     loadConfirmationVideo();
-    
-    // ✅ NEW: Listen for close broadcast from lock activity
+
+    // Listen for close broadcast from lock activity
     let closeListener;
     if (Platform.OS === 'android') {
-      closeListener = DeviceEventEmitter.addListener('CLOSE_CONFIRMATION_SCREEN', () => {
-        console.log('📥 Received close broadcast - navigating away');
-        navigation.goBack();
-      });
+      closeListener = DeviceEventEmitter.addListener(
+        'CLOSE_CONFIRMATION_SCREEN',
+        () => {
+          console.log('📥 Received close broadcast - navigating away');
+          navigation.goBack();
+        },
+      );
     }
-    
+
     return () => {
       if (closeListener) {
         closeListener.remove();
@@ -51,24 +52,27 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
     };
   }, []);
 
-  // ✅ UPDATED: Load confirmation video from Supabase
   const loadConfirmationVideo = async () => {
     try {
       setLoading(true);
       console.log('📥 Fetching confirmation video from Supabase...');
-      
-      const confirmationResult = await getBackMediaSupabaseService.fetchConfirmationVideo();
-      
+
+      const confirmationResult =
+        await getBackMediaSupabaseService.fetchConfirmationVideo();
+
       if (!confirmationResult.hasConfirmation) {
         Alert.alert(
           'No Confirmation Video',
           'No confirmation video found. Please contact admin to upload one from the dashboard.',
-          [{text: 'OK', onPress: () => navigation.goBack()}]
+          [{text: 'OK', onPress: () => navigation.goBack()}],
         );
         return;
       }
 
-      console.log('✅ Confirmation video URL:', confirmationResult.data.fileUrl);
+      console.log(
+        '✅ Confirmation video URL:',
+        confirmationResult.data.fileUrl,
+      );
       setVideoUrl(confirmationResult.data.fileUrl);
       setLoading(false);
     } catch (error) {
@@ -76,7 +80,7 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
       Alert.alert(
         'Error',
         'Failed to load confirmation video from server. Please check your internet connection.',
-        [{text: 'OK', onPress: () => navigation.goBack()}]
+        [{text: 'OK', onPress: () => navigation.goBack()}],
       );
     }
   };
@@ -87,7 +91,7 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
     setCanProceed(true);
   };
 
-  const handleVideoError = (error) => {
+  const handleVideoError = error => {
     console.error('❌ Video playback error:', error);
     setVideoError(true);
     Alert.alert(
@@ -95,8 +99,8 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
       'Failed to play confirmation video. Please check your internet connection and try again.',
       [
         {text: 'Retry', onPress: loadConfirmationVideo},
-        {text: 'Cancel', onPress: () => navigation.goBack()}
-      ]
+        {text: 'Cancel', onPress: () => navigation.goBack()},
+      ],
     );
   };
 
@@ -108,7 +112,7 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
     if (!canProceed) {
       Alert.alert(
         'Watch Video',
-        'Please watch the confirmation video completely before proceeding.'
+        'Please watch the confirmation video completely before proceeding.',
       );
       return;
     }
@@ -117,32 +121,36 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
 
     try {
       console.log('🚀 Starting Get Back lock...');
+
+      // ✅ GetBackBridge.startGetBackLock() now automatically:
+      // 1. Enables DND if permission granted (no prompts)
+      // 2. Fetches confirmation video from Supabase
+      // 3. Fetches random media from Supabase
+      // 4. Starts native lock activity
       const success = await GetBackBridge.startGetBackLock(durationMinutes);
-      
+
       if (success) {
         console.log('✅ Get Back lock started successfully');
-        
-        // ✅ FIX: Move app to background instead of navigating/closing
-        // The native lock activity will handle everything
-        // We just minimize the RN app
-        const {NativeModules} = require('react-native');
-        const {GetBackModule} = NativeModules;
-        
-        // Optional: You could add a native method to minimize the app
-        // For now, just do nothing - the lock activity will take over
-        console.log('📱 Lock activity is now active - confirmation screen in background');
-        
-        // Don't navigate or finish - just let the lock activity overlay everything
+        console.log(
+          '📱 Lock activity is now active - confirmation screen in background',
+        );
+
+        // Don't navigate or close - the lock activity will overlay everything
+        // When session ends, lock activity will close itself and call stopGetBackLock()
+        // which will automatically disable DND
       } else {
         Alert.alert(
           'Error',
-          'Failed to start Get Back. Please ensure you have granted all necessary permissions.'
+          'Failed to start Get Back. Please ensure you have granted all necessary permissions.',
         );
         setStarting(false);
       }
     } catch (error) {
       console.error('❌ Error starting Get Back:', error);
-      Alert.alert('Error', 'An error occurred while starting Get Back: ' + error.message);
+      Alert.alert(
+        'Error',
+        'An error occurred while starting Get Back: ' + error.message,
+      );
       setStarting(false);
     }
   };
@@ -153,7 +161,9 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
         <StatusBar backgroundColor="#F8F9FA" barStyle="dark-content" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.Primary} />
-          <Text style={styles.loadingText}>Loading confirmation video from server...</Text>
+          <Text style={styles.loadingText}>
+            Loading confirmation video from server...
+          </Text>
         </View>
       </View>
     );
@@ -179,9 +189,10 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
         {/* Video Player Container */}
         <View style={styles.videoWrapper}>
           <Text style={styles.instructionText}>
-            Watch this confirmation message before starting your Get Back session
+            Watch this confirmation message before starting your Get Back
+            session
           </Text>
-          
+
           <View style={styles.videoContainer}>
             {videoUrl && !videoError ? (
               <Video
@@ -191,12 +202,13 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
                 controls={false}
                 resizeMode="contain"
                 repeat={false}
+                pictureInPicture={false}
                 playInBackground={false}
                 playWhenInactive={false}
                 onEnd={handleVideoEnd}
                 onError={handleVideoError}
                 onLoad={handleVideoLoad}
-                onBuffer={(buffering) => {
+                onBuffer={buffering => {
                   console.log('Video buffering:', buffering);
                 }}
               />
@@ -207,7 +219,7 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
                   {videoError ? 'Video playback failed' : 'Video unavailable'}
                 </Text>
                 {videoError && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.retryButton}
                     onPress={loadConfirmationVideo}>
                     <Icon name="refresh" size={WP(5)} color={colors.Primary} />
@@ -260,6 +272,9 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
               • Media will play randomly to help you focus
             </Text>
             <Text style={styles.infoBoxText}>
+              • DND will activate automatically if enabled
+            </Text>
+            <Text style={styles.infoBoxText}>
               • Cannot be stopped once started
             </Text>
           </View>
@@ -271,7 +286,7 @@ const GetBackConfirmationScreen = ({navigation, route}) => {
         <TouchableOpacity
           style={[
             styles.startButton,
-            !canProceed && styles.startButtonDisabled
+            !canProceed && styles.startButtonDisabled,
           ]}
           onPress={handleNext}
           disabled={!canProceed || starting}

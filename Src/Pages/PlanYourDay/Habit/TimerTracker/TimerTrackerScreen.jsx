@@ -27,6 +27,7 @@ import {colors, Icons} from '../../../../Helper/Contants';
 import {taskService} from '../../../../services/api/taskService';
 import {useAuth} from '../../../../contexts/AuthContext';
 import ReminderScheduler from '../../../../services/notifications/ReminderScheduler';
+import BlockTimeScheduler from '../../../../services/Alarm/BlockTimeScheduler';
 
 const TimerTrackerScreen = () => {
   const navigation = useNavigation();
@@ -48,7 +49,7 @@ const TimerTrackerScreen = () => {
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
-  // NEW: Start Time states
+  // Start Time states
   const [startTime, setStartTime] = useState(null);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [tempTime, setTempTime] = useState(new Date());
@@ -59,6 +60,10 @@ const TimerTrackerScreen = () => {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderData, setReminderData] = useState(null);
 
+  // Priority states
+  const [priority, setPriority] = useState('');
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -68,21 +73,42 @@ const TimerTrackerScreen = () => {
   const isTaskNameLabelActive = taskNameFocused || taskName.length > 0;
   const isDescriptionLabelActive = descriptionFocused || description.length > 0;
 
+  // Priority options
+  const priorityOptions = [
+    {
+      label: 'Must',
+      value: 'Must',
+      backgroundColor: '#EFCCCC',
+      textColor: '#AF0000',
+    },
+    {
+      label: 'Important',
+      value: 'Important',
+      backgroundColor: '#D0D1E3',
+      textColor: colors.Primary,
+    },
+  ];
+
   // Load data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       if (route.params && route.params.timerTrackerData) {
-        const data = deserializeDatesFromNavigation(route.params.timerTrackerData);
-        
+        const data = deserializeDatesFromNavigation(
+          route.params.timerTrackerData,
+        );
+
         if (data.taskName) setTaskName(data.taskName);
         if (data.description) setDescription(data.description);
         if (data.startDate) setStartDate(data.startDate);
         if (data.endDate) setEndDate(data.endDate);
-        if (data.endDateSelected !== undefined) setEndDateSelected(data.endDateSelected);
-        if (data.startTime) setStartTime(data.startTime); // NEW
+        if (data.endDateSelected !== undefined)
+          setEndDateSelected(data.endDateSelected);
+        if (data.startTime) setStartTime(data.startTime);
         if (data.reminderData) setReminderData(data.reminderData);
         if (data.addReminder !== undefined) setAddReminder(data.addReminder);
-        if (data.addToGoogleCalendar !== undefined) setAddToGoogleCalendar(data.addToGoogleCalendar);
+        if (data.addToGoogleCalendar !== undefined)
+          setAddToGoogleCalendar(data.addToGoogleCalendar);
+        if (data.priority !== undefined) setPriority(data.priority);
       }
     }, [route.params]),
   );
@@ -131,21 +157,21 @@ const TimerTrackerScreen = () => {
     }
   };
 
-  // NEW: Format time for display
-  const formatTimeForDisplay = (timeString) => {
+  // Format time for display
+  const formatTimeForDisplay = timeString => {
     if (!timeString) return 'Set Time';
-    
+
     const timeParts = timeString.split(':');
     let hour = parseInt(timeParts[0]);
     const minute = timeParts[1];
-    
+
     const period = hour >= 12 ? 'PM' : 'AM';
     hour = hour % 12 || 12;
-    
+
     return `${hour}:${minute} ${period}`;
   };
 
-  // NEW: Handle start time selection
+  // Handle start time selection
   const handleStartTimeChange = (event, selectedTime) => {
     if (Platform.OS === 'android') {
       setShowStartTimePicker(false);
@@ -156,9 +182,9 @@ const TimerTrackerScreen = () => {
       const hours = String(selectedTime.getHours()).padStart(2, '0');
       const minutes = String(selectedTime.getMinutes()).padStart(2, '0');
       const timeString = `${hours}:${minutes}:00`;
-      
+
       setStartTime(timeString);
-      
+
       if (Platform.OS === 'ios') {
         setShowStartTimePicker(false);
       }
@@ -167,7 +193,7 @@ const TimerTrackerScreen = () => {
     }
   };
 
-  // NEW: Open time picker
+  // Open time picker
   const handleStartTimePress = () => {
     // Set initial time for picker
     if (startTime) {
@@ -192,7 +218,20 @@ const TimerTrackerScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -206,6 +245,13 @@ const TimerTrackerScreen = () => {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = String(date.getFullYear()).slice(-2);
     return `${day}/${month}/${year}`;
+  };
+
+  const formatDateForDB = date => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const calculateDaysDifference = (startDate, endDate) => {
@@ -232,6 +278,16 @@ const TimerTrackerScreen = () => {
     } else {
       setShowEndDatePicker(true);
     }
+  };
+
+  // Priority handlers
+  const handlePriorityPress = () => {
+    setShowPriorityDropdown(!showPriorityDropdown);
+  };
+
+  const handlePrioritySelect = selectedPriority => {
+    setPriority(selectedPriority.value);
+    setShowPriorityDropdown(false);
   };
 
   // Reminder handlers
@@ -272,23 +328,44 @@ const TimerTrackerScreen = () => {
         startDate,
         endDate,
         endDateSelected,
-        startTime, // NEW
+        startTime,
         reminderData,
         addReminder,
         addToGoogleCalendar,
+        priority,
       },
     };
 
     const serializedData = {
       ...currentData,
-      timerTrackerData: serializeDatesForNavigation(currentData.timerTrackerData),
+      timerTrackerData: serializeDatesForNavigation(
+        currentData.timerTrackerData,
+      ),
     };
 
     navigation.navigate('LinkGoal', serializedData);
   };
 
+  // Helper function to convert 24-hour time to 12-hour format for display
+  const convertTo12Hour = time24h => {
+    try {
+      if (!time24h) return null;
+      const [hours, minutes] = time24h.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hour12 = hours % 12 || 12;
+      return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
+    } catch (error) {
+      console.error('Error converting time to 12-hour format:', error);
+      return null;
+    }
+  };
+
   // Handle Done press
   const handleDonePress = async () => {
+    console.log('========================================');
+    console.log('📝 [TimerTracker] Starting task creation');
+    console.log('========================================');
+
     if (toastVisible) {
       hideToast();
     }
@@ -300,7 +377,7 @@ const TimerTrackerScreen = () => {
     }
 
     if (!user) {
-      Alert.alert('Error', 'Please log in to create tasks.');
+      showToast('Please log in to create tasks', 'error');
       return;
     }
 
@@ -310,10 +387,11 @@ const TimerTrackerScreen = () => {
       startDate,
       endDate,
       endDateSelected,
-      startTime, // NEW
+      startTime,
       reminderData,
       addReminder,
       addToGoogleCalendar,
+      priority,
     };
 
     const finalData = {
@@ -322,18 +400,34 @@ const TimerTrackerScreen = () => {
     };
 
     try {
+      // ✅ AUTOMATIC: Block time enabled if start time is set
+      const blockTimeEnabled = !!startTime;
+
+      // Prepare block time data
+      const blockTimeData =
+        blockTimeEnabled && startTime
+          ? {
+              enabled: true,
+              start_time: startTime,
+            }
+          : null;
+
       const taskData = {
         title: taskName.trim(),
         description: description.trim(),
-        category: previousData.selectedCategory?.title || previousData.selectedCategory,
+        category:
+          previousData.selectedCategory?.title || previousData.selectedCategory,
         taskType: previousData.type || 'Habit',
         evaluationType: 'timerTracker',
         timeColor: '#E4EBF3',
+        priority: priority || 'Important',
+        tags: [previousData.type || 'Habit', priority || 'Important'],
 
         // Frequency data from previous screen
         frequencyType: previousData.frequencyData?.selectedFrequency,
         selectedWeekdays: previousData.frequencyData?.selectedWeekdays || [],
-        selectedMonthDates: previousData.frequencyData?.selectedMonthDates || [],
+        selectedMonthDates:
+          previousData.frequencyData?.selectedMonthDates || [],
         selectedYearDates: previousData.frequencyData?.selectedYearDates || [],
         periodDays: previousData.frequencyData?.periodDays || 1,
         periodType: previousData.frequencyData?.selectedPeriod || 'Week',
@@ -342,7 +436,8 @@ const TimerTrackerScreen = () => {
         isYearFlexible: previousData.frequencyData?.isYearFlexible || false,
         useDayOfWeek: previousData.frequencyData?.useDayOfWeek || false,
         isRepeatFlexible: previousData.frequencyData?.isRepeatFlexible || false,
-        isRepeatAlternateDays: previousData.frequencyData?.isRepeatAlternateDays || false,
+        isRepeatAlternateDays:
+          previousData.frequencyData?.isRepeatAlternateDays || false,
 
         // Repeat data
         everyDays: previousData.frequencyData?.everyDays,
@@ -353,10 +448,15 @@ const TimerTrackerScreen = () => {
         startDate: startDate,
         endDate: endDateSelected ? endDate : null,
         isEndDateEnabled: endDateSelected,
-        startTime: startTime, // NEW: Add start time
+        startTime: startTime,
+        time: startTime ? convertTo12Hour(startTime) : null, // ✅ Convert 24-hour startTime to 12-hour format for time column
 
         // Additional features
         addToGoogleCalendar: addToGoogleCalendar,
+
+        // Block time data
+        blockTimeEnabled: blockTimeEnabled,
+        blockTimeData: blockTimeData,
 
         // User data
         userId: user.id,
@@ -376,24 +476,92 @@ const TimerTrackerScreen = () => {
       const savedTask = await taskService.createTask(taskData);
       console.log('Timer Tracker task saved successfully:', savedTask);
 
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - Triggers if start time is set
+      if (blockTimeEnabled && startTime && startDate) {
+        try {
+          console.log('========================================');
+          console.log('⏰ [BlockTime] Auto-scheduling Block Time alarm');
+          console.log('========================================');
+          console.log('📋 Task ID:', savedTask.id);
+          console.log('📋 Start Time:', startTime);
+          console.log('📋 Start Date:', formatDateForDB(startDate));
+
+          const dateString = formatDateForDB(startDate);
+
+          // ✅ FIX: Stringify block_time_data for native module
+          const blockTimeTask = {
+            id: savedTask.id,
+            title: taskName.trim(),
+            description: description.trim(),
+            category: taskData.category,
+            evaluation_type: 'timerTracker',
+            block_time_enabled: true,
+            block_time_data: JSON.stringify({
+              // ✅ STRINGIFY HERE
+              start_time: startTime,
+              enabled: true,
+            }),
+            source: 'habit_tracker',
+            frequency_type: taskData.frequencyType,
+            start_date: dateString,
+          };
+
+          console.log(
+            '📦 Block Time Task Object:',
+            JSON.stringify(blockTimeTask, null, 2),
+          );
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log('========================================');
+            console.log('✅ [BlockTime] Alarm scheduled successfully!');
+            console.log('📱 Request Code:', alarmResult.result.requestCode);
+            console.log(
+              '⏰ Trigger Time:',
+              new Date(alarmResult.result.triggerTime).toLocaleString(),
+            );
+            console.log('========================================');
+          } else {
+            console.warn(
+              '⚠️ [BlockTime] Failed to schedule alarm:',
+              alarmResult.reason || alarmResult.error,
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+          // Don't block task creation if Block Time scheduling fails
+        }
+      }
+
       // Schedule reminders if enabled
       let reminderMessage = '';
       if (taskData.reminderEnabled && taskData.reminderData) {
         try {
           const userProfile = {
-            username: user?.user_metadata?.display_name || user?.user_metadata?.username || user?.email?.split('@')[0],
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
             display_name: user?.user_metadata?.display_name,
             user_metadata: user?.user_metadata,
             email: user?.email,
           };
 
-          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
-            {
-              ...taskData,
-              userProfile: userProfile,
-            },
-            savedTask,
-          );
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {
+                ...taskData,
+                userProfile: userProfile,
+              },
+              savedTask,
+            );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
@@ -405,22 +573,27 @@ const TimerTrackerScreen = () => {
         }
       }
 
-      Alert.alert('Success', `Timer Tracker task created successfully!${reminderMessage}`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [
-                {
-                  name: 'BottomTab',
-                  params: {newTaskCreated: true},
-                },
-              ],
-            });
-          },
-        },
-      ]);
+      console.log('========================================');
+      console.log('🎉 Task creation completed successfully!');
+      console.log('========================================');
+
+      let successMessage = 'Task created successfully!';
+
+      // Show success toast
+      showToast(successMessage, 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'BottomTab',
+              params: {newTaskCreated: true},
+            },
+          ],
+        });
+      }, 1500);
     } catch (error) {
       console.error('Error saving Timer Tracker task:', error);
       Alert.alert('Error', 'Failed to create task. Please try again.');
@@ -442,7 +615,9 @@ const TimerTrackerScreen = () => {
           <View
             style={[
               styles.toggleSwitch,
-              isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
+              isEnabled
+                ? styles.toggleSwitchActive
+                : styles.toggleSwitchInactive,
             ]}
           />
         </View>
@@ -462,6 +637,7 @@ const TimerTrackerScreen = () => {
     subtitle = null,
     customRight = null,
     onRowPress = null,
+    hasDropdown = false,
   ) => {
     return (
       <View style={styles.optionContainer}>
@@ -478,9 +654,18 @@ const TimerTrackerScreen = () => {
               />
             )}
             <View style={styles.optionTextContainer}>
-              <Text style={[styles.optionTitle, !iconSource && styles.addTitle]}>{title}</Text>
+              <Text
+                style={[styles.optionTitle, !iconSource && styles.addTitle]}>
+                {title}
+              </Text>
               {subtitle && (
-                <Text style={[styles.optionSubtitle, !iconSource && styles.optionSubtitle1]}>{subtitle}</Text>
+                <Text
+                  style={[
+                    styles.optionSubtitle,
+                    !iconSource && styles.optionSubtitle1,
+                  ]}>
+                  {subtitle}
+                </Text>
               )}
             </View>
           </View>
@@ -498,6 +683,13 @@ const TimerTrackerScreen = () => {
                   resizeMode="contain"
                 />
               </TouchableOpacity>
+            )}
+            {hasDropdown && (
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={WP(6)}
+                color="#646464"
+              />
             )}
             {customRight && customRight}
           </View>
@@ -543,6 +735,70 @@ const TimerTrackerScreen = () => {
                 <Text style={styles.daysDifferenceText}>days.</Text>
               </View>
             </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // Priority section component
+  const renderPrioritySection = () => {
+    return (
+      <View
+        style={[
+          styles.optionContainer,
+          showPriorityDropdown && styles.priorityContainerExpanded,
+        ]}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handlePriorityPress}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Flag}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Priority</Text>
+            </View>
+          </View>
+          <View style={styles.optionRight}>
+            <MaterialIcons
+              name={
+                showPriorityDropdown
+                  ? 'keyboard-arrow-up'
+                  : 'keyboard-arrow-down'
+              }
+              size={WP(6)}
+              color="#646464"
+            />
+          </View>
+        </TouchableOpacity>
+
+        {showPriorityDropdown && (
+          <View style={styles.priorityDropdown}>
+            <View style={styles.priorityButtonsContainer}>
+              {priorityOptions.map((option, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.priorityButton,
+                    {backgroundColor: option.backgroundColor},
+                    priority === option.value && styles.priorityButtonSelected,
+                  ]}
+                  onPress={() => handlePrioritySelect(option)}
+                  activeOpacity={0.8}>
+                  <Text
+                    style={[
+                      styles.priorityButtonText,
+                      {color: option.textColor},
+                    ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
       </View>
@@ -625,7 +881,7 @@ const TimerTrackerScreen = () => {
           () => setShowStartDatePicker(true),
         )}
 
-        {/* NEW: Start Time */}
+        {/* Start Time */}
         {renderOptionRow(
           Icons.Clock,
           'Start Time',
@@ -636,13 +892,18 @@ const TimerTrackerScreen = () => {
           null,
           null,
           <View style={styles.dateContainer}>
-            <Text style={styles.dateText}>{formatTimeForDisplay(startTime)}</Text>
+            <Text style={styles.dateText}>
+              {formatTimeForDisplay(startTime)}
+            </Text>
           </View>,
           handleStartTimePress,
         )}
 
         {/* End Date Section */}
         {renderEndDateSection()}
+
+        {/* Priority Section */}
+        {renderPrioritySection()}
 
         {/* Add a Reminder */}
         {renderOptionRow(
@@ -654,11 +915,13 @@ const TimerTrackerScreen = () => {
           false,
           null,
           reminderData && addReminder
-            ? `${reminderData.type === 'notification'
-                ? '🔔 Notification'
-                : reminderData.type === 'alarm'
-                ? '⏰ Alarm'
-                : '🔕 No reminder'} at ${reminderData.time}`
+            ? `${
+                reminderData.type === 'notification'
+                  ? '🔔 Notification'
+                  : reminderData.type === 'alarm'
+                  ? '⏰ Alarm'
+                  : '🔕 No reminder'
+              } at ${reminderData.time}`
             : null,
         )}
 
@@ -748,7 +1011,7 @@ const TimerTrackerScreen = () => {
         title="Select End Date"
       />
 
-      {/* NEW: Native Time Picker */}
+      {/* Native Time Picker */}
       {showStartTimePicker && (
         <DateTimePicker
           value={tempTime}
@@ -865,6 +1128,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F0F0F0',
     minHeight: HP(4.375),
+  },
+  priorityContainerExpanded: {
+    minHeight: HP(12),
+    paddingBottom: HP(1.5),
   },
   noBottomBorder: {
     borderBottomLeftRadius: 0,
@@ -1032,6 +1299,29 @@ const styles = StyleSheet.create({
     fontSize: FS(1.8),
     fontFamily: 'OpenSans-SemiBold',
     color: '#646464',
+  },
+  priorityDropdown: {
+    paddingTop: HP(1),
+    paddingHorizontal: WP(10),
+  },
+  priorityButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  priorityButton: {
+    paddingVertical: HP(1.2),
+    borderRadius: WP(2),
+    width: WP(28.5),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priorityButtonSelected: {
+    opacity: 0.8,
+    transform: [{scale: 0.95}],
+  },
+  priorityButtonText: {
+    fontSize: FS(1.5),
+    fontFamily: 'OpenSans-SemiBold',
   },
   calendarContainer: {
     marginBottom: HP(0.9),

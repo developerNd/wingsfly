@@ -34,16 +34,37 @@ const InstalledApps = (() => {
   }
 })();
 
+// ✅ NEW: Import DND modules
+const DigitalDetoxModule = (() => {
+  try {
+    return NativeModules.DigitalDetoxModule || null;
+  } catch (error) {
+    console.error('Error initializing DigitalDetoxModule:', error);
+    return null;
+  }
+})();
+
+const GetBackModule = (() => {
+  try {
+    return NativeModules.GetBackModule || null;
+  } catch (error) {
+    console.error('Error initializing GetBackModule:', error);
+    return null;
+  }
+})();
+
 /**
  * PermissionManager Component
  * Checks and requests required permissions at app startup
  * Shows modal only if permissions are missing
+ * ✅ NOW INCLUDES: DND (Do Not Disturb) permission
  */
 const PermissionManager = () => {
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [permissions, setPermissions] = useState({
     overlay: false,
     usage: false,
+    dnd: false, // ✅ NEW
   });
   const hasCheckedInitially = useRef(false);
 
@@ -63,18 +84,59 @@ const PermissionManager = () => {
     return () => subscription?.remove();
   }, []);
 
+  // ✅ NEW: Check DND permission
+  const checkDndPermission = async () => {
+    try {
+      // Try DigitalDetoxModule first, then GetBackModule
+      const module = DigitalDetoxModule || GetBackModule;
+      
+      if (module && module.hasDndPermission) {
+        const hasPerm = await module.hasDndPermission();
+        return hasPerm;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('[PERMISSION MANAGER] Error checking DND permission:', error);
+      return false;
+    }
+  };
+
+  // ✅ NEW: Request DND permission
+  const requestDndPermission = async () => {
+    try {
+      // Try DigitalDetoxModule first, then GetBackModule
+      const module = DigitalDetoxModule || GetBackModule;
+      
+      if (module && module.requestDndPermission) {
+        await module.requestDndPermission();
+        console.log('[PERMISSION MANAGER] Opened DND settings');
+      } else {
+        console.warn('[PERMISSION MANAGER] No DND module available');
+      }
+    } catch (error) {
+      console.error('[PERMISSION MANAGER] Error requesting DND permission:', error);
+    }
+  };
+
   const initializePermissions = async () => {
     try {
       console.log('[PERMISSION MANAGER] Initializing permissions...');
       
-      const currentPermissions = await InstalledApps.checkPermissions();
+      const [currentPermissions, dndPerm] = await Promise.all([
+        InstalledApps.checkPermissions(),
+        checkDndPermission()
+      ]);
       
-      console.log('[PERMISSION MANAGER] Initial state loaded:', {
-        currentPermissions
-      });
+      const allPermissions = {
+        ...currentPermissions,
+        dnd: dndPerm
+      };
+      
+      console.log('[PERMISSION MANAGER] Initial state loaded:', allPermissions);
       
       // Determine if we need to show modal BEFORE setting any state
-      const shouldShow = shouldShowPermissionModal(currentPermissions);
+      const shouldShow = shouldShowPermissionModal(allPermissions);
       
       console.log('[PERMISSION MANAGER] Should show modal:', shouldShow);
       
@@ -88,7 +150,7 @@ const PermissionManager = () => {
       
       // ONLY if we need to show modal, set all the states
       console.log('[PERMISSION MANAGER] Missing permissions - setting state to show modal');
-      setPermissions(currentPermissions);
+      setPermissions(allPermissions);
       setShowPermissionModal(true);
       
     } catch (error) {
@@ -97,9 +159,13 @@ const PermissionManager = () => {
   };
 
   const shouldShowPermissionModal = (currentPermissions) => {
-    // Check overlay and usage permissions
-    if (!currentPermissions.overlay || !currentPermissions.usage) {
-      console.log('[PERMISSION MANAGER] Missing overlay or usage permission');
+    // ✅ UPDATED: Check overlay, usage, AND DND permissions
+    if (!currentPermissions.overlay || !currentPermissions.usage || !currentPermissions.dnd) {
+      console.log('[PERMISSION MANAGER] Missing permissions:', {
+        overlay: currentPermissions.overlay,
+        usage: currentPermissions.usage,
+        dnd: currentPermissions.dnd
+      });
       return true;
     }
 
@@ -111,13 +177,22 @@ const PermissionManager = () => {
   const checkAndRequestPermissions = async () => {
     try {
       console.log('[PERMISSION MANAGER] Checking permissions...');
-      const currentPermissions = await InstalledApps.checkPermissions();
       
-      console.log('[PERMISSION MANAGER] Current permissions:', currentPermissions);
-      setPermissions(currentPermissions);
+      const [currentPermissions, dndPerm] = await Promise.all([
+        InstalledApps.checkPermissions(),
+        checkDndPermission()
+      ]);
+      
+      const allPermissions = {
+        ...currentPermissions,
+        dnd: dndPerm
+      };
+      
+      console.log('[PERMISSION MANAGER] Current permissions:', allPermissions);
+      setPermissions(allPermissions);
       
       // Check if we should close the modal
-      const shouldShow = shouldShowPermissionModal(currentPermissions);
+      const shouldShow = shouldShowPermissionModal(allPermissions);
       
       if (!shouldShow && showPermissionModal) {
         console.log('[PERMISSION MANAGER] All permissions granted - closing modal');
@@ -147,6 +222,9 @@ const PermissionManager = () => {
         await InstalledApps.openOverlaySettings();
       } else if (permissionType === 'usage') {
         await InstalledApps.openUsageSettings();
+      } else if (permissionType === 'dnd') {
+        // ✅ NEW: Handle DND permission
+        await requestDndPermission();
       }
 
       // Check permissions again after a delay
@@ -164,11 +242,11 @@ const PermissionManager = () => {
   };
 
   const handleCloseModal = async () => {
-    // Check if essential permissions are granted
-    if (!permissions.overlay || !permissions.usage) {
+    // ✅ UPDATED: Check if essential permissions are granted (including DND)
+    if (!permissions.overlay || !permissions.usage || !permissions.dnd) {
       Alert.alert(
         'Permissions Required',
-        'Display Over Other Apps and Usage Access permissions are essential for the app to function properly. Please grant them to continue.',
+        'Display Over Other Apps, Usage Access, and Do Not Disturb permissions are essential for the app to function properly. Please grant them to continue.',
         [{ text: 'OK' }]
       );
       return;
@@ -247,6 +325,28 @@ const PermissionManager = () => {
                     </Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* ✅ NEW: Do Not Disturb Permission */}
+                <View style={styles.permissionItem}>
+                  <View style={styles.permissionInfo}>
+                    <Text style={styles.permissionTitle}>Do Not Disturb Access</Text>
+                    <Text style={styles.permissionDescription}>
+                      Required to automatically silence notifications during detox/focus sessions
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.permissionButton,
+                      permissions.dnd ? styles.permissionGranted : styles.permissionNeeded
+                    ]}
+                    onPress={() => handlePermissionRequest('dnd')}
+                    disabled={permissions.dnd}
+                  >
+                    <Text style={styles.permissionButtonText}>
+                      {permissions.dnd ? "✓ Granted" : "Grant"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
             
@@ -258,7 +358,8 @@ const PermissionManager = () => {
                 <Text style={styles.saveButtonText}>Refresh Status</Text>
               </TouchableOpacity>
               
-              {permissions.overlay && permissions.usage && (
+              {/* ✅ UPDATED: Check all three permissions */}
+              {permissions.overlay && permissions.usage && permissions.dnd && (
                 <TouchableOpacity
                   style={[styles.modalButton, styles.continueButton]}
                   onPress={handleCloseModal}

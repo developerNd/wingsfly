@@ -31,7 +31,9 @@ const RecurringYesorNoScreen = () => {
   const {user} = useAuth();
 
   // Step tracking state - Initialize from route params or default to 1
-  const [currentStep, setCurrentStep] = useState(route.params?.currentStep || 1);
+  const [currentStep, setCurrentStep] = useState(
+    route.params?.currentStep || 1,
+  );
   const TOTAL_STEPS = 4;
 
   // Task form states
@@ -42,7 +44,9 @@ const RecurringYesorNoScreen = () => {
     title: 'Work and Career',
     image: Icons.Work,
   };
-  const [selectedCategory, setSelectedCategory] = useState(selectedCategoryParam);
+  const [selectedCategory, setSelectedCategory] = useState(
+    selectedCategoryParam,
+  );
 
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
@@ -167,7 +171,7 @@ const RecurringYesorNoScreen = () => {
   // SAVE TASK LOGIC
   const handleSaveTask = async () => {
     if (!user) {
-      Alert.alert('Error', 'Please log in to create tasks.');
+      showToast('Please log in to create tasks', 'error');
       return;
     }
 
@@ -197,7 +201,9 @@ const RecurringYesorNoScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
         blockTimeEnabled: !!blockTimeData,
@@ -244,10 +250,11 @@ const RecurringYesorNoScreen = () => {
             email: user?.email,
           };
 
-          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
-            {...taskData, userProfile: userProfile},
-            savedTask,
-          );
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {...taskData, userProfile: userProfile},
+              savedTask,
+            );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
@@ -258,24 +265,22 @@ const RecurringYesorNoScreen = () => {
         }
       }
 
-      Alert.alert(
-        'Success',
-        `Recurring task created successfully!${reminderMessage}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{name: 'BottomTab', params: {newTaskCreated: true}}],
-              });
-            },
-          },
-        ],
-      );
+      // Show success toast
+      showToast('Task created successfully!', 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [{name: 'BottomTab', params: {newTaskCreated: true}}],
+        });
+      }, 1500);
     } catch (error) {
       console.error('Error saving recurring Yes/No task:', error);
-      Alert.alert('Error', 'Failed to create recurring task. Please try again.');
+      Alert.alert(
+        'Error',
+        'Failed to create recurring task. Please try again.',
+      );
     }
   };
 
@@ -295,7 +300,20 @@ const RecurringYesorNoScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -368,7 +386,10 @@ const RecurringYesorNoScreen = () => {
 
   const renderToggle = (isEnabled, onToggle) => {
     return (
-      <TouchableOpacity style={styles.toggleContainer} onPress={onToggle} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.toggleContainer}
+        onPress={onToggle}
+        activeOpacity={0.7}>
         <View
           style={[
             styles.toggleTrack,
@@ -377,7 +398,9 @@ const RecurringYesorNoScreen = () => {
           <View
             style={[
               styles.toggleSwitch,
-              isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
+              isEnabled
+                ? styles.toggleSwitchActive
+                : styles.toggleSwitchInactive,
             ]}
           />
         </View>
@@ -405,21 +428,40 @@ const RecurringYesorNoScreen = () => {
           activeOpacity={onRowPress ? 0.7 : hasToggle || hasPlus ? 1 : 0.7}
           onPress={onRowPress || (() => {})}>
           <View style={styles.optionLeft}>
-            <Image source={iconSource} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={iconSource}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>{title}</Text>
-              {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
+              {subtitle && (
+                <Text style={styles.optionSubtitle}>{subtitle}</Text>
+              )}
             </View>
           </View>
 
           <View style={styles.optionRight}>
             {hasToggle && renderToggle(toggleState, onTogglePress)}
             {hasPlus && (
-              <TouchableOpacity onPress={onPlusPress} style={styles.plusButton} activeOpacity={0.7}>
-                <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+              <TouchableOpacity
+                onPress={onPlusPress}
+                style={styles.plusButton}
+                activeOpacity={0.7}>
+                <Image
+                  source={Icons.Plus}
+                  style={styles.plusIcon}
+                  resizeMode="contain"
+                />
               </TouchableOpacity>
             )}
-            {hasDropdown && <MaterialIcons name="keyboard-arrow-down" size={WP(6)} color="#646464" />}
+            {hasDropdown && (
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={WP(6)}
+                color="#646464"
+              />
+            )}
             {customRight && customRight}
           </View>
         </TouchableOpacity>
@@ -438,7 +480,9 @@ const RecurringYesorNoScreen = () => {
               <Text
                 style={[
                   styles.inputLabel,
-                  isTaskLabelActive ? styles.inputLabelActive : styles.inputLabelInactive,
+                  isTaskLabelActive
+                    ? styles.inputLabelActive
+                    : styles.inputLabelInactive,
                 ]}>
                 Task
               </Text>
@@ -457,7 +501,11 @@ const RecurringYesorNoScreen = () => {
             <View style={styles.optionContainer}>
               <View style={styles.optionRow}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Category} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Category}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Category</Text>
                   </View>
@@ -485,7 +533,9 @@ const RecurringYesorNoScreen = () => {
               null,
               null,
               <View style={styles.dateContainer}>
-                <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+                <Text style={styles.dateText}>
+                  {formatDisplayDate(startDate)}
+                </Text>
               </View>,
               () => setShowStartDatePicker(true),
             )}
@@ -519,7 +569,9 @@ const RecurringYesorNoScreen = () => {
               null,
               true,
               handleBlockTimePress,
-              blockTimeData ? `${blockTimeData.startTime} - ${blockTimeData.endTime}` : null,
+              blockTimeData
+                ? `${blockTimeData.startTime} - ${blockTimeData.endTime}`
+                : null,
             )}
 
             <View
@@ -532,14 +584,22 @@ const RecurringYesorNoScreen = () => {
                 activeOpacity={0.7}
                 onPress={handlePriorityPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Flag} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Flag}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Priority</Text>
                   </View>
                 </View>
                 <View style={styles.optionRight}>
                   <MaterialIcons
-                    name={showPriorityDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    name={
+                      showPriorityDropdown
+                        ? 'keyboard-arrow-up'
+                        : 'keyboard-arrow-down'
+                    }
                     size={WP(6)}
                     color="#646464"
                   />
@@ -555,11 +615,16 @@ const RecurringYesorNoScreen = () => {
                         style={[
                           styles.priorityButton,
                           {backgroundColor: option.backgroundColor},
-                          priority === option.value && styles.priorityButtonSelected,
+                          priority === option.value &&
+                            styles.priorityButtonSelected,
                         ]}
                         onPress={() => handlePrioritySelect(option)}
                         activeOpacity={0.8}>
-                        <Text style={[styles.priorityButtonText, {color: option.textColor}]}>
+                        <Text
+                          style={[
+                            styles.priorityButtonText,
+                            {color: option.textColor},
+                          ]}>
                           {option.label}
                         </Text>
                       </TouchableOpacity>
@@ -581,7 +646,11 @@ const RecurringYesorNoScreen = () => {
                 activeOpacity={0.7}
                 onPress={handleNotePress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Note} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Note}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Note</Text>
                     {note && (
@@ -597,7 +666,11 @@ const RecurringYesorNoScreen = () => {
             <View style={styles.optionContainer}>
               <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Pending} style={styles.optionIcon1} resizeMode="contain" />
+                  <Image
+                    source={Icons.Pending}
+                    style={styles.optionIcon1}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Pending Task</Text>
                     <Text style={styles.pendingSubtitle}>
@@ -634,7 +707,11 @@ const RecurringYesorNoScreen = () => {
                 activeOpacity={0.7}
                 onPress={handleLinkToGoalPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Link} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Link}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Link To Goal</Text>
                   </View>
@@ -644,7 +721,11 @@ const RecurringYesorNoScreen = () => {
                     style={styles.plusButton}
                     activeOpacity={0.7}
                     onPress={handleLinkToGoalPress}>
-                    <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+                    <Image
+                      source={Icons.Plus}
+                      style={styles.plusIcon}
+                      resizeMode="contain"
+                    />
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -682,7 +763,9 @@ const RecurringYesorNoScreen = () => {
                 <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                   <View style={styles.optionLeft}>
                     <View style={styles.optionTextContainer}>
-                      <Text style={styles.optionTitle}>Add to Google Calendar</Text>
+                      <Text style={styles.optionTitle}>
+                        Add to Google Calendar
+                      </Text>
                     </View>
                   </View>
                   <View>
@@ -694,7 +777,8 @@ const RecurringYesorNoScreen = () => {
               </View>
 
               {addToGoogleCalendar && (
-                <View style={[styles.optionContainer, styles.connectedContainer]}>
+                <View
+                  style={[styles.optionContainer, styles.connectedContainer]}>
                   <TouchableOpacity style={styles.optionRow}>
                     <View style={styles.optionLeft}>
                       <View style={styles.optionTextContainer}>
@@ -722,7 +806,7 @@ const RecurringYesorNoScreen = () => {
         dots.push(
           <View key={i} style={styles.progressDotCompleted}>
             <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
-          </View>
+          </View>,
         );
       } else if (i === currentStep) {
         // Current active step
@@ -731,14 +815,14 @@ const RecurringYesorNoScreen = () => {
             <View style={styles.progressDotActiveInner}>
               <Text style={styles.progressDotTextActive}>{i}</Text>
             </View>
-          </View>
+          </View>,
         );
       } else {
         // Future steps
         dots.push(
           <View key={i} style={styles.progressDotInactive}>
             <Text style={styles.progressDotTextInactive}>{i}</Text>
-          </View>
+          </View>,
         );
       }
 
@@ -757,7 +841,10 @@ const RecurringYesorNoScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="New Task" onBackPress={currentStep > 1 ? handleBackPress : null} />
+        <Headers
+          title="New Task"
+          onBackPress={currentStep > 1 ? handleBackPress : null}
+        />
       </View>
 
       {/* Content */}
@@ -765,8 +852,8 @@ const RecurringYesorNoScreen = () => {
         {renderStepContent()}
 
         {/* Next/Done Button */}
-        <TouchableOpacity 
-          style={styles.nextButton} 
+        <TouchableOpacity
+          style={styles.nextButton}
           onPress={handleNextPress}
           activeOpacity={0.8}>
           <Text style={styles.nextButtonText}>

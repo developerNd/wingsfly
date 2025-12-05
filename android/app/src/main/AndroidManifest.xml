@@ -122,6 +122,45 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="TRIGGER_BLOCK_TIME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- ✅ NEW: Block Time Lock Activity -->
+        <activity
+            android:name=".BlockTimeLockActivity"
+            android:label="Block Time"
+            android:theme="@style/AlarmTheme"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:excludeFromRecents="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode|locale|layoutDirection"
+            android:priority="1000"
+            android:enabled="true"
+            android:clearTaskOnLaunch="false"
+            android:finishOnTaskLaunch="false"
+            android:alwaysRetainTaskState="false"
+            android:stateNotNeeded="false"
+            android:noHistory="false"
+            android:allowTaskReparenting="false"
+            android:relinquishTaskIdentity="false">
+
+            <intent-filter android:priority="2147483647">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <intent-filter android:priority="2147483647">
+                <action android:name="com.wingsfly.SHOW_BLOCK_TIME_LOCK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <!-- ✅ FIXED Night Mode Lock Activity -->
@@ -338,6 +377,30 @@
             </intent-filter>
         </receiver>
 
+        <!-- ✅ NEW: Block Time Alarm Receiver -->
+        <receiver
+            android:name=".BlockTimeAlarmReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="true"
+            android:process=":blockTimeAlarm"
+            android:priority="1000">
+
+            <!-- Boot events to reschedule after device restart -->
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!-- Block Time alarm trigger -->
+            <intent-filter android:priority="1000">
+                <action android:name="com.wingsfly.BLOCK_TIME_ALARM" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".DateReminderActivity"
             android:excludeFromRecents="true"
@@ -377,7 +440,19 @@
             android:stateNotNeeded="true"
             android:clearTaskOnLaunch="false"
             android:finishOnTaskLaunch="false"
-            android:noHistory="false" />
+            android:noHistory="false">
+
+            <!-- ADD THESE INTENT FILTERS -->
+            <intent-filter android:priority="2147483647">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <intent-filter android:priority="2147483647">
+                <action android:name="com.wingsfly.SHOW_CHALLENGE_LOCK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".DigitalDetoxLockActivity"
@@ -789,6 +864,23 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Floating Notes Button Service - Shows overlay button in background -->
+        <service
+            android:name=".FloatingButtonModule$FloatingButtonService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:priority="1000">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_notes_button" />
+
+            <intent-filter>
+                <action android:name="com.wingsfly.START_FLOATING_BUTTON_SERVICE" />
+                <action android:name="com.wingsfly.STOP_FLOATING_BUTTON_SERVICE" />
+            </intent-filter>
+        </service>
+
         <!-- App Lock Job Service (your existing) -->
         <service
             android:name=".AppLockJobService"
@@ -907,6 +999,12 @@
             android:exported="false"
             android:foregroundServiceType="shortService" />
 
+        <service
+            android:name=".BlockTimeVibrationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
+
 
         <!-- Alarm Job Service for periodic maintenance -->
         <service
@@ -947,6 +1045,45 @@
             android:name=".UsageAlarmReceiver"
             android:enabled="true"
             android:exported="false" />
+
+        <!-- FCM Service - Handles incoming messages -->
+        <service
+            android:name=".FCMService"
+            android:enabled="true"
+            android:exported="false"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- FCM Default Notification Channel -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="admin_notifications"
+            tools:replace="android:value" />
+
+        <!-- FCM Default Notification Icon (using your existing launcher icon) -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+
+        <!-- FCM Default Notification Color (blue accent) -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_color"
+            tools:replace="android:resource" />
+
+        <!-- FCM Auto-init enabled -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="true" />
+
+        <!-- FCM Analytics Collection enabled -->
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="true" />
+
 
     </application>
 

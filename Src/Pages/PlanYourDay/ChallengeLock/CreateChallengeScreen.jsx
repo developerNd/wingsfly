@@ -416,17 +416,16 @@ const CreateLockChallengeScreen = () => {
 
       setIsCreating(false);
 
-      Alert.alert('Success', 'Lock challenge created!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [{name: 'BottomTab', params: {challengeCreated: true}}],
-            });
-          },
-        },
-      ]);
+      // Show success toast
+      showToast('Task created successfully!', 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [{name: 'BottomTab', params: {challengeCreated: true}}],
+        });
+      }, 1500);
     } catch (error) {
       setIsCreating(false);
       console.error('Error creating challenge:', error);

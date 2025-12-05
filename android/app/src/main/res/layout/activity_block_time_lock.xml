@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A2E"
+    android:padding="24dp">
+
+    <!-- Top Section: App Branding -->
+    <LinearLayout
+        android:id="@+id/topSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingTop="40dp">
+
+        <ImageView
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="App Logo" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WingsFly"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginTop="12dp"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
+
+    <!-- Middle Section: Task Information -->
+    <LinearLayout
+        android:id="@+id/middleSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="24dp"
+        android:background="@drawable/block_time_card_background">
+
+        <!-- Type Badge -->
+        <TextView
+            android:id="@+id/typeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⏱️ Timer"
+            android:textColor="#00D9FF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp"
+            android:background="@drawable/type_badge_background"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Task Title -->
+        <TextView
+            android:id="@+id/blockTimeTitleText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Block Time Task"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="12dp"
+            android:maxLines="3"
+            android:ellipsize="end" />
+
+        <!-- Task Description -->
+        <TextView
+            android:id="@+id/blockTimeMessageText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Time to start your task"
+            android:textColor="#B0B0B0"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+        <!-- Start Time -->
+        <TextView
+            android:id="@+id/startTimeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start Time: 09:00 AM"
+            android:textColor="#00D9FF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:drawablePadding="8dp"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+    <!-- Bottom Section: Action Button -->
+    <LinearLayout
+        android:id="@+id/bottomSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingBottom="40dp">
+
+        <!-- Start Task Button -->
+        <Button
+            android:id="@+id/openAppButton"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:text="Start Task"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="@drawable/start_button_background"
+            android:elevation="8dp"
+            android:stateListAnimator="@null" />
+
+        <!-- Info Text -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tap to begin your focused work session"
+            android:textColor="#808080"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+</RelativeLayout>

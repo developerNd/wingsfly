@@ -1,11 +1,11 @@
 import React, {useEffect, useState, useRef} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
-import {AppState, DeviceEventEmitter, Alert, NativeModules,} from 'react-native';
-import { supabase } from './supabase';
+import {AppState, DeviceEventEmitter, Alert, NativeModules} from 'react-native';
+import {supabase} from './supabase';
 import {AuthProvider, useAuth} from './Src/contexts/AuthContext';
 import {SessionProvider, useSession} from './Src/contexts/SessionContext';
 import {MusicProvider, useMusic} from './Src/contexts/MusicContext';
-import {NotesProvider} from './Src/contexts/NotesContext';
+import {NotesProvider, useNotes} from './Src/contexts/NotesContext';
 import AuthNavigator from './Src/Navigation/AuthNavigator';
 import NotificationService from './Src/services/notifications/NotificationService';
 import AlarmSchedulerService from './Src/services/notifications/AlarmSchedulerService';
@@ -14,6 +14,7 @@ import EnhancedTTSService from './Src/services/notifications/EnhancedTTSService'
 import AlarmTTSEventHandler from './Src/services/notifications/AlarmTTSEventHandler';
 import MonthReminderNotificationService from './Src/services/notifications/MonthReminderNotificationService';
 import WaterReminderNotificationService from './Src/services/notifications/WaterReminderNotificationService';
+import FCMService from './Src/services/notifications/FCMService';
 import DailyTaskReminderModal from './Src/Components/DailyTaskReminderModal';
 import MonthReminderModal from './Src/Components/MonthReminderModal';
 import {dailyReminderService} from './Src/services/challenges/DailyReminderService';
@@ -24,6 +25,7 @@ import {sleepTrackerService} from './Src/services/api/SleepTrackerService';
 import NightModeScheduler from './Src/services/NightModeScheduler';
 import usageLimitVideoService from './Src/services/usageLimitVideoService';
 import PermissionManager from './Src/Components/PermissionManager';
+import BlockTimeScheduler from './Src/services/Alarm/BlockTimeScheduler';
 
 // Music Manager Component
 const MusicManager = () => {
@@ -1043,23 +1045,32 @@ const DateReminderSyncManager = () => {
   const performSync = async (context = 'unknown') => {
     try {
       console.log(`[DATE REMINDER SYNC] ${context}: Starting sync...`);
-      
+
       const {DateReminderModule} = NativeModules;
-      
+
       // The native module will check internally if reminders are enabled
       const synced = await DateReminderModule.syncSettings();
-      
+
       if (synced) {
-        console.log(`[DATE REMINDER SYNC] ${context}: ✅ Settings synced successfully`);
-        console.log(`[DATE REMINDER SYNC] ${context}: Updated times and images from database`);
+        console.log(
+          `[DATE REMINDER SYNC] ${context}: ✅ Settings synced successfully`,
+        );
+        console.log(
+          `[DATE REMINDER SYNC] ${context}: Updated times and images from database`,
+        );
       } else {
-        console.log(`[DATE REMINDER SYNC] ${context}: ℹ️ No sync needed (disabled or no changes)`);
+        console.log(
+          `[DATE REMINDER SYNC] ${context}: ℹ️ No sync needed (disabled or no changes)`,
+        );
       }
-      
+
       lastSyncTime.current = Date.now();
       return true;
     } catch (error) {
-      console.error(`[DATE REMINDER SYNC] ${context}: ❌ Error syncing:`, error);
+      console.error(
+        `[DATE REMINDER SYNC] ${context}: ❌ Error syncing:`,
+        error,
+      );
       return false;
     }
   };
@@ -1072,13 +1083,19 @@ const DateReminderSyncManager = () => {
         return;
       }
 
-      console.log('[DATE REMINDER SYNC] ========================================');
-      console.log('[DATE REMINDER SYNC] Initial: App opened - checking for updates');
+      console.log(
+        '[DATE REMINDER SYNC] ========================================',
+      );
+      console.log(
+        '[DATE REMINDER SYNC] Initial: App opened - checking for updates',
+      );
 
       await performSync('Initial');
       hasInitialized.current = true;
 
-      console.log('[DATE REMINDER SYNC] ========================================');
+      console.log(
+        '[DATE REMINDER SYNC] ========================================',
+      );
     };
 
     // Delay to ensure app is fully loaded
@@ -1088,32 +1105,369 @@ const DateReminderSyncManager = () => {
 
   // Sync when app comes from background
   useEffect(() => {
-    const handleAppStateChange = async (nextAppState) => {
+    const handleAppStateChange = async nextAppState => {
       if (nextAppState === 'active') {
         console.log('[DATE REMINDER SYNC] Foreground: App became active');
-        
+
         // Check cooldown
         const timeSinceLastSync = Date.now() - lastSyncTime.current;
         if (timeSinceLastSync < SYNC_COOLDOWN) {
-          console.log(`[DATE REMINDER SYNC] Foreground: Cooldown active (${Math.floor(timeSinceLastSync / 1000)}s ago)`);
+          console.log(
+            `[DATE REMINDER SYNC] Foreground: Cooldown active (${Math.floor(
+              timeSinceLastSync / 1000,
+            )}s ago)`,
+          );
           return;
         }
-        
+
         // Wait for app to settle
         setTimeout(async () => {
-          console.log('[DATE REMINDER SYNC] Foreground: ========================================');
+          console.log(
+            '[DATE REMINDER SYNC] Foreground: ========================================',
+          );
           console.log('[DATE REMINDER SYNC] Foreground: Checking for updates');
 
           await performSync('Foreground');
 
-          console.log('[DATE REMINDER SYNC] Foreground: ========================================');
+          console.log(
+            '[DATE REMINDER SYNC] Foreground: ========================================',
+          );
         }, 1500);
       }
     };
 
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
     return () => subscription?.remove();
   }, []); // No dependencies - always use same handler
+
+  return null;
+};
+
+/**
+ * Floating Button Listener - Opens notes when floating button is tapped
+ */
+const FloatingButtonListener = () => {
+  const {showNotes} = useNotes();
+
+  useEffect(() => {
+    console.log('[FLOATING BUTTON] Listener initialized');
+
+    const subscription = DeviceEventEmitter.addListener(
+      'openNotesFromFloating',
+      () => {
+        console.log('[FLOATING BUTTON] Opening notes from floating button');
+        showNotes();
+      },
+    );
+
+    return () => {
+      subscription.remove();
+      console.log('[FLOATING BUTTON] Listener removed');
+    };
+  }, [showNotes]);
+
+  return null;
+};
+
+const FCMManager = () => {
+  const {user} = useAuth();
+  const hasInitialized = useRef(false);
+
+  useEffect(() => {
+    const initializeFCM = async () => {
+      if (hasInitialized.current) {
+        console.log('[FCM MANAGER] Already initialized');
+        return;
+      }
+
+      if (!user || !user.id) {
+        console.log('[FCM MANAGER] No user, waiting...');
+        return;
+      }
+
+      try {
+        console.log('[FCM MANAGER] 🚀 Initializing FCM for user:', user.id);
+
+        const success = await FCMService.initialize(user.id);
+
+        if (success) {
+          console.log('[FCM MANAGER] ✅ FCM initialized successfully');
+          hasInitialized.current = true;
+        } else {
+          console.log('[FCM MANAGER] ⚠️ FCM initialization failed');
+        }
+      } catch (error) {
+        console.error('[FCM MANAGER] ❌ Error:', error);
+      }
+    };
+
+    // Delay to ensure app is fully loaded
+    const timer = setTimeout(initializeFCM, 3000);
+    return () => clearTimeout(timer);
+  }, [user?.id]);
+
+  // Cleanup on logout
+  useEffect(() => {
+    return () => {
+      if (!user) {
+        console.log('[FCM MANAGER] User logged out, cleaning up');
+        FCMService.cleanup();
+        hasInitialized.current = false;
+      }
+    };
+  }, [user]);
+
+  return null;
+};
+
+const BlockTimeSchedulerManager = ({navigationRef}) => {
+  const {user} = useAuth();
+  const [isNavReady, setIsNavReady] = React.useState(false);
+  const pendingNavigation = React.useRef(null);
+
+  // Track navigation readiness
+  React.useEffect(() => {
+    const checkNavReady = setInterval(() => {
+      if (navigationRef.current && navigationRef.current.isReady()) {
+        setIsNavReady(true);
+        clearInterval(checkNavReady);
+
+        // Execute pending navigation if exists
+        if (pendingNavigation.current) {
+          console.log(
+            '🧭 [BlockTimeSchedulerManager] Executing pending navigation',
+          );
+          const {screenName, params} = pendingNavigation.current;
+          navigationRef.current.navigate(screenName, params);
+          pendingNavigation.current = null;
+        }
+      }
+    }, 100);
+
+    return () => clearInterval(checkNavReady);
+  }, [navigationRef]);
+
+  // Initialize scheduler ONLY for permissions check
+  React.useEffect(() => {
+    if (user && user.id) {
+      console.log(
+        '⏰ [BlockTimeSchedulerManager] Initializing scheduler for permissions',
+      );
+      BlockTimeScheduler.initialize(user.id)
+        .then(() => {
+          console.log(
+            '✅ [BlockTimeSchedulerManager] Scheduler initialized (permissions ready)',
+          );
+        })
+        .catch(error => {
+          console.error(
+            '❌ [BlockTimeSchedulerManager] Initialization error:',
+            error,
+          );
+        });
+    }
+  }, [user]);
+
+  // ✅ FIXED: Listen for Block Time alarm triggers with proper data extraction
+  React.useEffect(() => {
+    const handleTrigger = eventData => {
+      try {
+        console.log('========================================');
+        console.log('🎯 [BlockTimeSchedulerManager] Handling trigger event');
+        console.log('========================================');
+        console.log('📋 Event data:', eventData);
+
+        // ✅ CRITICAL FIX: Destructure ALL fields from eventData
+        const {
+          task_id,
+          task_title,
+          task_description,
+          evaluation_type,
+          start_time,
+          category,
+          source,
+          task_data,
+          // ✅ Extract Pomodoro settings from root level
+          focus_duration,
+          short_break_duration,
+          long_break_duration,
+          focus_sessions_per_round,
+          auto_start_short_breaks,
+          auto_start_focus_sessions,
+          pomodoro_duration,
+          duration_total_minutes,
+          duration_hours,
+          duration_minutes,
+          from_alarm,
+          from_lock_screen,
+          app_was_killed,
+        } = eventData;
+
+        // Parse the task_data JSON string
+        let completeTaskData = {};
+        try {
+          completeTaskData = JSON.parse(task_data);
+          console.log('📦 Parsed complete task data:', completeTaskData);
+        } catch (parseError) {
+          console.error('❌ Failed to parse task_data:', parseError);
+          completeTaskData = {
+            id: task_id,
+            title: task_title,
+            description: task_description,
+            evaluation_type: evaluation_type,
+            category: category,
+            source: source,
+          };
+        }
+
+        // ✅ CRITICAL FIX: Merge Pomodoro settings from root level INTO completeTaskData
+        console.log('⏰ Merging Pomodoro settings from root level...');
+
+        if (focus_duration !== undefined && focus_duration !== -1) {
+          completeTaskData.focus_duration = focus_duration;
+          console.log('  ✅ focus_duration:', focus_duration);
+        }
+        if (short_break_duration !== undefined && short_break_duration !== -1) {
+          completeTaskData.short_break_duration = short_break_duration;
+          console.log('  ✅ short_break_duration:', short_break_duration);
+        }
+        if (long_break_duration !== undefined && long_break_duration !== -1) {
+          completeTaskData.long_break_duration = long_break_duration;
+          console.log('  ✅ long_break_duration:', long_break_duration);
+        }
+        if (
+          focus_sessions_per_round !== undefined &&
+          focus_sessions_per_round !== -1
+        ) {
+          completeTaskData.focus_sessions_per_round = focus_sessions_per_round;
+          console.log(
+            '  ✅ focus_sessions_per_round:',
+            focus_sessions_per_round,
+          );
+        }
+        if (auto_start_short_breaks !== undefined) {
+          completeTaskData.auto_start_short_breaks = auto_start_short_breaks;
+          console.log('  ✅ auto_start_short_breaks:', auto_start_short_breaks);
+        }
+        if (auto_start_focus_sessions !== undefined) {
+          completeTaskData.auto_start_focus_sessions =
+            auto_start_focus_sessions;
+          console.log(
+            '  ✅ auto_start_focus_sessions:',
+            auto_start_focus_sessions,
+          );
+        }
+        if (pomodoro_duration !== undefined && pomodoro_duration !== -1) {
+          completeTaskData.pomodoro_duration = pomodoro_duration;
+          console.log('  ✅ pomodoro_duration:', pomodoro_duration);
+        }
+
+        // ✅ Build duration_data
+        if (
+          duration_total_minutes !== undefined &&
+          duration_total_minutes !== -1
+        ) {
+          completeTaskData.duration_data = {
+            totalMinutes: duration_total_minutes,
+            hours: duration_hours || 0,
+            minutes: duration_minutes || 0,
+            formattedDuration: `${String(duration_hours || 0).padStart(
+              2,
+              '0',
+            )}:${String(duration_minutes || 0).padStart(2, '0')}`,
+          };
+          console.log('  ✅ duration_data:', completeTaskData.duration_data);
+        }
+
+        console.log(
+          '✅ Complete task data with Pomodoro settings:',
+          completeTaskData,
+        );
+
+        console.log('⏰ Pomodoro Settings after extraction:', {
+          focusDuration: completeTaskData.focus_duration,
+          shortBreak: completeTaskData.short_break_duration,
+          longBreak: completeTaskData.long_break_duration,
+          sessionsPerRound: completeTaskData.focus_sessions_per_round,
+          autoStartBreaks: completeTaskData.auto_start_short_breaks,
+          autoStartFocus: completeTaskData.auto_start_focus_sessions,
+          pomodoroDuration: completeTaskData.pomodoro_duration,
+          durationData: completeTaskData.duration_data,
+        });
+
+        // Determine navigation target based on evaluation_type
+        let targetScreen = 'PomoScreen'; // Default
+        if (evaluation_type === 'timerTracker') {
+          targetScreen = 'PomoTrackerScreen';
+        }
+
+        console.log('🧭 Target screen:', targetScreen);
+        console.log('🧭 Evaluation type:', evaluation_type);
+
+        // Prepare navigation params with COMPLETE task data
+        const selectedDate =
+          completeTaskData.start_date || new Date().toISOString().split('T')[0];
+        const isPlan = source === 'plan_your_day';
+
+        const navigationParams = {
+          task: completeTaskData, // ✅ Pass COMPLETE merged task data
+          selectedDate: selectedDate,
+          fromBlockTimeAlarm: true,
+          isPlan: isPlan,
+        };
+
+        console.log(
+          '📋 Navigation params with complete data:',
+          navigationParams,
+        );
+
+        // Navigate if ready, otherwise store as pending
+        if (
+          isNavReady &&
+          navigationRef.current &&
+          navigationRef.current.isReady()
+        ) {
+          console.log(
+            '🧭 [BlockTimeSchedulerManager] Navigating to:',
+            targetScreen,
+          );
+          navigationRef.current.navigate(targetScreen, navigationParams);
+        } else {
+          console.log(
+            '⏳ [BlockTimeSchedulerManager] Navigation not ready, storing as pending',
+          );
+          pendingNavigation.current = {
+            screenName: targetScreen,
+            params: navigationParams,
+          };
+        }
+
+        console.log('========================================');
+      } catch (error) {
+        console.error(
+          '❌ [BlockTimeSchedulerManager] Error handling trigger:',
+          error,
+        );
+      }
+    };
+
+    // Add event listener for Block Time alarms
+    const subscription = DeviceEventEmitter.addListener(
+      'TRIGGER_BLOCK_TIME',
+      handleTrigger,
+    );
+
+    console.log('👂 [BlockTimeSchedulerManager] Event listener registered');
+
+    // Cleanupf
+    return () => {
+      console.log('🧹 [BlockTimeSchedulerManager] Removing event listener');
+      subscription.remove();
+    };
+  }, [navigationRef, isNavReady]);
 
   return null;
 };
@@ -1284,6 +1638,7 @@ const AppContent = () => {
       <SessionProvider>
         <PermissionManager />
         <MusicManager />
+        <FloatingButtonListener />
         <IntentionBroadcastListener navigationRef={navigationRef} />
         <EditScreenListener navigationRef={navigationRef} />
         <AuthNavigator />
@@ -1294,7 +1649,9 @@ const AppContent = () => {
         <UsageLimitVideoSyncManager />
         <SessionTrackingManager />
         <NightModeSchedulerManager navigationRef={navigationRef} />
+        <BlockTimeSchedulerManager navigationRef={navigationRef} />
         <DateReminderSyncManager />
+        <FCMManager />
       </SessionProvider>
     </NavigationContainer>
   );

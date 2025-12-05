@@ -68,105 +68,105 @@ class NightModeAlarmReceiver : BroadcastReceiver() {
     }
 
     private fun handleNightModeAlarm(context: Context, intent: Intent) {
-        try {
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-            
-            // Check device state
-            val isScreenOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
-                powerManager.isInteractive
-            } else {
-                @Suppress("DEPRECATION")
-                powerManager.isScreenOn
-            }
-            
-            val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
-            val isDeviceLocked = keyguardManager.isKeyguardLocked
-            
-            Log.e(TAG, "🔒 Device State:")
-            Log.e(TAG, "   Screen On: $isScreenOn")
-            Log.e(TAG, "   Device Locked: $isDeviceLocked")
-            Log.e(TAG, "")
-            
-            // ✅ Acquire GLOBAL wake lock that persists
-            globalWakeLock = powerManager.newWakeLock(
-                PowerManager.FULL_WAKE_LOCK or 
-                PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                PowerManager.ON_AFTER_RELEASE,
-                "WingsFly::NightModeGlobalWakeLock"
-            )
-            globalWakeLock?.acquire(WAKE_LOCK_DURATION) // ✅ 5 minutes
+    try {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        
+        val isScreenOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+            powerManager.isInteractive
+        } else {
+            @Suppress("DEPRECATION")
+            powerManager.isScreenOn
+        }
+        
+        val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+        val isDeviceLocked = keyguardManager.isKeyguardLocked
+        
+        Log.e(TAG, "🔒 Device State:")
+        Log.e(TAG, "   Screen On: $isScreenOn")
+        Log.e(TAG, "   Device Locked: $isDeviceLocked")
+        
+        // ✅ Acquire wake lock
+        globalWakeLock = powerManager.newWakeLock(
+            PowerManager.FULL_WAKE_LOCK or 
+            PowerManager.ACQUIRE_CAUSES_WAKEUP or
+            PowerManager.ON_AFTER_RELEASE,
+            "WingsFly::NightModeGlobalWakeLock"
+        )
+        globalWakeLock?.acquire(WAKE_LOCK_DURATION)
 
-            Log.e(TAG, "🌙 Night Mode alarm triggered!")
-            Log.e(TAG, "🔒 GLOBAL wake lock acquired for 5 minutes")
-            Log.e(TAG, "")
+        val bedHour = intent.getIntExtra("bed_hour", 0)
+        val bedMinute = intent.getIntExtra("bed_minute", 0)
 
-            val bedHour = intent.getIntExtra("bed_hour", 0)
-            val bedMinute = intent.getIntExtra("bed_minute", 0)
+        // ✅ Create activity intent
+        val lockIntent = Intent(context, NightModeLockActivity::class.java).apply {
+            putExtra("bed_hour", bedHour)
+            putExtra("bed_minute", bedMinute)
+            putExtra("from_alarm", true)
+            putExtra("app_was_killed", true)
+            putExtra("device_was_locked", isDeviceLocked)
+            putExtra("isDeviceLocked", isDeviceLocked)
+            putExtra("triggeredTime", System.currentTimeMillis())
+        }
 
-            Log.e(TAG, "Bed time: $bedHour:${String.format("%02d", bedMinute)}")
-
-            // ✅ CRITICAL: Create notification channel first
+        // ✅✅✅ CRITICAL: Different approach based on lock state (like CustomAlarm)
+        if (isDeviceLocked) {
+            Log.e(TAG, "📱 Device is LOCKED - using full-screen notification")
+            
+            // Create notification channel first
             createNotificationChannel(context)
             
-            // ✅ Create activity intent with simple flags
-            val lockIntent = Intent(context, NightModeLockActivity::class.java).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
-                )
-                
-                putExtra("bed_hour", bedHour)
-                putExtra("bed_minute", bedMinute)
-                putExtra("from_alarm", true)
-                putExtra("app_was_killed", true)
-                putExtra("device_was_locked", isDeviceLocked)
-                putExtra("isDeviceLocked", isDeviceLocked)
-                putExtra("triggeredTime", System.currentTimeMillis())
-            }
-
-            // ✅ Create full-screen notification
+            // Add activity flags for locked state
+            lockIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
+            
+            // Use notification with full-screen intent
             createFullScreenNotification(context, lockIntent, bedHour, bedMinute)
             
-            // ✅ Start vibration service if device is locked
-            if (isDeviceLocked || !isScreenOn) {
-                Log.e(TAG, "📳 Device is locked - starting vibration service")
-                startVibrationService(context, bedHour, bedMinute)
-            }
-
-            // ✅ Launch activity directly - NO DELAY
+            // Start vibration service for locked state
+            startVibrationService(context, bedHour, bedMinute)
+            
+        } else {
+            Log.e(TAG, "📱 Device is UNLOCKED - launching activity directly")
+            
+            // Add activity flags for unlocked state (includes EXCLUDE_FROM_RECENTS like CustomAlarm)
+            lockIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_NO_USER_ACTION or
+                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS  // ✅ Important for Xiaomi!
+            )
+            
+            // Launch activity directly - NO notification dependency
             try {
                 context.startActivity(lockIntent)
-                Log.e(TAG, "✅ Lock Activity launched!")
+                Log.e(TAG, "✅ Activity launched directly (unlocked state)")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to start lock activity: ${e.message}")
-                e.printStackTrace()
+                Log.e(TAG, "❌ Direct launch failed: ${e.message}")
                 
-                // Fallback: Start foreground service
-                startLockService(context, bedHour, bedMinute)
+                // Fallback: Use notification
+                createNotificationChannel(context)
+                createFullScreenNotification(context, lockIntent, bedHour, bedMinute)
             }
-
-            // Reschedule for tomorrow
-            Log.e(TAG, "📅 Rescheduling for tomorrow...")
-            rescheduleForTomorrow(context, bedHour, bedMinute)
-            
-            // ✅ DON'T release wake lock early - let it auto-expire after 5 minutes
-            // The activity maintains its own wake lock
-            Log.e(TAG, "⏰ Global wake lock will auto-release after 5 minutes")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error in alarm receiver: ${e.message}", e)
-            e.printStackTrace()
-            
-            // Release wake lock immediately on error
-            try {
-                if (globalWakeLock?.isHeld == true) {
-                    globalWakeLock?.release()
-                }
-            } catch (e: Exception) { }
         }
+
+        // Reschedule for tomorrow
+        rescheduleForTomorrow(context, bedHour, bedMinute)
+
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Error in alarm receiver: ${e.message}", e)
+        
+        try {
+            if (globalWakeLock?.isHeld == true) {
+                globalWakeLock?.release()
+            }
+        } catch (e: Exception) { }
     }
+}
 
     /**
      * ✅ Create notification channel (Android O+)

@@ -18,16 +18,19 @@ import {HP, WP, FS} from '../../../utils/dimentions';
 import {colors, Icons} from '../../../Helper/Contants';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import CustomToast from '../../../Components/CustomToast';
-import { taskService } from '../../../services/api/taskService';
-import { useAuth } from '../../../contexts/AuthContext';
+import {taskService} from '../../../services/api/taskService';
+import {useAuth} from '../../../contexts/AuthContext';
 
 const TaskChecklistScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { user } = useAuth();
+  const {user} = useAuth();
 
   // Get previous screen data
-  const selectedCategoryParam = route.params?.selectedCategory || { title: 'Work and Career', image: Icons.Work };
+  const selectedCategoryParam = route.params?.selectedCategory || {
+    title: 'Work and Career',
+    image: Icons.Work,
+  };
   const selectedCategory = selectedCategoryParam;
   const evaluationType = route.params?.evaluationType;
 
@@ -45,7 +48,8 @@ const TaskChecklistScreen = () => {
 
   // Evaluation type dropdown states
   const [selectedEvaluationType, setSelectedEvaluationType] = useState('YesNo');
-  const [evaluationDropdownVisible, setEvaluationDropdownVisible] = useState(false);
+  const [evaluationDropdownVisible, setEvaluationDropdownVisible] =
+    useState(false);
   const evaluationTypes = ['YesNo', 'Timer Tracker'];
 
   // Toast states
@@ -125,15 +129,17 @@ const TaskChecklistScreen = () => {
     }
   };
 
-  const handleEditItem = (itemId) => {
+  const handleEditItem = itemId => {
     setEditingItemId(itemId);
   };
 
   const handleSaveItem = (itemId, newText) => {
     if (newText.trim()) {
-      setChecklistItems(checklistItems.map(item => 
-        item.id === itemId ? { ...item, text: newText.trim() } : item
-      ));
+      setChecklistItems(
+        checklistItems.map(item =>
+          item.id === itemId ? {...item, text: newText.trim()} : item,
+        ),
+      );
     } else {
       // If text is empty, remove the item
       setChecklistItems(checklistItems.filter(item => item.id !== itemId));
@@ -141,7 +147,7 @@ const TaskChecklistScreen = () => {
     setEditingItemId(null);
   };
 
-  const handleCancelEdit = (itemId) => {
+  const handleCancelEdit = itemId => {
     // If it's a new item with no text, remove it
     const item = checklistItems.find(item => item.id === itemId);
     if (item && !item.text.trim()) {
@@ -185,7 +191,7 @@ const TaskChecklistScreen = () => {
       setEditingItemId(null);
       return;
     }
-    
+
     if (!habit.trim()) {
       showToast('Enter a name');
       return;
@@ -197,9 +203,8 @@ const TaskChecklistScreen = () => {
       return;
     }
 
-    // Check if user is authenticated
     if (!user) {
-      Alert.alert('Error', 'Please log in to create tasks.');
+      showToast('Please log in to create tasks', 'error');
       return;
     }
 
@@ -213,7 +218,7 @@ const TaskChecklistScreen = () => {
         taskType: 'Task',
         evaluationType: 'checklist',
         userId: user.id,
-        
+
         // Visual and display properties
         time: null, // Checklist tasks don't have block time initially
         timeColor: '#E4EBF3',
@@ -221,12 +226,12 @@ const TaskChecklistScreen = () => {
         image: null,
         hasFlag: true,
         priority: 'Important',
-        
+
         // Checklist-specific data
         checklistItems: checklistItems,
         successCondition: selectedSuccessCondition,
         customItemsCount: customItems ? parseInt(customItems.toString()) : 1,
-        
+
         // Task-specific data (minimal for basic tasks)
         numericValue: 0,
         numericGoal: null,
@@ -236,7 +241,7 @@ const TaskChecklistScreen = () => {
         // Timer-specific data (minimal)
         timerDuration: {hours: 0, minutes: 0, seconds: 0},
         timerCondition: 'At Least',
-        
+
         // Repetition and frequency settings (one-time task)
         frequencyType: 'Once',
         selectedWeekdays: [],
@@ -250,83 +255,83 @@ const TaskChecklistScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-        
+
         // Scheduling settings - Add Start Date
         startDate: startDate
           ? new Date(startDate).toISOString().split('T')[0]
           : null,
         endDate: null,
         isEndDateEnabled: false,
-        
+
         // Block time settings
         blockTimeEnabled: false,
         blockTimeData: null,
-        
+
         // Duration settings
         durationEnabled: false,
         durationData: null,
-        
+
         // Reminder settings
         reminderEnabled: false,
         reminderData: null,
-        
+
         // Additional features
         addPomodoro: false,
         addToGoogleCalendar: false,
         isPendingTask: false,
-        
+
         // Goal linking
         linkedGoalId: null,
         linkedGoalTitle: null,
         linkedGoalType: null,
-        
+
         // Notes
         note: description.trim(),
-        
+
         // Progress tracking
         progress: null,
       };
 
       console.log('Saving task checklist data:', taskData);
-      
+
       // Save to database
       const savedTask = await taskService.createTask(taskData);
-      
+
       console.log('Task checklist saved successfully:', savedTask);
-      
-      Alert.alert(
-        'Success', 
-        'Checklist task created successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ 
-                  name: 'BottomTab',
-                  params: { newTaskCreated: true }
-                }],
-              });
-            }
-          }
-        ]
-      );
-      
+
+      // Show success toast
+      showToast('Task created successfully!', 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'BottomTab',
+              params: {newTaskCreated: true},
+            },
+          ],
+        });
+      }, 1500);
     } catch (error) {
       console.error('Error saving task checklist:', error);
-      Alert.alert('Error', 'Failed to create checklist task. Please try again.');
+      showToast('Failed to create checklist task. Please try again.', 'error');
     }
   };
 
-  const renderEvaluationDropdown = (item) => {
+  const renderEvaluationDropdown = item => {
     return (
       <View style={styles.evaluationDropdownContainer}>
         <TouchableOpacity
           style={styles.evaluationDropdownButton}
           onPress={() => {
             // Toggle dropdown for this specific item
-            setEditingItemId(editingItemId === `dropdown_${item.id}` ? null : `dropdown_${item.id}`);
+            setEditingItemId(
+              editingItemId === `dropdown_${item.id}`
+                ? null
+                : `dropdown_${item.id}`,
+            );
           }}>
           <Text style={styles.evaluationDropdownText}>
             {item.evaluationType || 'YesNo'}
@@ -337,11 +342,12 @@ const TaskChecklistScreen = () => {
             color="#666"
             style={[
               styles.dropdownIcon,
-              editingItemId === `dropdown_${item.id}` && styles.dropdownIconRotated
+              editingItemId === `dropdown_${item.id}` &&
+                styles.dropdownIconRotated,
             ]}
           />
         </TouchableOpacity>
-        
+
         {editingItemId === `dropdown_${item.id}` && (
           <View style={styles.evaluationDropdownMenu}>
             {evaluationTypes.map((type, index) => (
@@ -349,16 +355,19 @@ const TaskChecklistScreen = () => {
                 key={index}
                 style={[
                   styles.evaluationDropdownOption,
-                  index === evaluationTypes.length - 1 && styles.lastDropdownOption
+                  index === evaluationTypes.length - 1 &&
+                    styles.lastDropdownOption,
                 ]}
                 onPress={() => {
                   handleEvaluationTypeChange(item.id, type);
                   setEditingItemId(null);
                 }}>
-                <Text style={[
-                  styles.evaluationDropdownOptionText,
-                  item.evaluationType === type && styles.selectedDropdownOptionText
-                ]}>
+                <Text
+                  style={[
+                    styles.evaluationDropdownOptionText,
+                    item.evaluationType === type &&
+                      styles.selectedDropdownOptionText,
+                  ]}>
                   {type}
                 </Text>
                 {item.evaluationType === type && (
@@ -397,7 +406,9 @@ const TaskChecklistScreen = () => {
 
           <View style={styles.optionRight}>
             <View style={styles.dateContainer}>
-              <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+              <Text style={styles.dateText}>
+                {formatDisplayDate(startDate)}
+              </Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -406,15 +417,18 @@ const TaskChecklistScreen = () => {
   };
 
   return (
-    <TouchableWithoutFeedback onPress={() => {
-      if (editingItemId && editingItemId.startsWith('dropdown_')) {
-        setEditingItemId(null);
-      }
-    }}>
+    <TouchableWithoutFeedback
+      onPress={() => {
+        if (editingItemId && editingItemId.startsWith('dropdown_')) {
+          setEditingItemId(null);
+        }
+      }}>
       <View style={styles.container}>
         <StatusBar backgroundColor={colors.White} barStyle="dark-content" />
         <View style={styles.headerWrapper}>
-          <Headers title="Define Your Task" onBackPress={() => navigation.goBack()}>
+          <Headers
+            title="Define Your Task"
+            onBackPress={() => navigation.goBack()}>
             <TouchableOpacity onPress={handleNextPress}>
               <Text style={styles.nextText}>Next</Text>
             </TouchableOpacity>
@@ -443,61 +457,78 @@ const TaskChecklistScreen = () => {
             />
           </View>
 
-          <Text style={styles.exampleText}>e.g..Morning routine checklist.</Text>
+          <Text style={styles.exampleText}>
+            e.g..Morning routine checklist.
+          </Text>
 
           {/* Add Start Date Section */}
           {renderStartDateSection()}
 
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Checklist</Text>
-            
+
             <View style={styles.checklistContainer}>
               {checklistItems.map((item, index) => (
-                <View key={item.id} style={[
-                  styles.checklistItem,
-                  editingItemId === `dropdown_${item.id}` && styles.checklistItemDropdownOpen
-                ]}>
+                <View
+                  key={item.id}
+                  style={[
+                    styles.checklistItem,
+                    editingItemId === `dropdown_${item.id}` &&
+                      styles.checklistItemDropdownOpen,
+                  ]}>
                   <Text style={styles.checklistNumber}>{index + 1}.</Text>
                   {editingItemId === item.id ? (
                     <View style={styles.editingContainer}>
                       <TextInput
                         style={styles.editingInput}
                         value={item.text}
-                        onChangeText={(text) => {
-                          setChecklistItems(checklistItems.map(i => 
-                            i.id === item.id ? { ...i, text } : i
-                          ));
+                        onChangeText={text => {
+                          setChecklistItems(
+                            checklistItems.map(i =>
+                              i.id === item.id ? {...i, text} : i,
+                            ),
+                          );
                         }}
                         placeholder="Enter item text"
                         autoFocus
                         onBlur={() => handleSaveItem(item.id, item.text)}
-                        onSubmitEditing={() => handleSaveItem(item.id, item.text)}
+                        onSubmitEditing={() =>
+                          handleSaveItem(item.id, item.text)
+                        }
                       />
                       <View style={styles.editActions}>
                         <TouchableOpacity
                           style={styles.saveButton}
                           onPress={() => handleSaveItem(item.id, item.text)}>
-                          <MaterialIcons name="check" size={WP(4.5)} color={colors.Primary} />
+                          <MaterialIcons
+                            name="check"
+                            size={WP(4.5)}
+                            color={colors.Primary}
+                          />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.cancelButton}
                           onPress={() => handleCancelEdit(item.id)}>
-                          <MaterialIcons name="close" size={WP(4.5)} color="#666" />
+                          <MaterialIcons
+                            name="close"
+                            size={WP(4.5)}
+                            color="#666"
+                          />
                         </TouchableOpacity>
                       </View>
                     </View>
                   ) : (
                     <>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.checklistTextContainer}
                         onPress={() => handleEditItem(item.id)}>
                         <Text style={styles.checklistText}>
                           {item.text || 'Tap to edit'}
                         </Text>
                       </TouchableOpacity>
-                      
+
                       {renderEvaluationDropdown(item)}
-                      
+
                       <TouchableOpacity
                         style={styles.deleteButton}
                         onPress={() => handleDeleteItem(item.id)}

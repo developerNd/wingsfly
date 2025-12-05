@@ -27,6 +27,7 @@ import {taskService} from '../../../../services/api/taskService';
 import {useAuth} from '../../../../contexts/AuthContext';
 import {prepareTaskData} from '../../../../utils/taskDataHelper';
 import ReminderScheduler from '../../../../services/notifications/ReminderScheduler';
+import BlockTimeScheduler from '../../../../services/Alarm/BlockTimeScheduler';
 
 const SchedulePreference = () => {
   const navigation = useNavigation();
@@ -252,6 +253,11 @@ const SchedulePreference = () => {
 
   // Replace ONLY your existing handleDonePress function with this:
   const handleDonePress = async () => {
+    console.log('========================================');
+    console.log('📝 SchedulePreference: handleDonePress called');
+    console.log('📋 Evaluation Type:', evaluationType);
+    console.log('========================================');
+
     // Hide any existing toast
     if (toastVisible) {
       hideToast();
@@ -259,7 +265,7 @@ const SchedulePreference = () => {
 
     // Check if user is authenticated
     if (!user) {
-      Alert.alert('Error', 'Please log in to create tasks.');
+      showToast('Please log in to create tasks', 'error');
       return;
     }
 
@@ -283,7 +289,6 @@ const SchedulePreference = () => {
       showToast('Please configure Pomodoro settings');
       return;
     }
-    
 
     // Your existing schedule data preparation (keep this as is)
     const scheduleData = {
@@ -342,7 +347,7 @@ const SchedulePreference = () => {
           pomodoroSettings.focusSessionsPerRound || 4;
       }
 
-      // ADD THIS NEW SECTION - Prepare reminder data for task
+      // Prepare reminder data for task
       if (addReminder && reminderData) {
         taskData.reminderEnabled = true;
         taskData.reminderData = reminderData;
@@ -361,13 +366,146 @@ const SchedulePreference = () => {
         taskData.reminderData = null;
       }
 
-      console.log('Saving task data:', taskData);
+      console.log('💾 Saving task data:', taskData);
 
-      // Save to database (keep your existing save logic)
+      // Save to database
       const savedTask = await taskService.createTask(taskData);
-      console.log('Task saved successfully:', savedTask);
+      console.log(
+        '✅ SchedulePreference: Task saved successfully:',
+        savedTask.id,
+      );
 
-      // ADD THIS NEW SECTION - Schedule reminders after task is saved
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - ONLY for timer evaluation tasks
+      if (
+        isTimerEvaluation &&
+        blockTimeData &&
+        blockTimeData.startTime &&
+        startDate
+      ) {
+        try {
+          console.log('========================================');
+          console.log(
+            '⏰ [BlockTime] Auto-scheduling Block Time alarm for TIMER HABIT',
+          );
+          console.log('========================================');
+          console.log('📋 Task ID:', savedTask.id);
+          console.log('📋 Start Time:', blockTimeData.startTime);
+          console.log(
+            '📋 Start Date:',
+            new Date(startDate).toISOString().split('T')[0],
+          );
+          console.log('📋 Evaluation Type:', evaluationType);
+          console.log(
+            '📋 Frequency Type:',
+            finalData.frequencyType || 'Not specified',
+          );
+
+          const dateString = new Date(startDate).toISOString().split('T')[0];
+          const time24h = convertTo24Hour(blockTimeData.startTime);
+
+          // Determine frequency type from finalData
+          const frequencyType = finalData.frequencyType || 'Every Day';
+
+          // ✅ Create complete block time task object with ALL required data
+          const blockTimeTask = {
+            id: savedTask.id,
+            title: taskData.title,
+            description: taskData.description || '',
+            category: taskData.category,
+            evaluation_type: 'timer',
+            block_time_enabled: true,
+            block_time_data: JSON.stringify({
+              start_time: time24h,
+              end_time: convertTo24Hour(blockTimeData.endTime),
+              enabled: true,
+            }),
+            source: 'habit',
+            frequency_type: frequencyType,
+            start_date: dateString,
+            end_date: endDateSelected
+              ? new Date(endDate).toISOString().split('T')[0]
+              : null,
+            // ✅ Include frequency-specific data
+            selected_weekdays: finalData.selectedWeekdays
+              ? JSON.stringify(finalData.selectedWeekdays)
+              : null,
+            selected_month_dates: finalData.selectedMonthDates
+              ? JSON.stringify(finalData.selectedMonthDates)
+              : null,
+            every_days: finalData.everyDays || null,
+            // ✅ Include ALL Pomodoro settings for proper restoration
+            pomodoro_duration: taskData.pomodoroDuration || null,
+            focus_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusTime
+                : null,
+            short_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.shortBreak
+                : null,
+            long_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.longBreak
+                : null,
+            focus_sessions_per_round:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusSessionsPerRound
+                : null,
+            auto_start_short_breaks:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartShortBreaks
+                : null,
+            auto_start_focus_sessions:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartFocusSessions
+                : null,
+            // ✅ Include duration data
+            duration_data: durationData,
+            // ✅ Include timer-specific data (if applicable)
+            timer_duration: taskData.timerDuration || null,
+            timer_condition: taskData.timerCondition || 'At Least',
+          };
+
+          console.log(
+            '📦 Block Time Task Object:',
+            JSON.stringify(blockTimeTask, null, 2),
+          );
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log('========================================');
+            console.log('✅ [BlockTime] Alarm scheduled successfully!');
+            console.log('📱 Request Code:', alarmResult.result.requestCode);
+            console.log(
+              '⏰ Trigger Time:',
+              new Date(alarmResult.result.triggerTime).toLocaleString(),
+            );
+            console.log('========================================');
+          } else {
+            console.warn(
+              '⚠️ [BlockTime] Failed to schedule alarm:',
+              alarmResult.reason || alarmResult.error,
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+          // Don't block task creation if Block Time scheduling fails
+        }
+      } else if (!isTimerEvaluation) {
+        console.log(
+          'ℹ️ [BlockTime] Skipping alarm scheduling - Not a timer evaluation task',
+        );
+        console.log('📋 Current evaluation type:', evaluationType);
+      }
+
+      // Schedule reminders after task is saved
       let reminderMessage = '';
       if (taskData.reminderEnabled && taskData.reminderData) {
         try {
@@ -393,35 +531,62 @@ const SchedulePreference = () => {
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
-            console.log('Scheduled reminders:', scheduledReminders);
+            console.log('✅ Scheduled reminders:', scheduledReminders);
           }
         } catch (reminderError) {
-          console.error('Error scheduling reminders:', reminderError);
+          console.error('❌ Error scheduling reminders:', reminderError);
           // Don't fail the entire task creation if reminder scheduling fails
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      // Update your success alert to include reminder info
-      Alert.alert('Success', `Task created successfully!${reminderMessage}`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [
-                {
-                  name: 'BottomTab',
-                  params: {newTaskCreated: true},
-                },
-              ],
-            });
-          },
-        },
-      ]);
+      console.log('========================================');
+      console.log('🎉 Task creation completed successfully!');
+      console.log('========================================');
+
+      // Show success toast
+      showToast('Task created successfully!', 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'BottomTab',
+              params: {newTaskCreated: true},
+            },
+          ],
+        });
+      }, 1500);
     } catch (error) {
-      console.error('Error saving task:', error);
+      console.error('❌ SchedulePreference: Error saving task:', error);
+      console.error('❌ Error details:', error.message);
+      console.error('❌ Error stack:', error.stack);
       Alert.alert('Error', 'Failed to create task. Please try again.');
+    }
+  };
+
+  // Helper function to convert 12-hour time to 24-hour format
+  const convertTo24Hour = time12h => {
+    try {
+      const [time, period] = time12h.trim().split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) {
+        hour24 = hours + 12;
+      } else if (period === 'AM' && hours === 12) {
+        hour24 = 0;
+      }
+
+      return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(
+        2,
+        '0',
+      )}:00`;
+    } catch (error) {
+      console.error('Error converting time:', error);
+      return '00:00:00';
     }
   };
 

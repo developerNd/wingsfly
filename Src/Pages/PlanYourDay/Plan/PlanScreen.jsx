@@ -29,6 +29,7 @@ import {planYourDayService} from '../../../services/api/planYourDayService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
 import taskConfirmationAlarmManager from '../../../services/TaskConfirmation/taskConfirmationAlarmManager';
+import BlockTimeScheduler from '../../../services/Alarm/BlockTimeScheduler';
 
 const PlanScreen = () => {
   const navigation = useNavigation();
@@ -401,10 +402,12 @@ const PlanScreen = () => {
 
   // SAVE TASK LOGIC - REMOVED ALL MUSIC STOPPING CODE
   const handleSaveTask = async () => {
+    console.log('========================================');
     console.log('📝 PlanScreen: handleSaveTask called');
+    console.log('========================================');
 
     if (!user) {
-      Alert.alert('Error', 'Please log in to create Plan Your Day.');
+      showToast('Please log in to create Plan Your Day', 'error');
       return;
     }
 
@@ -416,6 +419,42 @@ const PlanScreen = () => {
           blockTimeData.endTime,
         );
       }
+
+      // ✅ AUTOMATIC: Block time enabled if blockTimeData exists
+      const blockTimeEnabled = !!blockTimeData;
+
+      // Helper function to convert 12-hour time to 24-hour format
+      const convertTo24Hour = time12h => {
+        try {
+          const [time, period] = time12h.trim().split(' ');
+          const [hours, minutes] = time.split(':').map(Number);
+
+          let hour24 = hours;
+          if (period === 'PM' && hours !== 12) {
+            hour24 = hours + 12;
+          } else if (period === 'AM' && hours === 12) {
+            hour24 = 0;
+          }
+
+          return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(
+            2,
+            '0',
+          )}:00`;
+        } catch (error) {
+          console.error('Error converting time:', error);
+          return '00:00:00';
+        }
+      };
+
+      // Prepare block time data for database
+      const blockTimeDataForDB =
+        blockTimeEnabled && blockTimeData
+          ? {
+              enabled: true,
+              start_time: convertTo24Hour(blockTimeData.startTime),
+              end_time: convertTo24Hour(blockTimeData.endTime),
+            }
+          : null;
 
       const planData = {
         title: taskTitle.trim(),
@@ -443,8 +482,8 @@ const PlanScreen = () => {
           : null,
         endDate: null,
         isEndDateEnabled: false,
-        blockTimeEnabled: !!blockTimeData,
-        blockTimeData: blockTimeData,
+        blockTimeEnabled: blockTimeEnabled,
+        blockTimeData: blockTimeDataForDB,
         durationEnabled: !!durationData,
         durationData: durationData,
         addPomodoro: addPomodoro || false,
@@ -476,12 +515,120 @@ const PlanScreen = () => {
         planData.reminderData = null;
       }
 
+      console.log('💾 Saving Plan Your Day task...');
+
       const newPlan = await planYourDayService.createPlanYourDay(planData);
       console.log('✅ PlanScreen: Plan created successfully:', newPlan.id);
 
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - For timer evaluation tasks
+      if (
+        isTimerEvaluation &&
+        blockTimeEnabled &&
+        blockTimeData &&
+        blockTimeData.startTime &&
+        startDate
+      ) {
+        try {
+          console.log('========================================');
+          console.log('⏰ [BlockTime] Auto-scheduling Block Time alarm');
+          console.log('========================================');
+          console.log('📋 Task ID:', newPlan.id);
+          console.log('📋 Start Time:', blockTimeData.startTime);
+          console.log(
+            '📋 Start Date:',
+            new Date(startDate).toISOString().split('T')[0],
+          );
+          console.log('📋 Evaluation Type:', evaluationType);
+
+          const dateString = new Date(startDate).toISOString().split('T')[0];
+          const time24h = convertTo24Hour(blockTimeData.startTime);
+
+          // ✅ CRITICAL FIX: Create complete block time task object with ALL Pomodoro settings
+          const blockTimeTask = {
+            id: newPlan.id,
+            title: taskTitle.trim(),
+            description: note || '',
+            category: selectedCategory?.title || 'Work and Career',
+            evaluation_type: 'timer',
+            block_time_enabled: true,
+            block_time_data: JSON.stringify({
+              start_time: time24h,
+              end_time: convertTo24Hour(blockTimeData.endTime),
+              enabled: true,
+            }),
+            source: 'plan_your_day',
+            frequency_type: 'Once',
+            start_date: dateString,
+            // ✅ ADD: Include ALL Pomodoro settings for proper restoration
+            pomodoro_duration: finalDurationForPomodoro?.totalMinutes,
+            focus_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusTime
+                : null,
+            short_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.shortBreak
+                : null,
+            long_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.longBreak
+                : null,
+            focus_sessions_per_round:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusSessionsPerRound
+                : null,
+            auto_start_short_breaks:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartShortBreaks
+                : null,
+            auto_start_focus_sessions:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartFocusSessions
+                : null,
+            // ✅ ADD: Include duration data
+            duration_data: finalDurationForPomodoro || durationData,
+          };
+
+          console.log(
+            '📦 Block Time Task Object:',
+            JSON.stringify(blockTimeTask, null, 2),
+          );
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log('========================================');
+            console.log('✅ [BlockTime] Alarm scheduled successfully!');
+            console.log('📱 Request Code:', alarmResult.result.requestCode);
+            console.log(
+              '⏰ Trigger Time:',
+              new Date(alarmResult.result.triggerTime).toLocaleString(),
+            );
+            console.log('========================================');
+          } else {
+            console.warn(
+              '⚠️ [BlockTime] Failed to schedule alarm:',
+              alarmResult.reason || alarmResult.error,
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+          // Don't block task creation if Block Time scheduling fails
+        }
+      }
+
+      // Schedule task confirmation alarm
       if (blockTimeData && blockTimeData.startTime && startDate) {
         try {
           const time24h = convertTo24Hour(blockTimeData.startTime);
+          console.log('📅 Scheduling task confirmation alarm...');
+
           const confirmationResult =
             await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
               id: newPlan.id,
@@ -490,20 +637,18 @@ const PlanScreen = () => {
               start_date: new Date(startDate).toISOString().split('T')[0],
               start_time: time24h,
               category: selectedCategory?.title || 'Work and Career',
-              evaluationType: planData.evaluationType,
+              evaluationType: evaluationType || 'yesNo',
             });
 
           if (confirmationResult.success) {
-            console.log(
-              '✅ Task confirmation alarm scheduled:',
-              confirmationResult.data,
-            );
+            console.log('✅ Task confirmation alarm scheduled');
           }
         } catch (confirmError) {
           console.error('❌ Error scheduling task confirmation:', confirmError);
         }
       }
 
+      // Schedule reminders
       let reminderMessage = '';
       if (planData.reminderEnabled && planData.reminderData) {
         try {
@@ -525,6 +670,7 @@ const PlanScreen = () => {
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
+            console.log('✅ Reminders scheduled:', scheduledReminders.length);
           }
         } catch (reminderError) {
           console.error('❌ Error scheduling reminders:', reminderError);
@@ -532,35 +678,37 @@ const PlanScreen = () => {
         }
       }
 
+      console.log('========================================');
+      console.log('🎉 Task creation completed successfully!');
+      console.log('========================================');
+
       const fromNightMode = route.params?.fromNightMode;
       const audioInfo = route.params?.audioInfo;
       const sessionData = route.params?.sessionData;
 
       const taskType = isChecklistEvaluation ? 'checklist' : 'task';
-      Alert.alert(
-        'Success',
-        `Plan Your Day ${taskType} created successfully!${reminderMessage}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate back to PlanYourDayScreen with taskCreated flag
-              navigation.navigate('PlanYourDayScreen', {
-                taskCreated: true,
-                newPlanCreated: true,
-                fromPlanCreation: true,
-                refresh: true,
-                fromNightMode: fromNightMode,
-                audioInfo: audioInfo,
-                sessionData: sessionData,
-              });
-            },
-          },
-        ],
-      );
+      let successMessage = 'Task created successfully!';
+
+      // Show success toast
+      showToast(successMessage, 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.navigate('PlanYourDayScreen', {
+          taskCreated: true,
+          newPlanCreated: true,
+          fromPlanCreation: true,
+          refresh: true,
+          fromNightMode: fromNightMode,
+          audioInfo: audioInfo,
+          sessionData: sessionData,
+        });
+      }, 1500);
     } catch (error) {
       console.error('❌ PlanScreen: Error creating Plan Your Day:', error);
-      Alert.alert('Error', 'Failed to create plan. Please try again.');
+      console.error('❌ Error details:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      showToast('Failed to create plan. Please try again.', 'error');
     }
   };
 

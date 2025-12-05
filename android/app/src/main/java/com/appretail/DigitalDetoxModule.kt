@@ -2,6 +2,7 @@ package com.wingsfly
 
 import android.app.ActivityManager
 import android.app.AppOpsManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -63,6 +64,198 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
             Log.e(TAG, "Error emitting event: ${e.message}", e)
         }
     }
+    
+    // ========================================
+    // DND (Do Not Disturb) METHODS - NEW
+    // ========================================
+    
+    /**
+     * Check if app has DND access permission
+     * @return Promise<Boolean> - true if permission granted
+     */
+    @ReactMethod
+    fun hasDndPermission(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val hasAccess = notificationManager.isNotificationPolicyAccessGranted
+                
+                Log.d(TAG, "DND Permission status: $hasAccess")
+                promise.resolve(hasAccess)
+            } else {
+                // DND API not available on Android < 6.0
+                Log.d(TAG, "DND not supported on Android < 6.0")
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking DND permission: ${e.message}", e)
+            promise.reject("CHECK_DND_PERMISSION_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Request DND access permission (opens Settings)
+     * User must manually grant permission
+     * @return Promise<Boolean> - false (permission not granted yet, user must do it in Settings)
+     */
+    @ReactMethod
+    fun requestDndPermission(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                if (notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.d(TAG, "DND permission already granted")
+                    promise.resolve(true)
+                    return
+                }
+                
+                // Open DND settings for user to grant permission
+                Log.d(TAG, "Opening DND permission settings")
+                val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                reactContext.startActivity(intent)
+                
+                // Return false because permission not granted yet
+                promise.resolve(false)
+            } else {
+                Log.d(TAG, "DND not supported on Android < 6.0")
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting DND permission: ${e.message}", e)
+            promise.reject("REQUEST_DND_PERMISSION_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Check if DND is currently enabled
+     * @return Promise<Boolean> - true if DND is active
+     */
+    @ReactMethod
+    fun isDndEnabled(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                // Check if we have permission first
+                if (!notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.w(TAG, "Cannot check DND status - permission not granted")
+                    promise.resolve(false)
+                    return
+                }
+                
+                val currentFilter = notificationManager.currentInterruptionFilter
+                val isDndActive = currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL
+                
+                Log.d(TAG, "DND status: $isDndActive (filter: $currentFilter)")
+                promise.resolve(isDndActive)
+            } else {
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking DND status: ${e.message}", e)
+            promise.reject("CHECK_DND_STATUS_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Enable DND (Do Not Disturb) mode
+     * Requires DND permission to be granted first
+     * @param mode String - "total_silence", "alarms_only", or "priority_only"
+     * @return Promise<Boolean> - true if successfully enabled
+     */
+    @ReactMethod
+    fun enableDnd(mode: String, promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                // Check permission first
+                if (!notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.e(TAG, "Cannot enable DND - permission not granted")
+                    promise.reject("NO_DND_PERMISSION", "DND permission not granted. Please request permission first.")
+                    return
+                }
+                
+                // Map mode string to interruption filter
+                val interruptionFilter = when (mode) {
+                    "total_silence" -> NotificationManager.INTERRUPTION_FILTER_NONE
+                    "alarms_only" -> NotificationManager.INTERRUPTION_FILTER_ALARMS
+                    "priority_only" -> NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                    else -> {
+                        Log.w(TAG, "Unknown DND mode: $mode, defaulting to alarms_only")
+                        NotificationManager.INTERRUPTION_FILTER_ALARMS
+                    }
+                }
+                
+                Log.d(TAG, "Enabling DND with mode: $mode (filter: $interruptionFilter)")
+                notificationManager.setInterruptionFilter(interruptionFilter)
+                
+                // Verify it was set
+                val currentFilter = notificationManager.currentInterruptionFilter
+                val success = currentFilter == interruptionFilter
+                
+                if (success) {
+                    Log.d(TAG, "✅ DND enabled successfully")
+                } else {
+                    Log.w(TAG, "⚠️ DND may not have been set properly (current: $currentFilter)")
+                }
+                
+                promise.resolve(success)
+            } else {
+                Log.d(TAG, "DND not supported on Android < 6.0")
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enabling DND: ${e.message}", e)
+            promise.reject("ENABLE_DND_ERROR", e.message)
+        }
+    }
+    
+    /**
+     * Disable DND (return to normal mode)
+     * @return Promise<Boolean> - true if successfully disabled
+     */
+    @ReactMethod
+    fun disableDnd(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                // Check permission first
+                if (!notificationManager.isNotificationPolicyAccessGranted) {
+                    Log.e(TAG, "Cannot disable DND - permission not granted")
+                    promise.reject("NO_DND_PERMISSION", "DND permission not granted")
+                    return
+                }
+                
+                Log.d(TAG, "Disabling DND")
+                notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                
+                // Verify it was disabled
+                val currentFilter = notificationManager.currentInterruptionFilter
+                val success = currentFilter == NotificationManager.INTERRUPTION_FILTER_ALL
+                
+                if (success) {
+                    Log.d(TAG, "✅ DND disabled successfully")
+                } else {
+                    Log.w(TAG, "⚠️ DND may not have been disabled properly (current: $currentFilter)")
+                }
+                
+                promise.resolve(success)
+            } else {
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error disabling DND: ${e.message}", e)
+            promise.reject("DISABLE_DND_ERROR", e.message)
+        }
+    }
+    
+    // ========================================
+    // EXISTING METHODS (Silent Mode - Deprecated)
+    // ========================================
     
     @ReactMethod
     fun isSilentModeEnabled(promise: Promise) {
@@ -372,6 +565,14 @@ class DigitalDetoxModule(private val reactContext: ReactApplicationContext) :
             }
             
             permissions.putBoolean("usageStats", usageStatsGranted)
+            
+            // Check DND permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val notificationManager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                permissions.putBoolean("dnd", notificationManager.isNotificationPolicyAccessGranted)
+            } else {
+                permissions.putBoolean("dnd", false)
+            }
             
             val audioManager = reactContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val ringerMode = audioManager.ringerMode

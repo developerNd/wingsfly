@@ -28,6 +28,7 @@ import {colors, Icons} from '../../../Helper/Contants';
 import {taskService} from '../../../services/api/taskService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
+import BlockTimeScheduler from '../../../services/Alarm/BlockTimeScheduler';
 
 // Custom Dropdown Component
 const CustomDropdown = ({
@@ -104,7 +105,9 @@ const TaskScreen = () => {
   const {user} = useAuth();
 
   // Step tracking state - Initialize from route params or default to 1
-  const [currentStep, setCurrentStep] = useState(route.params?.currentStep || 1);
+  const [currentStep, setCurrentStep] = useState(
+    route.params?.currentStep || 1,
+  );
   const TOTAL_STEPS = 4;
 
   // Get category from route params
@@ -201,12 +204,12 @@ const TaskScreen = () => {
     React.useCallback(() => {
       if (route.params) {
         const params = route.params;
-        
+
         // Restore current step if coming back from another screen
         if (params.currentStep !== undefined) {
           setCurrentStep(params.currentStep);
         }
-        
+
         if (params.taskTitle !== undefined) setTaskTitle(params.taskTitle);
         if (params.priority !== undefined) setPriority(params.priority);
         if (params.note !== undefined) setNote(params.note);
@@ -464,8 +467,12 @@ const TaskScreen = () => {
 
   // SAVE TASK LOGIC
   const handleSaveTask = async () => {
+    console.log('========================================');
+    console.log('📝 TaskScreen: handleSaveTask called');
+    console.log('========================================');
+
     if (!user) {
-      Alert.alert('Error', 'Please log in to create tasks.');
+      showToast('Please log in to create tasks', 'error');
       return;
     }
 
@@ -480,7 +487,7 @@ const TaskScreen = () => {
 
       const taskData = {
         title: taskTitle.trim(),
-        description: isNumericEvaluation ? (description || '') : (note || ''),
+        description: isNumericEvaluation ? description || '' : note || '',
         category: selectedCategory?.title || 'Work and Career',
         taskType: 'Task',
         evaluationType: evaluationType || 'yesNo',
@@ -492,9 +499,15 @@ const TaskScreen = () => {
         hasFlag: true,
         priority: priority || 'High',
         numericValue: 0,
-        numericGoal: isNumericEvaluation ? (numericGoal ? parseInt(numericGoal.toString()) : null) : null,
-        numericUnit: isNumericEvaluation ? (numericUnit || null) : null,
-        numericCondition: isNumericEvaluation ? (numericCondition || 'At Least') : 'At Least',
+        numericGoal: isNumericEvaluation
+          ? numericGoal
+            ? parseInt(numericGoal.toString())
+            : null
+          : null,
+        numericUnit: isNumericEvaluation ? numericUnit || null : null,
+        numericCondition: isNumericEvaluation
+          ? numericCondition || 'At Least'
+          : 'At Least',
         timerDuration: {hours: 0, minutes: 0, seconds: 0},
         timerCondition: 'At Least',
         checklistItems: null,
@@ -512,7 +525,9 @@ const TaskScreen = () => {
         useDayOfWeek: false,
         isRepeatFlexible: false,
         isRepeatAlternateDays: false,
-        startDate: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        startDate: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         endDate: null,
         isEndDateEnabled: false,
         blockTimeEnabled: !!blockTimeData,
@@ -537,10 +552,13 @@ const TaskScreen = () => {
         taskData.shortBreakDuration = pomodoroSettings.shortBreak;
         taskData.longBreakDuration = pomodoroSettings.longBreak;
         taskData.focusSessionsPerRound = pomodoroSettings.focusSessionsPerRound;
-        taskData.autoStartShortBreaks = pomodoroSettings.autoStartShortBreaks || false;
-        taskData.autoStartFocusSessions = pomodoroSettings.autoStartFocusSessions || false;
+        taskData.autoStartShortBreaks =
+          pomodoroSettings.autoStartShortBreaks || false;
+        taskData.autoStartFocusSessions =
+          pomodoroSettings.autoStartFocusSessions || false;
         taskData.pomodoroSessionsCompleted = 0;
-        taskData.pomodoroTotalSessions = pomodoroSettings.focusSessionsPerRound || 4;
+        taskData.pomodoroTotalSessions =
+          pomodoroSettings.focusSessionsPerRound || 4;
       }
 
       if (addReminder && reminderData) {
@@ -559,7 +577,114 @@ const TaskScreen = () => {
         taskData.reminderData = null;
       }
 
+      console.log('💾 Saving Task...');
+
       const newTask = await taskService.createTask(taskData);
+      console.log('✅ TaskScreen: Task created successfully:', newTask.id);
+
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - For timer evaluation tasks ONLY
+      if (
+        isTimerEvaluation &&
+        blockTimeData &&
+        blockTimeData.startTime &&
+        startDate
+      ) {
+        try {
+          console.log('========================================');
+          console.log(
+            '⏰ [BlockTime] Auto-scheduling Block Time alarm for TIMER task',
+          );
+          console.log('========================================');
+          console.log('📋 Task ID:', newTask.id);
+          console.log('📋 Start Time:', blockTimeData.startTime);
+          console.log(
+            '📋 Start Date:',
+            new Date(startDate).toISOString().split('T')[0],
+          );
+          console.log('📋 Evaluation Type:', evaluationType);
+
+          const dateString = new Date(startDate).toISOString().split('T')[0];
+          const time24h = convertTo24Hour(blockTimeData.startTime);
+
+          // ✅ Create complete block time task object with ALL Pomodoro settings
+          const blockTimeTask = {
+            id: newTask.id,
+            title: taskTitle.trim(),
+            description: isNumericEvaluation ? description || '' : note || '',
+            category: selectedCategory?.title || 'Work and Career',
+            evaluation_type: 'timer',
+            block_time_enabled: true,
+            block_time_data: JSON.stringify({
+              start_time: time24h,
+              end_time: convertTo24Hour(blockTimeData.endTime),
+              enabled: true,
+            }),
+            source: 'task',
+            frequency_type: 'Once',
+            start_date: dateString,
+            // ✅ Include ALL Pomodoro settings for proper restoration
+            pomodoro_duration: finalDurationForPomodoro?.totalMinutes,
+            focus_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusTime
+                : null,
+            short_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.shortBreak
+                : null,
+            long_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.longBreak
+                : null,
+            focus_sessions_per_round:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusSessionsPerRound
+                : null,
+            auto_start_short_breaks:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartShortBreaks
+                : null,
+            auto_start_focus_sessions:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartFocusSessions
+                : null,
+            // ✅ Include duration data
+            duration_data: finalDurationForPomodoro || durationData,
+          };
+
+          console.log(
+            '📦 Block Time Task Object:',
+            JSON.stringify(blockTimeTask, null, 2),
+          );
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log('========================================');
+            console.log('✅ [BlockTime] Alarm scheduled successfully!');
+            console.log('📱 Request Code:', alarmResult.result.requestCode);
+            console.log(
+              '⏰ Trigger Time:',
+              new Date(alarmResult.result.triggerTime).toLocaleString(),
+            );
+            console.log('========================================');
+          } else {
+            console.warn(
+              '⚠️ [BlockTime] Failed to schedule alarm:',
+              alarmResult.reason || alarmResult.error,
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+          // Don't block task creation if Block Time scheduling fails
+        }
+      }
 
       let reminderMessage = '';
       if (taskData.reminderEnabled && taskData.reminderData) {
@@ -574,10 +699,11 @@ const TaskScreen = () => {
             email: user?.email,
           };
 
-          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
-            {...taskData, userProfile: userProfile},
-            newTask,
-          );
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {...taskData, userProfile: userProfile},
+              newTask,
+            );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
@@ -588,25 +714,55 @@ const TaskScreen = () => {
         }
       }
 
-      Alert.alert('Success', `Task created successfully!${reminderMessage}`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({
-              index: 0,
-              routes: [
-                {
-                  name: 'BottomTab',
-                  params: {newTaskCreated: true},
-                },
-              ],
-            });
-          },
-        },
-      ]);
+      console.log('========================================');
+      console.log('🎉 Task creation completed successfully!');
+      console.log('========================================');
+
+      let successMessage = 'Task created successfully!';
+
+      // Show success toast
+      showToast(successMessage, 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'BottomTab',
+              params: {newTaskCreated: true},
+            },
+          ],
+        });
+      }, 1500);
     } catch (error) {
-      console.error('Error creating task:', error);
-      Alert.alert('Error', 'Failed to create task. Please try again.');
+      console.error('❌ TaskScreen: Error creating task:', error);
+      console.error('❌ Error details:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      showToast('Failed to create task. Please try again.', 'error');
+    }
+  };
+
+  // Helper function to convert 12-hour time to 24-hour format
+  const convertTo24Hour = time12h => {
+    try {
+      const [time, period] = time12h.trim().split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) {
+        hour24 = hours + 12;
+      } else if (period === 'AM' && hours === 12) {
+        hour24 = 0;
+      }
+
+      return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(
+        2,
+        '0',
+      )}:00`;
+    } catch (error) {
+      console.error('Error converting time:', error);
+      return '00:00:00';
     }
   };
 
@@ -626,7 +782,20 @@ const TaskScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -659,7 +828,10 @@ const TaskScreen = () => {
     setBlockTimeData(timeData);
 
     if (timeData && timeData.startTime && timeData.endTime) {
-      const calculatedDuration = calculateDuration(timeData.startTime, timeData.endTime);
+      const calculatedDuration = calculateDuration(
+        timeData.startTime,
+        timeData.endTime,
+      );
       if (!durationData) {
         setDurationData(calculatedDuration);
       }
@@ -707,7 +879,10 @@ const TaskScreen = () => {
 
   const renderToggle = (isEnabled, onToggle) => {
     return (
-      <TouchableOpacity style={styles.toggleContainer} onPress={onToggle} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.toggleContainer}
+        onPress={onToggle}
+        activeOpacity={0.7}>
         <View
           style={[
             styles.toggleTrack,
@@ -716,7 +891,9 @@ const TaskScreen = () => {
           <View
             style={[
               styles.toggleSwitch,
-              isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
+              isEnabled
+                ? styles.toggleSwitchActive
+                : styles.toggleSwitchInactive,
             ]}
           />
         </View>
@@ -744,22 +921,39 @@ const TaskScreen = () => {
           activeOpacity={onRowPress ? 0.7 : hasToggle || hasPlus ? 1 : 0.7}
           onPress={onRowPress || (() => {})}>
           <View style={styles.optionLeft}>
-            <Image source={iconSource} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={iconSource}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>{title}</Text>
-              {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
+              {subtitle && (
+                <Text style={styles.optionSubtitle}>{subtitle}</Text>
+              )}
             </View>
           </View>
 
           <View style={styles.optionRight}>
             {hasToggle && renderToggle(toggleState, onTogglePress)}
             {hasPlus && (
-              <TouchableOpacity onPress={onPlusPress} style={styles.plusButton} activeOpacity={0.7}>
-                <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+              <TouchableOpacity
+                onPress={onPlusPress}
+                style={styles.plusButton}
+                activeOpacity={0.7}>
+                <Image
+                  source={Icons.Plus}
+                  style={styles.plusIcon}
+                  resizeMode="contain"
+                />
               </TouchableOpacity>
             )}
             {hasDropdown && (
-              <MaterialIcons name="keyboard-arrow-down" size={WP(6)} color="#646464" />
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={WP(6)}
+                color="#646464"
+              />
             )}
             {customRight && customRight}
           </View>
@@ -779,7 +973,9 @@ const TaskScreen = () => {
               <Text
                 style={[
                   styles.inputLabel,
-                  isTaskLabelActive ? styles.inputLabelActive : styles.inputLabelInactive,
+                  isTaskLabelActive
+                    ? styles.inputLabelActive
+                    : styles.inputLabelInactive,
                 ]}>
                 {isNumericEvaluation ? 'Habit' : 'Task'}
               </Text>
@@ -811,11 +1007,14 @@ const TaskScreen = () => {
                     />
                   </View>
 
-                  <View style={[styles.taskInputContainer, styles.goalContainer]}>
+                  <View
+                    style={[styles.taskInputContainer, styles.goalContainer]}>
                     <Text
                       style={[
                         styles.inputLabel,
-                        isGoalLabelActive ? styles.inputLabelActive : styles.inputLabelInactive1,
+                        isGoalLabelActive
+                          ? styles.inputLabelActive
+                          : styles.inputLabelInactive1,
                       ]}>
                       Goal
                     </Text>
@@ -869,7 +1068,11 @@ const TaskScreen = () => {
             <View style={styles.optionContainer}>
               <View style={styles.optionRow}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Category} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Category}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Category</Text>
                   </View>
@@ -879,7 +1082,9 @@ const TaskScreen = () => {
                     {selectedCategory?.title || 'Work and Career'}
                   </Text>
                   <Image
-                    source={getCategoryIcon(selectedCategory?.title || 'Work and Career')}
+                    source={getCategoryIcon(
+                      selectedCategory?.title || 'Work and Career',
+                    )}
                     style={styles.categoryIcon}
                     resizeMode="contain"
                   />
@@ -897,7 +1102,9 @@ const TaskScreen = () => {
               null,
               null,
               <View style={styles.dateContainer}>
-                <Text style={styles.dateText}>{formatDisplayDate(startDate)}</Text>
+                <Text style={styles.dateText}>
+                  {formatDisplayDate(startDate)}
+                </Text>
               </View>,
               () => setShowStartDatePicker(true),
             )}
@@ -918,7 +1125,7 @@ const TaskScreen = () => {
               handleDurationPress,
               durationData
                 ? durationData.formattedDuration ||
-                  `${durationData.hours}h ${durationData.minutes}m`
+                    `${durationData.hours}h ${durationData.minutes}m`
                 : null,
             )}
 
@@ -930,7 +1137,9 @@ const TaskScreen = () => {
               null,
               true,
               handleBlockTimePress,
-              blockTimeData ? `${blockTimeData.startTime} - ${blockTimeData.endTime}` : null,
+              blockTimeData
+                ? `${blockTimeData.startTime} - ${blockTimeData.endTime}`
+                : null,
             )}
 
             <View
@@ -943,14 +1152,22 @@ const TaskScreen = () => {
                 activeOpacity={0.7}
                 onPress={handlePriorityPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Flag} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Flag}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Priority</Text>
                   </View>
                 </View>
                 <View style={styles.optionRight}>
                   <MaterialIcons
-                    name={showPriorityDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    name={
+                      showPriorityDropdown
+                        ? 'keyboard-arrow-up'
+                        : 'keyboard-arrow-down'
+                    }
                     size={WP(6)}
                     color="#646464"
                   />
@@ -966,11 +1183,16 @@ const TaskScreen = () => {
                         style={[
                           styles.priorityButton,
                           {backgroundColor: option.backgroundColor},
-                          priority === option.value && styles.priorityButtonSelected,
+                          priority === option.value &&
+                            styles.priorityButtonSelected,
                         ]}
                         onPress={() => handlePrioritySelect(option)}
                         activeOpacity={0.8}>
-                        <Text style={[styles.priorityButtonText, {color: option.textColor}]}>
+                        <Text
+                          style={[
+                            styles.priorityButtonText,
+                            {color: option.textColor},
+                          ]}>
                           {option.label}
                         </Text>
                       </TouchableOpacity>
@@ -992,7 +1214,11 @@ const TaskScreen = () => {
                 activeOpacity={0.7}
                 onPress={handleNotePress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Note} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Note}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Note</Text>
                     {note && (
@@ -1008,7 +1234,11 @@ const TaskScreen = () => {
             <View style={styles.optionContainer}>
               <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Pending} style={styles.optionIcon1} resizeMode="contain" />
+                  <Image
+                    source={Icons.Pending}
+                    style={styles.optionIcon1}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Pending Task</Text>
                     <Text style={styles.pendingSubtitle}>
@@ -1037,7 +1267,11 @@ const TaskScreen = () => {
               <View style={styles.optionContainer}>
                 <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                   <View style={styles.optionLeft}>
-                    <Image source={Icons.Clock} style={styles.optionIcon} resizeMode="contain" />
+                    <Image
+                      source={Icons.Clock}
+                      style={styles.optionIcon}
+                      resizeMode="contain"
+                    />
                     <View style={styles.optionTextContainer}>
                       <Text style={styles.optionTitle}>Add Pomodoro</Text>
                       {addPomodoro && pomodoroSettings && (
@@ -1045,17 +1279,28 @@ const TaskScreen = () => {
                           <Text style={styles.optionSubtitle}>
                             {`${pomodoroSettings.focusTime || 25}min focus, ${
                               pomodoroSettings.shortBreak || 5
-                            }min break, ${pomodoroSettings.focusSessionsPerRound || 4} sessions`}
+                            }min break, ${
+                              pomodoroSettings.focusSessionsPerRound || 4
+                            } sessions`}
                           </Text>
                           {(blockTimeData?.startTime && blockTimeData?.endTime
-                            ? calculateDuration(blockTimeData.startTime, blockTimeData.endTime)
+                            ? calculateDuration(
+                                blockTimeData.startTime,
+                                blockTimeData.endTime,
+                              )
                             : durationData) && (
                             <Text style={styles.pomodoroDuration}>
                               Duration:{' '}
-                              {(blockTimeData?.startTime && blockTimeData?.endTime
-                                ? calculateDuration(blockTimeData.startTime, blockTimeData.endTime)
-                                : durationData
-                              )?.formattedDuration}
+                              {
+                                (blockTimeData?.startTime &&
+                                blockTimeData?.endTime
+                                  ? calculateDuration(
+                                      blockTimeData.startTime,
+                                      blockTimeData.endTime,
+                                    )
+                                  : durationData
+                                )?.formattedDuration
+                              }
                             </Text>
                           )}
                         </>
@@ -1081,7 +1326,11 @@ const TaskScreen = () => {
                 activeOpacity={0.7}
                 onPress={handleLinkToGoalPress}>
                 <View style={styles.optionLeft}>
-                  <Image source={Icons.Link} style={styles.optionIcon} resizeMode="contain" />
+                  <Image
+                    source={Icons.Link}
+                    style={styles.optionIcon}
+                    resizeMode="contain"
+                  />
                   <View style={styles.optionTextContainer}>
                     <Text style={styles.optionTitle}>Link To Goal</Text>
                   </View>
@@ -1091,7 +1340,11 @@ const TaskScreen = () => {
                     style={styles.plusButton}
                     activeOpacity={0.7}
                     onPress={handleLinkToGoalPress}>
-                    <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+                    <Image
+                      source={Icons.Plus}
+                      style={styles.plusIcon}
+                      resizeMode="contain"
+                    />
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -1129,7 +1382,9 @@ const TaskScreen = () => {
                 <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
                   <View style={styles.optionLeft}>
                     <View style={styles.optionTextContainer}>
-                      <Text style={styles.optionTitle}>Add to Google Calendar</Text>
+                      <Text style={styles.optionTitle}>
+                        Add to Google Calendar
+                      </Text>
                     </View>
                   </View>
                   <View>
@@ -1141,7 +1396,8 @@ const TaskScreen = () => {
               </View>
 
               {addToGoogleCalendar && (
-                <View style={[styles.optionContainer, styles.connectedContainer]}>
+                <View
+                  style={[styles.optionContainer, styles.connectedContainer]}>
                   <TouchableOpacity style={styles.optionRow}>
                     <View style={styles.optionLeft}>
                       <View style={styles.optionTextContainer}>
@@ -1169,7 +1425,7 @@ const TaskScreen = () => {
         dots.push(
           <View key={i} style={styles.progressDotCompleted}>
             <MaterialIcons name="check" size={WP(3.2)} color={colors.White} />
-          </View>
+          </View>,
         );
       } else if (i === currentStep) {
         // Current active step
@@ -1178,14 +1434,14 @@ const TaskScreen = () => {
             <View style={styles.progressDotActiveInner}>
               <Text style={styles.progressDotTextActive}>{i}</Text>
             </View>
-          </View>
+          </View>,
         );
       } else {
         // Future steps
         dots.push(
           <View key={i} style={styles.progressDotInactive}>
             <Text style={styles.progressDotTextInactive}>{i}</Text>
-          </View>
+          </View>,
         );
       }
 
@@ -1204,7 +1460,10 @@ const TaskScreen = () => {
 
       {/* Header */}
       <View style={styles.headerWrapper}>
-        <Headers title="New Task" onBackPress={currentStep > 1 ? handleBackPress : null} />
+        <Headers
+          title="New Task"
+          onBackPress={currentStep > 1 ? handleBackPress : null}
+        />
       </View>
 
       {/* Content */}
@@ -1212,8 +1471,8 @@ const TaskScreen = () => {
         {renderStepContent()}
 
         {/* Next/Done Button */}
-        <TouchableOpacity 
-          style={styles.nextButton} 
+        <TouchableOpacity
+          style={styles.nextButton}
           onPress={handleNextPress}
           activeOpacity={0.8}>
           <Text style={styles.nextButtonText}>

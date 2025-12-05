@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/notes_container"
+    android:layout_width="320dp"
+    android:layout_height="550dp"
+    android:orientation="vertical"
+    android:background="@drawable/notes_window_bg"
+    android:clipToOutline="true"
+    android:elevation="8dp"
+    android:padding="0dp">
+
+    <!-- Header with close button - DRAGGABLE AREA - Rounded top -->
+    <RelativeLayout
+        android:id="@+id/notes_header"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@drawable/header_bg"
+        android:padding="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Quick Notes"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_centerVertical="true" />
+
+        <ImageButton
+            android:id="@+id/close_button"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:background="#00000000"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="#FFFFFF"
+            android:scaleType="fitCenter"
+            android:padding="4dp"
+            android:contentDescription="Close" />
+    </RelativeLayout>
+
+    <!-- Notes text area -->
+    <EditText
+        android:id="@+id/notes_text"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#FFFFFF"
+        android:gravity="top|start"
+        android:hint="Type your notes here..."
+        android:padding="16dp"
+        android:textSize="16sp"
+        android:textColor="#000000"
+        android:textColorHint="#999999"
+        android:inputType="textMultiLine|textCapSentences"
+        android:scrollbars="vertical"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
+
+    <!-- Bottom action buttons - Rounded bottom -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@drawable/footer_bg"
+        android:padding="8dp">
+
+        <!-- Save Button Container with Loader -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp">
+
+            <Button
+                android:id="@+id/save_button"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="Save"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:background="@drawable/button_save_bg" />
+
+            <ProgressBar
+                android:id="@+id/save_loader"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                android:indeterminateTint="#FFFFFF" />
+        </FrameLayout>
+
+        <!-- Clear Button Container with Loader -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp">
+
+            <Button
+                android:id="@+id/clear_button"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="Clear"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:background="@drawable/button_clear_bg" />
+
+            <ProgressBar
+                android:id="@+id/clear_loader"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                android:indeterminateTint="#FFFFFF" />
+        </FrameLayout>
+    </LinearLayout>
+
+</LinearLayout>

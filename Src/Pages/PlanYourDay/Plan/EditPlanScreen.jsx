@@ -30,14 +30,13 @@ import {colors, Icons} from '../../../Helper/Contants';
 import {planYourDayService} from '../../../services/api/planYourDayService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
-import {useMusic} from '../../../contexts/MusicContext';
 import taskConfirmationAlarmManager from '../../../services/TaskConfirmation/taskConfirmationAlarmManager';
+import BlockTimeScheduler from '../../../services/Alarm/BlockTimeScheduler';
 
 const EditPlanScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const {user} = useAuth();
-  const {stopPlanMusic, forceStopPlanMusic} = useMusic();
 
   // Get plan data from route params
   const {planData, planId} = route.params;
@@ -75,7 +74,9 @@ const EditPlanScreen = () => {
 
   // Initialize states with existing plan data
   const [taskTitle, setTaskTitle] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState({title: 'Work and Career'});
+  const [selectedCategory, setSelectedCategory] = useState({
+    title: 'Work and Career',
+  });
   const [priority, setPriority] = useState('');
   const [note, setNote] = useState('');
   const [isPendingTask, setIsPendingTask] = useState(false);
@@ -116,10 +117,10 @@ const EditPlanScreen = () => {
   const loadPlanData = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch complete plan data from database
       const plan = await planYourDayService.getPlanYourDayById(planId);
-      
+
       if (plan) {
         // Basic information
         setTaskTitle(plan.title || '');
@@ -127,11 +128,12 @@ const EditPlanScreen = () => {
         setNote(plan.note || plan.description || '');
         setIsPendingTask(plan.is_pending_task || false);
         setEvaluationType(plan.evaluation_type);
-        
+
         // Priority from tags
         if (plan.tags && Array.isArray(plan.tags)) {
-          const priorityTag = plan.tags.find(tag => 
-            tag.toLowerCase() === 'must' || tag.toLowerCase() === 'important'
+          const priorityTag = plan.tags.find(
+            tag =>
+              tag.toLowerCase() === 'must' || tag.toLowerCase() === 'important',
           );
           setPriority(priorityTag || 'Important');
         } else {
@@ -145,26 +147,45 @@ const EditPlanScreen = () => {
 
         // Duration data
         if (plan.duration_data) {
-          setDurationData(typeof plan.duration_data === 'string' 
-            ? JSON.parse(plan.duration_data) 
-            : plan.duration_data
+          setDurationData(
+            typeof plan.duration_data === 'string'
+              ? JSON.parse(plan.duration_data)
+              : plan.duration_data,
           );
         }
 
-        // Block time data
+        // Block time data - FIX: Parse correctly from database format
         if (plan.block_time_data) {
-          setBlockTimeData(typeof plan.block_time_data === 'string'
-            ? JSON.parse(plan.block_time_data)
-            : plan.block_time_data
-          );
+          const parsedBlockTime =
+            typeof plan.block_time_data === 'string'
+              ? JSON.parse(plan.block_time_data)
+              : plan.block_time_data;
+
+          // Convert 24-hour format to 12-hour format for display
+          if (parsedBlockTime.start_time && parsedBlockTime.end_time) {
+            const convertTo12Hour = time24 => {
+              const [hours, minutes] = time24.split(':');
+              let hour = parseInt(hours, 10);
+              const period = hour >= 12 ? 'PM' : 'AM';
+              hour = hour % 12 || 12;
+              return `${hour}:${minutes} ${period}`;
+            };
+
+            setBlockTimeData({
+              startTime: convertTo12Hour(parsedBlockTime.start_time),
+              endTime: convertTo12Hour(parsedBlockTime.end_time),
+              enabled: parsedBlockTime.enabled,
+            });
+          }
         }
 
         // Reminder data
         if (plan.reminder_enabled && plan.reminder_data) {
           setAddReminder(true);
-          setReminderData(typeof plan.reminder_data === 'string'
-            ? JSON.parse(plan.reminder_data)
-            : plan.reminder_data
+          setReminderData(
+            typeof plan.reminder_data === 'string'
+              ? JSON.parse(plan.reminder_data)
+              : plan.reminder_data,
           );
         }
 
@@ -174,18 +195,20 @@ const EditPlanScreen = () => {
         // Pomodoro settings (for timer evaluation type)
         if (plan.evaluation_type === 'timer' && plan.pomodoro_settings) {
           setAddPomodoro(true);
-          setPomodoroSettings(typeof plan.pomodoro_settings === 'string'
-            ? JSON.parse(plan.pomodoro_settings)
-            : plan.pomodoro_settings
+          setPomodoroSettings(
+            typeof plan.pomodoro_settings === 'string'
+              ? JSON.parse(plan.pomodoro_settings)
+              : plan.pomodoro_settings,
           );
         }
 
         // Checklist data (for checklist evaluation type)
         if (plan.evaluation_type === 'checklist' && plan.checklist_items) {
           setChecklistData({
-            checklistItems: typeof plan.checklist_items === 'string'
-              ? JSON.parse(plan.checklist_items)
-              : plan.checklist_items,
+            checklistItems:
+              typeof plan.checklist_items === 'string'
+                ? JSON.parse(plan.checklist_items)
+                : plan.checklist_items,
             successCondition: plan.success_condition,
             customItemsCount: plan.custom_items_count,
             taskTitle: plan.title,
@@ -195,10 +218,12 @@ const EditPlanScreen = () => {
       }
 
       setLoading(false);
-      
+
       // NEW: Auto-open Block Time modal if triggered from reschedule
       if (route.params?.fromReschedule && !hasAutoOpened) {
-        console.log('[EDIT SCREEN] Auto-opening Block Time modal from reschedule');
+        console.log(
+          '[EDIT SCREEN] Auto-opening Block Time modal from reschedule',
+        );
         setHasAutoOpened(true);
         // Small delay to ensure UI is ready
         setTimeout(() => {
@@ -207,7 +232,7 @@ const EditPlanScreen = () => {
       }
     } catch (error) {
       console.error('Error loading plan data:', error);
-      Alert.alert('Error', 'Failed to load plan data');
+      showToast('Failed to load plan data', 'error');
       setLoading(false);
       navigation.goBack();
     }
@@ -223,16 +248,20 @@ const EditPlanScreen = () => {
         if (params.taskTitle !== undefined) setTaskTitle(params.taskTitle);
         if (params.priority !== undefined) setPriority(params.priority);
         if (params.note !== undefined) setNote(params.note);
-        if (params.isPendingTask !== undefined) setIsPendingTask(params.isPendingTask);
-        if (params.addReminder !== undefined) setAddReminder(params.addReminder);
-        if (params.addToGoogleCalendar !== undefined) setAddToGoogleCalendar(params.addToGoogleCalendar);
+        if (params.isPendingTask !== undefined)
+          setIsPendingTask(params.isPendingTask);
+        if (params.addReminder !== undefined)
+          setAddReminder(params.addReminder);
+        if (params.addToGoogleCalendar !== undefined)
+          setAddToGoogleCalendar(params.addToGoogleCalendar);
         if (params.reminderData) setReminderData(params.reminderData);
 
         // Restore date data
         if (params.startDate) {
-          const date = typeof params.startDate === 'string'
-            ? new Date(params.startDate)
-            : params.startDate;
+          const date =
+            typeof params.startDate === 'string'
+              ? new Date(params.startDate)
+              : params.startDate;
           setStartDate(date);
         }
 
@@ -268,8 +297,18 @@ const EditPlanScreen = () => {
   const isChecklistEvaluation = evaluationType === 'checklist';
 
   const priorityOptions = [
-    {label: 'Must', value: 'Must', backgroundColor: '#EFCCCC', textColor: '#AF0000'},
-    {label: 'Important', value: 'Important', backgroundColor: '#D0D1E3', textColor: colors.Primary},
+    {
+      label: 'Must',
+      value: 'Must',
+      backgroundColor: '#EFCCCC',
+      textColor: '#AF0000',
+    },
+    {
+      label: 'Important',
+      value: 'Important',
+      backgroundColor: '#D0D1E3',
+      textColor: colors.Primary,
+    },
   ];
 
   const calculateDuration = (startTime, endTime) => {
@@ -307,24 +346,29 @@ const EditPlanScreen = () => {
       hours,
       minutes,
       totalMinutes: durationMinutes,
-      formattedDuration: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+      formattedDuration: `${String(hours).padStart(2, '0')}:${String(
+        minutes,
+      ).padStart(2, '0')}`,
     };
   };
 
   // Helper function to convert 12-hour time to 24-hour format
-  const convertTo24Hour = (time12h) => {
+  const convertTo24Hour = time12h => {
     try {
       const [time, period] = time12h.trim().split(' ');
       const [hours, minutes] = time.split(':').map(Number);
-      
+
       let hour24 = hours;
       if (period === 'PM' && hours !== 12) {
         hour24 = hours + 12;
       } else if (period === 'AM' && hours === 12) {
         hour24 = 0;
       }
-      
-      return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+
+      return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(
+        2,
+        '0',
+      )}:00`;
     } catch (error) {
       console.error('Error converting time:', error);
       return '00:00:00';
@@ -360,13 +404,18 @@ const EditPlanScreen = () => {
 
       let calculatedDuration = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        calculatedDuration = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
+        calculatedDuration = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
       }
 
       const durationForPomodoro = calculatedDuration || durationData;
 
       if (!durationForPomodoro) {
-        showToast('Please select a block time first to calculate duration for Pomodoro');
+        showToast(
+          'Please select a block time first to calculate duration for Pomodoro',
+        );
         return;
       }
 
@@ -406,14 +455,16 @@ const EditPlanScreen = () => {
 
   // UPDATED: Handle Update button press with task confirmation alarm
   const handleUpdatePress = async () => {
-    console.log('🎵 EditPlanScreen: handleUpdatePress called');
-    
+    console.log('========================================');
+    console.log('📝 EditPlanScreen: handleUpdatePress called');
+    console.log('========================================');
+
     if (toastVisible) {
       hideToast();
     }
 
     if (!user) {
-      Alert.alert('Error', 'Please log in to update Plan Your Day.');
+      showToast('Please log in to update Plan Your Day', 'error');
       return;
     }
 
@@ -434,7 +485,11 @@ const EditPlanScreen = () => {
         return;
       }
 
-      if (!checklistData || !checklistData.checklistItems || checklistData.checklistItems.length === 0) {
+      if (
+        !checklistData ||
+        !checklistData.checklistItems ||
+        checklistData.checklistItems.length === 0
+      ) {
         showToast('Checklist items are required');
         return;
       }
@@ -461,75 +516,67 @@ const EditPlanScreen = () => {
     }
 
     try {
-      // Stop background music first
-      console.log('🎵 EditPlanScreen: Stopping background music...');
-      try {
-        await forceStopPlanMusic();
-      } catch (musicError) {
-        console.error('🎵 EditPlanScreen: Music stop failed:', musicError);
-      }
-
       // Calculate duration from block time for pomodoro
       let finalDurationForPomodoro = null;
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        finalDurationForPomodoro = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
+        finalDurationForPomodoro = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
       }
 
-      // Prepare updated plan data (using correct database column names)
+      // Prepare block time data for database
+      const blockTimeDataForDB = blockTimeData
+        ? {
+            enabled: true,
+            start_time: convertTo24Hour(blockTimeData.startTime),
+            end_time: convertTo24Hour(blockTimeData.endTime),
+          }
+        : null;
+
+      // ✅ SIMPLIFIED: Use EXACT same structure as PlanScreen
       const updatedPlanData = {
         title: taskTitle.trim(),
         description: note || '',
         category: selectedCategory?.title || 'Work and Career',
         plan_type: isChecklistEvaluation ? 'checklist' : 'hours',
         evaluation_type: evaluationType || 'yesNo',
-
-        // Visual and display properties
         time: blockTimeData?.startTime || null,
         time_color: '#E4EBF3',
         tags: ['Plan', priority || 'Must'],
         priority: priority || 'Important',
-
-        // Timer-specific data
         timer_duration: finalDurationForPomodoro || durationData,
-
-        // Checklist-specific data
-        checklist_items: isChecklistEvaluation ? checklistData.checklistItems : null,
-
-        // Scheduling settings
-        start_date: startDate ? new Date(startDate).toISOString().split('T')[0] : null,
+        checklist_items: isChecklistEvaluation
+          ? checklistData.checklistItems
+          : null,
+        start_date: startDate
+          ? new Date(startDate).toISOString().split('T')[0]
+          : null,
         end_date: null,
         is_end_date_enabled: false,
-
-        // Block time settings
-        block_time_data: blockTimeData,
-
-        // Duration settings
+        block_time_data: blockTimeDataForDB,
         duration_data: durationData,
-
-        // Additional features (using correct column names)
         add_to_google_calendar: addToGoogleCalendar || false,
         is_pending_task: isPendingTask || false,
-
-        // Goal linking
         linked_goal_id: null,
         linked_goal_title: null,
         linked_goal_type: null,
-
-        // Notes
         note: note || '',
       };
 
-      // Add pomodoro settings if enabled (using correct column names)
+      // Add pomodoro settings if enabled
       if (addPomodoro && pomodoroSettings) {
         updatedPlanData.pomodoro_settings = pomodoroSettings;
         updatedPlanData.focus_duration = pomodoroSettings.focusTime;
         updatedPlanData.short_break_duration = pomodoroSettings.shortBreak;
         updatedPlanData.long_break_duration = pomodoroSettings.longBreak;
-        updatedPlanData.focus_sessions_per_round = pomodoroSettings.focusSessionsPerRound;
-        updatedPlanData.auto_start_short_breaks = pomodoroSettings.autoStartShortBreaks || false;
-        updatedPlanData.auto_start_focus_sessions = pomodoroSettings.autoStartFocusSessions || false;
+        updatedPlanData.focus_sessions_per_round =
+          pomodoroSettings.focusSessionsPerRound;
+        updatedPlanData.auto_start_short_breaks =
+          pomodoroSettings.autoStartShortBreaks || false;
+        updatedPlanData.auto_start_focus_sessions =
+          pomodoroSettings.autoStartFocusSessions || false;
       } else {
-        // Clear pomodoro settings if disabled
         updatedPlanData.pomodoro_settings = null;
         updatedPlanData.focus_duration = null;
         updatedPlanData.short_break_duration = null;
@@ -539,7 +586,7 @@ const EditPlanScreen = () => {
         updatedPlanData.auto_start_focus_sessions = false;
       }
 
-      // Add reminder data if enabled (using correct column names)
+      // Add reminder data if enabled
       if (addReminder && reminderData) {
         updatedPlanData.reminder_enabled = true;
         updatedPlanData.reminder_data = reminderData;
@@ -548,37 +595,119 @@ const EditPlanScreen = () => {
         updatedPlanData.reminder_data = null;
       }
 
-      console.log('🎵 EditPlanScreen: Updating Plan Your Day:', updatedPlanData);
+      console.log('💾 Updating Plan Your Day task...');
 
       // Update plan in database
-      const updatedPlan = await planYourDayService.updatePlanYourDay(planId, updatedPlanData);
-      console.log('🎵 EditPlanScreen: Plan updated successfully:', updatedPlan);
+      const updatedPlan = await planYourDayService.updatePlanYourDay(
+        planId,
+        updatedPlanData,
+      );
+      console.log(
+        '✅ EditPlanScreen: Plan updated successfully:',
+        updatedPlan.id,
+      );
+
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - For timer evaluation tasks
+      if (
+        isTimerEvaluation &&
+        blockTimeData &&
+        blockTimeData.startTime &&
+        startDate
+      ) {
+        try {
+          console.log('========================================');
+          console.log(
+            '⏰ [BlockTime] Auto-scheduling Block Time alarm for updated task',
+          );
+          console.log('========================================');
+
+          const dateString = new Date(startDate).toISOString().split('T')[0];
+          const time24h = convertTo24Hour(blockTimeData.startTime);
+
+          const blockTimeTask = {
+            id: updatedPlan.id,
+            title: taskTitle.trim(),
+            description: note || '',
+            category: selectedCategory?.title || 'Work and Career',
+            evaluation_type: 'timer',
+            block_time_enabled: true,
+            block_time_data: JSON.stringify({
+              start_time: time24h,
+              end_time: convertTo24Hour(blockTimeData.endTime),
+              enabled: true,
+            }),
+            source: 'plan_your_day',
+            frequency_type: 'Once',
+            start_date: dateString,
+            pomodoro_duration: finalDurationForPomodoro?.totalMinutes,
+            focus_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusTime
+                : null,
+            short_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.shortBreak
+                : null,
+            long_break_duration:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.longBreak
+                : null,
+            focus_sessions_per_round:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.focusSessionsPerRound
+                : null,
+            auto_start_short_breaks:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartShortBreaks
+                : null,
+            auto_start_focus_sessions:
+              addPomodoro && pomodoroSettings
+                ? pomodoroSettings.autoStartFocusSessions
+                : null,
+            duration_data: finalDurationForPomodoro || durationData,
+          };
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log(
+              '✅ [BlockTime] Alarm scheduled successfully for updated task!',
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+        }
+      }
 
       // Schedule task confirmation alarm if start time is available
       if (blockTimeData && blockTimeData.startTime && startDate) {
         try {
-          console.log('Scheduling task confirmation alarm for updated task...');
-          
-          // Convert 12-hour format to 24-hour format
           const time24h = convertTo24Hour(blockTimeData.startTime);
-          
-          const confirmationResult = await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
-            id: updatedPlan.id,
-            title: taskTitle.trim(),
-            description: note || '',
-            start_date: new Date(startDate).toISOString().split('T')[0],
-            start_time: time24h,
-            category: selectedCategory?.title || 'Work and Career',
-            evaluationType: updatedPlanData.evaluation_type,
-          });
+
+          const confirmationResult =
+            await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
+              id: updatedPlan.id,
+              title: taskTitle.trim(),
+              description: note || '',
+              start_date: new Date(startDate).toISOString().split('T')[0],
+              start_time: time24h,
+              category: selectedCategory?.title || 'Work and Career',
+              evaluationType: updatedPlanData.evaluation_type,
+            });
 
           if (confirmationResult.success) {
-            console.log('Task confirmation alarm scheduled for updated task:', confirmationResult.data);
-          } else {
-            console.warn('Failed to schedule confirmation alarm:', confirmationResult.error);
+            console.log(
+              '✅ Task confirmation alarm scheduled for updated task',
+            );
           }
         } catch (confirmError) {
-          console.error('Error scheduling task confirmation:', confirmError);
+          console.error('❌ Error scheduling task confirmation:', confirmError);
         }
       }
 
@@ -587,62 +716,53 @@ const EditPlanScreen = () => {
       if (updatedPlanData.reminder_enabled && updatedPlanData.reminder_data) {
         try {
           const userProfile = {
-            username: user?.user_metadata?.display_name || user?.user_metadata?.username || user?.email?.split('@')[0],
+            username:
+              user?.user_metadata?.display_name ||
+              user?.user_metadata?.username ||
+              user?.email?.split('@')[0],
             display_name: user?.user_metadata?.display_name,
             user_metadata: user?.user_metadata,
             email: user?.email,
           };
 
-          const scheduledReminders = await ReminderScheduler.scheduleTaskReminders(
-            {
-              ...updatedPlanData,
-              userProfile: userProfile,
-            },
-            updatedPlan,
-          );
+          const scheduledReminders =
+            await ReminderScheduler.scheduleTaskReminders(
+              {...updatedPlanData, userProfile: userProfile},
+              updatedPlan,
+            );
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
+            console.log('✅ Reminders scheduled:', scheduledReminders.length);
           }
         } catch (reminderError) {
-          console.error('🎵 EditPlanScreen: Error scheduling reminders:', reminderError);
+          console.error('❌ Error scheduling reminders:', reminderError);
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      // Final music stop
-      try {
-        await forceStopPlanMusic();
-      } catch (finalMusicError) {
-        console.error('🎵 EditPlanScreen: Final music stop failed:', finalMusicError);
-      }
+      console.log('========================================');
+      console.log('🎉 Task update completed successfully!');
+      console.log('========================================');
 
       // Show success message
       const taskType = isChecklistEvaluation ? 'checklist' : 'task';
-      Alert.alert('Success', `Plan Your Day ${taskType} updated successfully!${reminderMessage}`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            forceStopPlanMusic().catch(error => {
-              console.error('🎵 EditPlanScreen: Pre-navigation music stop failed:', error);
-            });
+      let successMessage = `Task updated successfully!`;
 
-            navigation.reset({
-              index: 0,
-              routes: [{name: 'BottomTab', params: {planUpdated: true}}],
-            });
-          },
-        },
-      ]);
+      // Show success toast
+      showToast(successMessage, 'success');
+
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [{name: 'BottomTab', params: {planUpdated: true}}],
+        });
+      }, 1500);
     } catch (error) {
-      console.error('🎵 EditPlanScreen: Error updating Plan Your Day:', error);
-      
-      try {
-        await forceStopPlanMusic();
-      } catch (errorMusicStop) {
-        console.error('🎵 EditPlanScreen: Error case music stop failed:', errorMusicStop);
-      }
-      
+      console.error('❌ EditPlanScreen: Error updating Plan Your Day:', error);
+      console.error('❌ Error details:', error.message);
+      console.error('❌ Error stack:', error.stack);
       Alert.alert('Error', 'Failed to update plan. Please try again.');
     }
   };
@@ -656,7 +776,20 @@ const EditPlanScreen = () => {
     }
 
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
     const dayName = days[date.getDay()];
     const monthName = months[date.getMonth()];
@@ -689,7 +822,10 @@ const EditPlanScreen = () => {
     setBlockTimeData(timeData);
 
     if (timeData && timeData.startTime && timeData.endTime) {
-      const calculatedDuration = calculateDuration(timeData.startTime, timeData.endTime);
+      const calculatedDuration = calculateDuration(
+        timeData.startTime,
+        timeData.endTime,
+      );
       if (!durationData) {
         setDurationData(calculatedDuration);
       }
@@ -737,9 +873,23 @@ const EditPlanScreen = () => {
 
   const renderToggle = (isEnabled, onToggle) => {
     return (
-      <TouchableOpacity style={styles.toggleContainer} onPress={onToggle} activeOpacity={0.7}>
-        <View style={[styles.toggleTrack, isEnabled ? styles.toggleTrackActive : styles.toggleTrackInactive]}>
-          <View style={[styles.toggleSwitch, isEnabled ? styles.toggleSwitchActive : styles.toggleSwitchInactive]} />
+      <TouchableOpacity
+        style={styles.toggleContainer}
+        onPress={onToggle}
+        activeOpacity={0.7}>
+        <View
+          style={[
+            styles.toggleTrack,
+            isEnabled ? styles.toggleTrackActive : styles.toggleTrackInactive,
+          ]}>
+          <View
+            style={[
+              styles.toggleSwitch,
+              isEnabled
+                ? styles.toggleSwitchActive
+                : styles.toggleSwitchInactive,
+            ]}
+          />
         </View>
       </TouchableOpacity>
     );
@@ -765,21 +915,40 @@ const EditPlanScreen = () => {
           activeOpacity={onRowPress ? 0.7 : hasToggle || hasPlus ? 1 : 0.7}
           onPress={onRowPress || (() => {})}>
           <View style={styles.optionLeft}>
-            <Image source={iconSource} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={iconSource}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>{title}</Text>
-              {subtitle && <Text style={styles.optionSubtitle}>{subtitle}</Text>}
+              {subtitle && (
+                <Text style={styles.optionSubtitle}>{subtitle}</Text>
+              )}
             </View>
           </View>
 
           <View style={styles.optionRight}>
             {hasToggle && renderToggle(toggleState, onTogglePress)}
             {hasPlus && (
-              <TouchableOpacity onPress={onPlusPress} style={styles.plusButton} activeOpacity={0.7}>
-                <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+              <TouchableOpacity
+                onPress={onPlusPress}
+                style={styles.plusButton}
+                activeOpacity={0.7}>
+                <Image
+                  source={Icons.Plus}
+                  style={styles.plusIcon}
+                  resizeMode="contain"
+                />
               </TouchableOpacity>
             )}
-            {hasDropdown && <MaterialIcons name="keyboard-arrow-down" size={WP(6)} color="#646464" />}
+            {hasDropdown && (
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={WP(6)}
+                color="#646464"
+              />
+            )}
             {customRight && customRight}
           </View>
         </TouchableOpacity>
@@ -791,21 +960,36 @@ const EditPlanScreen = () => {
   const renderDurationSection = () => {
     return (
       <View style={styles.optionContainer}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handleDurationPress}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handleDurationPress}>
           <View style={styles.optionLeft}>
-            <Image source={Icons.Clock} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>Duration</Text>
               {durationData && (
                 <Text style={styles.optionSubtitle}>
-                  {durationData.formattedDuration || `${durationData.hours}h ${durationData.minutes}m`}
+                  {durationData.formattedDuration ||
+                    `${durationData.hours}h ${durationData.minutes}m`}
                 </Text>
               )}
             </View>
           </View>
           <View style={styles.optionRight}>
-            <TouchableOpacity onPress={handleDurationPress} style={styles.plusButton} activeOpacity={0.7}>
-              <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+            <TouchableOpacity
+              onPress={handleDurationPress}
+              style={styles.plusButton}
+              activeOpacity={0.7}>
+              <Image
+                source={Icons.Plus}
+                style={styles.plusIcon}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -816,21 +1000,37 @@ const EditPlanScreen = () => {
   const renderBlockTimeSection = () => {
     return (
       <View style={styles.optionContainer}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handleBlockTimePress}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handleBlockTimePress}>
           <View style={styles.optionLeft}>
-            <Image source={Icons.Alarm} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={Icons.Alarm}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>Block Time</Text>
-              {blockTimeData && (
-                <Text style={styles.optionSubtitle}>
-                  {blockTimeData.startTime} - {blockTimeData.endTime}
-                </Text>
-              )}
+              {blockTimeData &&
+                blockTimeData.startTime &&
+                blockTimeData.endTime && (
+                  <Text style={styles.optionSubtitle}>
+                    {blockTimeData.startTime} to {blockTimeData.endTime}
+                  </Text>
+                )}
             </View>
           </View>
           <View style={styles.optionRight}>
-            <TouchableOpacity onPress={handleBlockTimePress} style={styles.plusButton} activeOpacity={0.7}>
-              <Image source={Icons.Plus} style={styles.plusIcon} resizeMode="contain" />
+            <TouchableOpacity
+              onPress={handleBlockTimePress}
+              style={styles.plusButton}
+              activeOpacity={0.7}>
+              <Image
+                source={Icons.Plus}
+                style={styles.plusIcon}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -853,7 +1053,10 @@ const EditPlanScreen = () => {
 
     const getDurationDisplay = () => {
       if (blockTimeData && blockTimeData.startTime && blockTimeData.endTime) {
-        const calculatedDuration = calculateDuration(blockTimeData.startTime, blockTimeData.endTime);
+        const calculatedDuration = calculateDuration(
+          blockTimeData.startTime,
+          blockTimeData.endTime,
+        );
         return calculatedDuration ? calculatedDuration.formattedDuration : null;
       }
       return durationData ? durationData.formattedDuration : null;
@@ -863,18 +1066,28 @@ const EditPlanScreen = () => {
       <View style={styles.optionContainer}>
         <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
           <View style={styles.optionLeft}>
-            <Image source={Icons.Clock} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={Icons.Clock}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>Add Pomodoro</Text>
               {addPomodoro && pomodoroSettings && (
-                <Text style={styles.optionSubtitle}>{formatPomodoroDisplay()}</Text>
+                <Text style={styles.optionSubtitle}>
+                  {formatPomodoroDisplay()}
+                </Text>
               )}
               {addPomodoro && getDurationDisplay() && (
-                <Text style={styles.pomodoroDuration}>Duration: {getDurationDisplay()}</Text>
+                <Text style={styles.pomodoroDuration}>
+                  Duration: {getDurationDisplay()}
+                </Text>
               )}
             </View>
           </View>
-          <View style={styles.optionRight}>{renderToggle(addPomodoro, handlePomodoroToggle)}</View>
+          <View style={styles.optionRight}>
+            {renderToggle(addPomodoro, handlePomodoroToggle)}
+          </View>
         </TouchableOpacity>
       </View>
     );
@@ -882,17 +1095,32 @@ const EditPlanScreen = () => {
 
   const renderPrioritySection = () => {
     return (
-      <View style={[styles.optionContainer, showPriorityDropdown && styles.priorityContainerExpanded]}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handlePriorityPress}>
+      <View
+        style={[
+          styles.optionContainer,
+          showPriorityDropdown && styles.priorityContainerExpanded,
+        ]}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handlePriorityPress}>
           <View style={styles.optionLeft}>
-            <Image source={Icons.Flag} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={Icons.Flag}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>Priority</Text>
             </View>
           </View>
           <View style={styles.optionRight}>
             <MaterialIcons
-              name={showPriorityDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+              name={
+                showPriorityDropdown
+                  ? 'keyboard-arrow-up'
+                  : 'keyboard-arrow-down'
+              }
               size={WP(6)}
               color="#646464"
             />
@@ -912,7 +1140,13 @@ const EditPlanScreen = () => {
                   ]}
                   onPress={() => handlePrioritySelect(option)}
                   activeOpacity={0.8}>
-                  <Text style={[styles.priorityButtonText, {color: option.textColor}]}>{option.label}</Text>
+                  <Text
+                    style={[
+                      styles.priorityButtonText,
+                      {color: option.textColor},
+                    ]}>
+                    {option.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -925,9 +1159,16 @@ const EditPlanScreen = () => {
   const renderNoteSection = () => {
     return (
       <View style={styles.optionContainer}>
-        <TouchableOpacity style={styles.optionRow} activeOpacity={0.7} onPress={handleNotePress}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handleNotePress}>
           <View style={styles.optionLeft}>
-            <Image source={Icons.Note} style={styles.optionIcon} resizeMode="contain" />
+            <Image
+              source={Icons.Note}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>Note</Text>
               {note && (
@@ -961,7 +1202,9 @@ const EditPlanScreen = () => {
               )}
             </View>
           </View>
-          <View style={styles.optionRight}>{renderToggle(addReminder, handleReminderToggle)}</View>
+          <View style={styles.optionRight}>
+            {renderToggle(addReminder, handleReminderToggle)}
+          </View>
         </TouchableOpacity>
       </View>
     );
@@ -972,10 +1215,16 @@ const EditPlanScreen = () => {
       <View style={styles.optionContainer}>
         <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
           <View style={styles.optionLeft}>
-            <Image source={Icons.Pending} style={styles.optionIcon1} resizeMode="contain" />
+            <Image
+              source={Icons.Pending}
+              style={styles.optionIcon1}
+              resizeMode="contain"
+            />
             <View style={styles.optionTextContainer}>
               <Text style={styles.optionTitle}>Pending Task</Text>
-              <Text style={styles.pendingSubtitle}>It will be shown each day until completed.</Text>
+              <Text style={styles.pendingSubtitle}>
+                It will be shown each day until completed.
+              </Text>
             </View>
           </View>
           <View style={styles.optionRight}>
@@ -983,7 +1232,11 @@ const EditPlanScreen = () => {
               style={styles.radioButton}
               onPress={() => setIsPendingTask(!isPendingTask)}
               activeOpacity={0.7}>
-              <View style={[styles.radioOuter, isPendingTask && styles.radioOuterSelected]}>
+              <View
+                style={[
+                  styles.radioOuter,
+                  isPendingTask && styles.radioOuterSelected,
+                ]}>
                 {isPendingTask && <View style={styles.radioInner} />}
               </View>
             </TouchableOpacity>
@@ -1038,7 +1291,9 @@ const EditPlanScreen = () => {
           <Text
             style={[
               styles.inputLabel,
-              isTaskLabelActive ? styles.inputLabelActive : styles.inputLabelInactive,
+              isTaskLabelActive
+                ? styles.inputLabelActive
+                : styles.inputLabelInactive,
             ]}>
             Task
           </Text>
@@ -1058,15 +1313,23 @@ const EditPlanScreen = () => {
         <View style={styles.optionContainer}>
           <View style={styles.optionRow}>
             <View style={styles.optionLeft}>
-              <Image source={Icons.Category} style={styles.optionIcon} resizeMode="contain" />
+              <Image
+                source={Icons.Category}
+                style={styles.optionIcon}
+                resizeMode="contain"
+              />
               <View style={styles.optionTextContainer}>
                 <Text style={styles.optionTitle}>Category</Text>
               </View>
             </View>
             <View style={styles.categoryRight}>
-              <Text style={styles.categoryText}>{selectedCategory?.title || 'Work and Career'}</Text>
+              <Text style={styles.categoryText}>
+                {selectedCategory?.title || 'Work and Career'}
+              </Text>
               <Image
-                source={getCategoryIcon(selectedCategory?.title || 'Work and Career')}
+                source={getCategoryIcon(
+                  selectedCategory?.title || 'Work and Career',
+                )}
                 style={styles.categoryIcon}
                 resizeMode="contain"
               />
@@ -1113,14 +1376,22 @@ const EditPlanScreen = () => {
 
         {/* Add to Google Calendar */}
         <View style={styles.calendarContainer}>
-          <View style={[styles.optionContainer, addToGoogleCalendar ? styles.noBottomBorder : null]}>
+          <View
+            style={[
+              styles.optionContainer,
+              addToGoogleCalendar ? styles.noBottomBorder : null,
+            ]}>
             <TouchableOpacity style={styles.optionRow} activeOpacity={1}>
               <View style={styles.optionLeft}>
                 <View style={styles.optionTextContainer}>
                   <Text style={styles.optionTitle}>Add to Google Calendar</Text>
                 </View>
               </View>
-              <View>{renderToggle(addToGoogleCalendar, () => setAddToGoogleCalendar(!addToGoogleCalendar))}</View>
+              <View>
+                {renderToggle(addToGoogleCalendar, () =>
+                  setAddToGoogleCalendar(!addToGoogleCalendar),
+                )}
+              </View>
             </TouchableOpacity>
           </View>
 

@@ -18,6 +18,7 @@ import PlusIcon from 'react-native-vector-icons/AntDesign';
 import Calender from '../../Components/Calender';
 import {colors, Icons} from '../../Helper/Contants';
 import Modal from 'react-native-modal';
+import CustomToast from '../../Components/CustomToast';
 import TaskCard from '../../Components/TaskCard';
 import TaskSkeleton from '../../Components/TaskSkeleton';
 import ModalTaskCard from '../../Components/ModalTaskCard';
@@ -59,6 +60,10 @@ const Home = () => {
   const [lockChallengeCompletions, setLockChallengeCompletions] = useState({});
   const [allCompletionsMap, setAllCompletionsMap] = useState({});
 
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
+
   const navigation = useNavigation();
   const {user} = useAuth();
   const {
@@ -70,6 +75,17 @@ const Home = () => {
   } = useSession();
 
   console.log('Home component initialized with selectedDate:', selectedDate);
+
+  // Add toast helper functions here
+  const showToast = (message, type = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const hideToast = () => {
+    setToastVisible(false);
+  };
 
   const completionDateString = useMemo(() => {
     return getCompletionDateString(selectedDate);
@@ -758,7 +774,7 @@ const Home = () => {
         return newCompletions;
       });
 
-      Alert.alert('Success', 'Item deleted successfully!');
+      showToast('Item deleted successfully!', 'success');
     } catch (error) {
       console.error('Error deleting item:', error);
       Alert.alert('Error', 'Failed to delete item. Please try again.');
@@ -2241,6 +2257,16 @@ const Home = () => {
         visible={isMonthReminderVisible}
         onClose={handleMonthReminderClose}
         userName={user?.name || user?.email || user?.display_name}
+      />
+
+      <CustomToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={3000}
+        onHide={hideToast}
+        position="bottom"
+        showIcon={true}
       />
     </View>
   );

@@ -1,8 +1,6 @@
 package com.wingsfly
 
 import android.app.Activity
-import android.app.ActivityManager
-import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -20,26 +18,21 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
-import android.view.KeyEvent
-import android.view.MotionEvent
+import android.view.LayoutInflater
 import android.view.View
-import android.view.Window
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.VideoView
-import android.widget.Button
 import android.widget.Toast
+import android.widget.VideoView
 import java.io.File
-import java.lang.reflect.Method
-import java.text.SimpleDateFormat
-import java.util.*
 
 class ChallengeLockActivity : Activity() {
     
@@ -53,41 +46,47 @@ class ChallengeLockActivity : Activity() {
         private const val KEY_YOUTUBE_LINK = "youtube_link"
         private const val KEY_CHALLENGE_ACTIVE = "challenge_active"
         
-        private const val BOTTOM_GESTURE_BLOCK_HEIGHT = 200
+        // Static storage for recreation
+        private var storedChallengeId: String? = null
+        private var storedVideoPath: String? = null
+        private var storedYoutubeLink: String? = null
+        private var storedChallengeName: String? = null
+        private var storedDayNumber: Int = 1
+        private var storedHoursPerDay: Double = 1.0
+        private var hasStoredData = false
     }
     
     private var challengeId: String? = null
     private var videoPath: String? = null
     private var youtubeLink: String? = null
+    private var challengeName: String? = null
     private var dayNumber: Int = 1
     private var hoursPerDay: Double = 1.0
     
-    // Video players
     private var videoView: VideoView? = null
     private var webView: WebView? = null
-    
-    private var videoContainer: FrameLayout? = null
-    private var progressBar: ProgressBar? = null
-    private var titleTextView: TextView? = null
-    private var completionButton: Button? = null
     
     private var wakeLock: PowerManager.WakeLock? = null
     private var audioManager: AudioManager? = null
     
-    private var statusBarBlockViews = mutableListOf<View>()
-    private var bottomBlockOverlay: View? = null
-    private var relaunchHandler: Handler? = null
-    private var relaunchRunnable: Runnable? = null
-    private var systemUIHandler: Handler? = null
-    private var systemUIRunnable: Runnable? = null
-    
-    private var isDestroying = false
     private var videoDuration = 0
     private var currentPosition = 0
     private var isYouTubeVideo = false
-    private var isVideoCompleted = false
+    private var isDestroying = false
+    private var isHandlingScreenEvent = false
     
     private lateinit var prefs: SharedPreferences
+    
+    // PERSISTENT OVERLAY
+    private var persistentOverlay: View? = null
+    private var windowManager: WindowManager? = null
+    private var isOverlayCreated = false
+    
+    // Overlay UI references
+    private var overlayTitleTextView: TextView? = null
+    private var overlayProgressBar: ProgressBar? = null
+    private var overlayCompletionButton: Button? = null
+    private var overlayVideoContainer: FrameLayout? = null
     
     private val stopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -95,14 +94,27 @@ class ChallengeLockActivity : Activity() {
         }
     }
     
-    private val homeKeyReceiver = object : BroadcastReceiver() {
+    private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (isLockActive) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    collapseStatusBar()
-                    bringToFront()
-                }, 50)
+            if (isHandlingScreenEvent) return
+            
+            isHandlingScreenEvent = true
+            
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> handleScreenOff()
+                Intent.ACTION_SCREEN_ON -> handleScreenOn()
+                Intent.ACTION_USER_PRESENT -> {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        persistentOverlay?.bringToFront()
+                        isHandlingScreenEvent = false
+                    }, 200)
+                    return
+                }
             }
+            
+            Handler(Looper.getMainLooper()).postDelayed({
+                isHandlingScreenEvent = false
+            }, 1000)
         }
     }
     
@@ -112,18 +124,39 @@ class ChallengeLockActivity : Activity() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         
         Log.d(TAG, "========================================")
-        Log.d(TAG, "Challenge Lock Activity Created")
+        Log.d(TAG, "🔒 Challenge Lock Activity Created")
         Log.d(TAG, "========================================")
         
         isDestroying = false
         
-        // Get challenge data from intent
-        challengeId = intent.getStringExtra("challenge_id")
-        videoPath = intent.getStringExtra("video_path")
-        youtubeLink = intent.getStringExtra("youtube_link")
-        val challengeName = intent.getStringExtra("challenge_name")
-        dayNumber = intent.getIntExtra("day_number", 1) 
-        hoursPerDay = intent.getDoubleExtra("hours_per_day", 1.0)
+        // Load from static storage if available (for recreation)
+        if (hasStoredData) {
+            challengeId = storedChallengeId
+            videoPath = storedVideoPath
+            youtubeLink = storedYoutubeLink
+            challengeName = storedChallengeName
+            dayNumber = storedDayNumber
+            hoursPerDay = storedHoursPerDay
+            Log.d(TAG, "📦 Loaded from static storage (activity recreated)")
+        } else {
+            // First creation - get from intent
+            challengeId = intent.getStringExtra("challenge_id")
+            videoPath = intent.getStringExtra("video_path")
+            youtubeLink = intent.getStringExtra("youtube_link")
+            challengeName = intent.getStringExtra("challenge_name")
+            dayNumber = intent.getIntExtra("day_number", 1)
+            hoursPerDay = intent.getDoubleExtra("hours_per_day", 1.0)
+            
+            // Store for future recreations
+            storedChallengeId = challengeId
+            storedVideoPath = videoPath
+            storedYoutubeLink = youtubeLink
+            storedChallengeName = challengeName
+            storedDayNumber = dayNumber
+            storedHoursPerDay = hoursPerDay
+            hasStoredData = true
+            Log.d(TAG, "💾 Saved to static storage (first creation)")
+        }
         
         Log.d(TAG, "Challenge ID: $challengeId")
         Log.d(TAG, "Video Path: $videoPath")
@@ -147,21 +180,29 @@ class ChallengeLockActivity : Activity() {
             return
         }
         
-        setupKioskMode()
-        setupFullScreenLockMode()
-        setContentView(R.layout.activity_challenge_lock)
-        initializeViews(challengeName)
-        
-        // Setup appropriate video player
-        if (isYouTubeVideo) {
-            setupYouTubePlayer()
-        } else {
-            setupVideoPlayer()
+        // Check overlay permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Log.e(TAG, "❌ NO OVERLAY PERMISSION")
+                Toast.makeText(this, "Overlay permission required", Toast.LENGTH_SHORT).show()
+                finish()
+                return
+            }
         }
         
+        setupBasicActivity()
+        
+        // Create overlay
+        Handler(Looper.getMainLooper()).postDelayed({
+            createPersistentLockOverlay()
+            
+            // Initialize video after overlay
+            Handler(Looper.getMainLooper()).postDelayed({
+                setupVideoPlayer()
+            }, 500)
+        }, 300)
+        
         registerReceivers()
-        createMaximumStatusBarBlock()
-        startAggressiveMonitoring()
         
         isLockActive = true
         
@@ -173,17 +214,155 @@ class ChallengeLockActivity : Activity() {
             putBoolean(KEY_CHALLENGE_ACTIVE, true)
         }.commit()
         
-        Log.d(TAG, "Challenge lock mode active")
+        Log.d(TAG, "✅ Challenge lock mode active")
     }
     
-    private fun initializeViews(challengeName: String?) {
-        titleTextView = findViewById(R.id.challengeTitle)
-        progressBar = findViewById(R.id.videoProgress)
-        completionButton = findViewById(R.id.completionButton)
-        videoContainer = findViewById(R.id.videoContainer)
+    private fun setupBasicActivity() {
+    window.addFlags(
+        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or      // ADD
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS         // ADD
+    )
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+    }
+    
+    acquireWakeLock()
+}
+    
+    private fun handleScreenOff() {
+    try {
+        // Acquire wake lock
+        if (wakeLock?.isHeld == false) {
+            wakeLock?.acquire(60 * 60 * 1000L)
+        }
         
-        titleTextView?.text = challengeName ?: "Video Challenge"
-        completionButton?.visibility = View.GONE
+        // ADD THIS: Force activity to front after screen off
+        Handler(Looper.getMainLooper()).postDelayed({
+            val intent = Intent(this, ChallengeLockActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION
+            }
+            startActivity(intent)
+        }, 300)
+        
+    } catch (e: Exception) {
+        Log.e(TAG, "Error handling screen off", e)
+    }
+}
+    
+   private fun handleScreenOn() {
+    try {
+        // ADD THIS: First bring activity to front
+        val intent = Intent(this, ChallengeLockActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
+        }
+        startActivity(intent)
+        
+        // Then ensure overlay is visible
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isOverlayCreated && persistentOverlay != null) {
+                persistentOverlay?.bringToFront()
+                persistentOverlay?.invalidate()
+                persistentOverlay?.requestLayout()  // ADD THIS
+                
+                // ADD THIS: Resume video if YouTube
+                if (isYouTubeVideo) {
+                    webView?.evaluateJavascript("if(player) player.playVideo();", null)
+                }
+            } else {
+                createPersistentLockOverlay()
+            }
+        }, 150)
+    } catch (e: Exception) {
+        Log.e(TAG, "Error handling screen on", e)
+    }
+}
+    
+    private fun createPersistentLockOverlay() {
+        try {
+            if (isOverlayCreated && persistentOverlay != null) {
+                Log.d(TAG, "⏭️ Overlay already exists")
+                return
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!Settings.canDrawOverlays(this)) {
+                    Log.e(TAG, "❌ Cannot create overlay")
+                    return
+                }
+            }
+            
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            
+            if (persistentOverlay != null) {
+                try {
+                    windowManager?.removeView(persistentOverlay)
+                } catch (e: Exception) { }
+                persistentOverlay = null
+            }
+            
+            val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
+            persistentOverlay = inflater.inflate(R.layout.activity_challenge_lock, null)
+            
+            overlayTitleTextView = persistentOverlay?.findViewById(R.id.challengeTitle)
+            overlayProgressBar = persistentOverlay?.findViewById(R.id.videoProgress)
+            overlayCompletionButton = persistentOverlay?.findViewById(R.id.completionButton)
+            overlayVideoContainer = persistentOverlay?.findViewById(R.id.videoContainer)
+            
+            overlayTitleTextView?.text = challengeName ?: "Video Challenge"
+            overlayCompletionButton?.visibility = View.GONE
+            
+            val layoutParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ERROR
+                },
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                PixelFormat.TRANSLUCENT
+            )
+            
+            layoutParams.gravity = Gravity.TOP or Gravity.START
+            layoutParams.x = 0
+            layoutParams.y = 0
+            
+            windowManager?.addView(persistentOverlay, layoutParams)
+            
+            isOverlayCreated = true
+            Log.d(TAG, "✅ Persistent overlay created")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error creating overlay", e)
+            isOverlayCreated = false
+        }
+    }
+    
+    private fun setupVideoPlayer() {
+        if (isYouTubeVideo) {
+            setupYouTubePlayer()
+        } else {
+            setupLocalVideoPlayer()
+        }
     }
     
     private fun extractYouTubeVideoId(url: String): String? {
@@ -222,22 +401,20 @@ class ChallengeLockActivity : Activity() {
             
             Log.d(TAG, "Setting up YouTube video: $videoId")
             
-            // Get container dimensions
-            val displayMetrics = resources.displayMetrics
-            val screenWidth = displayMetrics.widthPixels
-            val videoHeight16x9 = (screenWidth * 9) / 16
+            audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             
-            // Set container to 16:9
-            val containerParams = videoContainer?.layoutParams as FrameLayout.LayoutParams
-            containerParams.width = screenWidth
-            containerParams.height = videoHeight16x9
-            containerParams.gravity = Gravity.CENTER
-            videoContainer?.layoutParams = containerParams
+           val screenWidth = resources.displayMetrics.widthPixels
+val videoHeight16x9 = (screenWidth * 9) / 16
+
+val containerParams = android.widget.LinearLayout.LayoutParams(screenWidth, videoHeight16x9).apply {
+    gravity = Gravity.CENTER_HORIZONTAL
+    topMargin = 24
+}
+overlayVideoContainer?.layoutParams = containerParams
             
-            videoContainer?.removeAllViews()
-            videoContainer?.visibility = View.VISIBLE
+            overlayVideoContainer?.removeAllViews()
+            overlayVideoContainer?.visibility = View.VISIBLE
             
-            // Create WebView
             webView = WebView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -245,7 +422,6 @@ class ChallengeLockActivity : Activity() {
                 )
                 setBackgroundColor(Color.BLACK)
                 
-                // Make WebView completely non-interactive
                 isClickable = false
                 isFocusable = false
                 isFocusableInTouchMode = false
@@ -272,13 +448,9 @@ class ChallengeLockActivity : Activity() {
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                 }
                 
-                // Block all touch events on WebView
                 setOnTouchListener { _, _ -> true }
-                
-                // Disable context menu (long press)
                 setOnLongClickListener { true }
                 
-                // Add JavaScript interface
                 addJavascriptInterface(object : Any() {
                     @JavascriptInterface
                     fun onVideoEnded() {
@@ -292,7 +464,7 @@ class ChallengeLockActivity : Activity() {
                     fun onVideoDuration(durationSeconds: Int) {
                         runOnUiThread {
                             videoDuration = durationSeconds * 1000
-                            progressBar?.max = videoDuration
+                            overlayProgressBar?.max = videoDuration
                             Log.d(TAG, "Video duration: ${durationSeconds}s")
                         }
                     }
@@ -301,7 +473,7 @@ class ChallengeLockActivity : Activity() {
                     fun onVideoProgress(currentSeconds: Int) {
                         runOnUiThread {
                             currentPosition = currentSeconds * 1000
-                            progressBar?.progress = currentPosition
+                            overlayProgressBar?.progress = currentPosition
                         }
                     }
                     
@@ -329,7 +501,6 @@ class ChallengeLockActivity : Activity() {
                 }
             }
             
-            // HTML with YouTube IFrame API - FULLY LOCKED MODE
             val html = """
                 <!DOCTYPE html>
                 <html>
@@ -487,7 +658,7 @@ class ChallengeLockActivity : Activity() {
                 </html>
             """.trimIndent()
             
-            videoContainer?.addView(webView)
+            overlayVideoContainer?.addView(webView)
             webView?.loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
             
             Log.d(TAG, "YouTube player setup complete")
@@ -498,7 +669,7 @@ class ChallengeLockActivity : Activity() {
         }
     }
     
-    private fun setupVideoPlayer() {
+    private fun setupLocalVideoPlayer() {
         try {
             if (videoPath == null) {
                 Log.e(TAG, "Video path is null")
@@ -516,29 +687,18 @@ class ChallengeLockActivity : Activity() {
             
             audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             
-            // Get container
-            videoContainer = findViewById(R.id.videoContainer)
-            if (videoContainer == null) {
-                Log.e(TAG, "Video container not found in layout")
-                return
-            }
+            val screenWidth = resources.displayMetrics.widthPixels
+val videoHeight16x9 = (screenWidth * 9) / 16
+
+val containerParams = android.widget.LinearLayout.LayoutParams(screenWidth, videoHeight16x9).apply {
+    gravity = Gravity.CENTER_HORIZONTAL
+    topMargin = 24
+}
+overlayVideoContainer?.layoutParams = containerParams
             
-            // Calculate 16:9 dimensions
-            val displayMetrics = resources.displayMetrics
-            val screenWidth = displayMetrics.widthPixels
-            val videoHeight16x9 = (screenWidth * 9) / 16
+            overlayVideoContainer?.removeAllViews()
+            overlayVideoContainer?.visibility = View.VISIBLE
             
-            // Set container to 16:9
-            val containerParams = videoContainer?.layoutParams as FrameLayout.LayoutParams
-            containerParams.width = screenWidth
-            containerParams.height = videoHeight16x9
-            containerParams.gravity = Gravity.CENTER
-            videoContainer?.layoutParams = containerParams
-            
-            videoContainer?.removeAllViews()
-            videoContainer?.visibility = View.VISIBLE
-            
-            // Create VideoView
             videoView = VideoView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -550,7 +710,7 @@ class ChallengeLockActivity : Activity() {
                 visibility = View.VISIBLE
             }
             
-            videoContainer?.addView(videoView)
+            overlayVideoContainer?.addView(videoView)
             
             videoView?.apply {
                 val videoUri = Uri.fromFile(videoFile)
@@ -561,9 +721,9 @@ class ChallengeLockActivity : Activity() {
                         mp.setVolume(1.0f, 1.0f)
                         
                         videoDuration = mp.duration
-                        progressBar?.max = videoDuration
+                        overlayProgressBar?.max = videoDuration
                         
-                        videoContainer?.visibility = View.VISIBLE
+                        overlayVideoContainer?.visibility = View.VISIBLE
                         visibility = View.VISIBLE
                         
                         start()
@@ -595,7 +755,7 @@ class ChallengeLockActivity : Activity() {
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error in setupVideoPlayer: ${e.message}", e)
+            Log.e(TAG, "Error in setupLocalVideoPlayer: ${e.message}", e)
             Toast.makeText(this, "Error setting up video: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -606,317 +766,12 @@ class ChallengeLockActivity : Activity() {
             override fun run() {
                 if (!isDestroying && videoView?.isPlaying == true) {
                     currentPosition = videoView?.currentPosition ?: 0
-                    progressBar?.progress = currentPosition
+                    overlayProgressBar?.progress = currentPosition
                     progressHandler.postDelayed(this, 500)
                 }
             }
         }
         progressHandler.post(progressRunnable)
-    }
-    
-    private fun setupKioskMode() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                try {
-                    val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-                    
-                    if (activityManager.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_NONE) {
-                        startLockTask()
-                        Log.d(TAG, "Kiosk mode activated")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Kiosk mode not available: ${e.message}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Kiosk mode error: ${e.message}")
-        }
-    }
-    
-    private fun exitKioskMode() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                stopLockTask()
-                Log.d(TAG, "Kiosk mode exited")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Exit kiosk error: ${e.message}")
-        }
-    }
-    
-    private fun setupFullScreenLockMode() {
-        val window: Window = window
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            keyguardManager.requestDismissKeyguard(this, null)
-        }
-        
-        val flags = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-        
-        window.addFlags(flags)
-        
-        hideSystemUIMaximum()
-        startContinuousSystemUIHiding()
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-            window.statusBarColor = Color.BLACK
-            window.navigationBarColor = Color.BLACK
-            
-            window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
-                if (isLockActive && !isDestroying) {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        hideSystemUIMaximum()
-                    }, 100)
-                    collapseStatusBar()
-                }
-            }
-        }
-        
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (isLockActive && !isDestroying) {
-                createBottomNavigationBlocker()
-            }
-        }, 500)
-        
-        acquireWakeLock()
-    }
-    
-    private fun startContinuousSystemUIHiding() {
-        systemUIRunnable?.let { 
-            systemUIHandler?.removeCallbacks(it)
-        }
-        
-        systemUIHandler = Handler(Looper.getMainLooper())
-        systemUIRunnable = object : Runnable {
-            override fun run() {
-                if (isLockActive && !isDestroying) {
-                    hideSystemUIMaximum()
-                    systemUIHandler?.postDelayed(this, 300)
-                }
-            }
-        }
-        systemUIHandler?.post(systemUIRunnable!!)
-    }
-    
-    private fun hideSystemUIMaximum() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                window.setDecorFitsSystemWindows(false)
-                window.insetsController?.let { controller ->
-                    controller.hide(
-                        android.view.WindowInsets.Type.statusBars() or 
-                        android.view.WindowInsets.Type.navigationBars() or
-                        android.view.WindowInsets.Type.systemBars()
-                    )
-                    controller.systemBarsBehavior = 
-                        android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility = (
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_LOW_PROFILE
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error hiding system UI: ${e.message}")
-        }
-    }
-    
-    private fun createBottomNavigationBlocker() {
-        try {
-            if (isDestroying || !isLockActive || bottomBlockOverlay != null) return
-            if (!Settings.canDrawOverlays(this)) return
-            
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
-            
-            bottomBlockOverlay = FrameLayout(this).apply {
-                setBackgroundColor(Color.TRANSPARENT)
-                isClickable = true
-                isFocusable = false
-            }
-            
-            val layoutParams = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                BOTTOM_GESTURE_BLOCK_HEIGHT,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
-                },
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-                PixelFormat.TRANSLUCENT
-            )
-            
-            layoutParams.gravity = Gravity.BOTTOM
-            
-            bottomBlockOverlay?.setOnTouchListener { view, event ->
-                if (isLockActive && !isDestroying) {
-                    view.performClick()
-                    return@setOnTouchListener true
-                }
-                false
-            }
-            
-            windowManager.addView(bottomBlockOverlay, layoutParams)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating bottom blocker: ${e.message}")
-        }
-    }
-    
-    private fun removeBottomNavigationBlocker() {
-        try {
-            bottomBlockOverlay?.let {
-                val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-                windowManager?.removeView(it)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error removing bottom blocker: ${e.message}")
-        } finally {
-            bottomBlockOverlay = null
-        }
-    }
-    
-    private fun createMaximumStatusBarBlock() {
-        try {
-            if (!Settings.canDrawOverlays(this)) return
-            
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val statusBarHeight = getStatusBarHeight()
-            
-            for (layer in 0..3) {
-                val blockView = FrameLayout(this).apply {
-                    setBackgroundColor(Color.TRANSPARENT)
-                    isClickable = true
-                    isFocusable = false
-                }
-                
-                val height = statusBarHeight + (200 * (layer + 1))
-                val yOffset = -150 - (layer * 60)
-                
-                val layoutParams = WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    height,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    } else {
-                        @Suppress("DEPRECATION")
-                        WindowManager.LayoutParams.TYPE_SYSTEM_ERROR
-                    },
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                    PixelFormat.TRANSLUCENT
-                )
-                
-                layoutParams.gravity = Gravity.TOP or Gravity.START
-                layoutParams.x = 0
-                layoutParams.y = yOffset
-                
-                blockView.setOnTouchListener { _, _ ->
-                    collapseStatusBar()
-                    true
-                }
-                
-                try {
-                    windowManager.addView(blockView, layoutParams)
-                    statusBarBlockViews.add(blockView)
-                } catch (e: Exception) { }
-            }
-            
-        } catch (e: Exception) { }
-    }
-    
-    private fun getStatusBarHeight(): Int {
-        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (resourceId > 0) {
-            resources.getDimensionPixelSize(resourceId)
-        } else {
-            120
-        }
-    }
-    
-    private fun collapseStatusBar() {
-        try {
-            val statusBarService = getSystemService("statusbar")
-            val statusBarManager = Class.forName("android.app.StatusBarManager")
-            
-            val collapse: Method = if (Build.VERSION.SDK_INT <= 16) {
-                statusBarManager.getMethod("collapse")
-            } else {
-                statusBarManager.getMethod("collapsePanels")
-            }
-            
-            collapse.invoke(statusBarService)
-        } catch (e: Exception) { }
-    }
-    
-    private fun startAggressiveMonitoring() {
-        relaunchRunnable?.let {
-            relaunchHandler?.removeCallbacks(it)
-        }
-        
-        relaunchHandler = Handler(Looper.getMainLooper())
-        relaunchRunnable = object : Runnable {
-            override fun run() {
-                if (isLockActive && !isDestroying) {
-                    checkAndBringToFront()
-                    relaunchHandler?.postDelayed(this, 2000)
-                }
-            }
-        }
-        relaunchHandler?.post(relaunchRunnable!!)
-    }
-    
-    private fun checkAndBringToFront() {
-        try {
-            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val tasks = activityManager.appTasks
-            
-            if (tasks.isNotEmpty()) {
-                val topActivity = tasks[0].taskInfo.topActivity
-                if (topActivity?.className != this::class.java.name) {
-                    bringToFront()
-                }
-            }
-        } catch (e: Exception) { }
-    }
-    
-    private fun bringToFront() {
-        try {
-            collapseStatusBar()
-            
-            val intent = Intent(this, ChallengeLockActivity::class.java)
-            intent.addFlags(
-                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or 
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
-            )
-            intent.putExtra("challenge_id", challengeId)
-            intent.putExtra("video_path", videoPath)
-            intent.putExtra("youtube_link", youtubeLink)
-            intent.putExtra("challenge_name", titleTextView?.text.toString())
-            startActivity(intent)
-            
-        } catch (e: Exception) { }
     }
     
     private fun acquireWakeLock() {
@@ -929,7 +784,9 @@ class ChallengeLockActivity : Activity() {
                 "Challenge:LockScreen"
             )
             wakeLock?.acquire(60 * 60 * 1000L)
-        } catch (e: Exception) { }
+        } catch (e: Exception) {
+            Log.e(TAG, "Wake lock error", e)
+        }
     }
     
     private fun registerReceivers() {
@@ -940,11 +797,28 @@ class ChallengeLockActivity : Activity() {
             registerReceiver(stopReceiver, stopFilter)
         }
         
-        val homeFilter = IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+        val screenFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(homeKeyReceiver, homeFilter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(screenStateReceiver, screenFilter, RECEIVER_NOT_EXPORTED)
         } else {
-            registerReceiver(homeKeyReceiver, homeFilter)
+            registerReceiver(screenStateReceiver, screenFilter)
+        }
+    }
+    
+    private fun removePersistentOverlay() {
+        try {
+            if (persistentOverlay != null) {
+                windowManager?.removeView(persistentOverlay)
+                persistentOverlay = null
+                isOverlayCreated = false
+            }
+        } catch (e: Exception) {
+            isOverlayCreated = false
         }
     }
     
@@ -955,16 +829,9 @@ class ChallengeLockActivity : Activity() {
         
         isDestroying = true
         isLockActive = false
+        hasStoredData = false // Clear static storage
         
-        systemUIRunnable?.let {
-            systemUIHandler?.removeCallbacks(it)
-        }
-        relaunchRunnable?.let {
-            relaunchHandler?.removeCallbacks(it)
-        }
-        
-        removeBottomNavigationBlocker()
-        exitKioskMode()
+        removePersistentOverlay()
         
         try {
             if (isYouTubeVideo) {
@@ -986,14 +853,6 @@ class ChallengeLockActivity : Activity() {
             }
         } catch (e: Exception) { }
         
-        try {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            statusBarBlockViews.forEach { view ->
-                try { windowManager.removeView(view) } catch (e: Exception) { }
-            }
-            statusBarBlockViews.clear()
-        } catch (e: Exception) { }
-        
         prefs.edit().apply {
             remove(KEY_CHALLENGE_ID)
             remove(KEY_VIDEO_PATH)
@@ -1004,8 +863,8 @@ class ChallengeLockActivity : Activity() {
         try {
             val completionIntent = Intent("com.wingsfly.CHALLENGE_COMPLETED")
             completionIntent.putExtra("challenge_id", challengeId)
-            completionIntent.putExtra("completed", true)  // Video completed = true
-            completionIntent.putExtra("video_completed", true)  // Also explicitly mark video as completed
+            completionIntent.putExtra("completed", true)
+            completionIntent.putExtra("video_completed", true)
             completionIntent.putExtra("day_number", dayNumber)
             completionIntent.putExtra("hours_completed", hoursPerDay)
             
@@ -1034,51 +893,27 @@ class ChallengeLockActivity : Activity() {
         // Block back button
     }
     
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (!isLockActive || isDestroying) {
-            return super.onKeyDown(keyCode, event)
-        }
-        
-        return when (keyCode) {
-            KeyEvent.KEYCODE_HOME,
-            KeyEvent.KEYCODE_BACK,
-            KeyEvent.KEYCODE_APP_SWITCH,
-            KeyEvent.KEYCODE_MENU -> true
-            else -> super.onKeyDown(keyCode, event)
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        Log.d(TAG, "🔄 onNewIntent")
+        if (isOverlayCreated && persistentOverlay != null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                persistentOverlay?.bringToFront()
+            }, 100)
         }
     }
     
-    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
-        if (!isLockActive || isDestroying) {
-            return super.dispatchTouchEvent(ev)
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "▶️ onResume")
+        if (isYouTubeVideo) {
+            webView?.onResume()
         }
-        
-        ev?.let { event ->
-            val screenHeight = resources.displayMetrics.heightPixels
-            
-            if (event.y < screenHeight * 0.15f) {
-                collapseStatusBar()
-                return true
-            }
-            
-            if (event.y > screenHeight * 0.80f) {
-                return true
-            }
-        }
-        
-        return super.dispatchTouchEvent(ev)
-    }
-    
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        
-        if (!hasFocus && isLockActive) {
-            collapseStatusBar()
-            bringToFront()
-        }
-        
-        if (hasFocus && isLockActive) {
-            hideSystemUIMaximum()
+        if (isOverlayCreated && persistentOverlay != null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                persistentOverlay?.bringToFront()
+                persistentOverlay?.invalidate()
+            }, 100)
         }
     }
     
@@ -1087,87 +922,35 @@ class ChallengeLockActivity : Activity() {
         if (isYouTubeVideo) {
             webView?.onPause()
         }
-        if (isLockActive) {
-            collapseStatusBar()
-            bringToFront()
-        }
-    }
-    
-    override fun onResume() {
-        super.onResume()
-        if (isYouTubeVideo) {
-            webView?.onResume()
-        }
     }
     
     override fun onStop() {
         super.onStop()
         
-        if (isFinishing || isDestroyed) {
-            removeBottomNavigationBlocker()
-            
-            try {
-                val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-                statusBarBlockViews.forEach { view ->
-                    try {
-                        windowManager?.removeView(view)
-                    } catch (e: Exception) { }
-                }
-                statusBarBlockViews.clear()
-            } catch (e: Exception) { }
-        } else if (isLockActive) {
-            collapseStatusBar()
-            bringToFront()
+        if (!isFinishing && !isDestroyed && isLockActive) {
+            // Activity moved to background but still active
+            Log.d(TAG, "Activity stopped but still locked")
         }
     }
     
     override fun onDestroy() {
-        Log.d(TAG, "onDestroy called")
-        
-        systemUIRunnable?.let {
-            systemUIHandler?.removeCallbacks(it)
-        }
+        Log.d(TAG, "💀 onDestroy called")
         
         if (isYouTubeVideo) {
             webView?.destroy()
         }
         
-        removeBottomNavigationBlocker()
-        
-        super.onDestroy()
-        
-        try {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-            if (windowManager != null && statusBarBlockViews.isNotEmpty()) {
-                statusBarBlockViews.forEach { view ->
-                    try {
-                        windowManager.removeView(view)
-                    } catch (e: Exception) { }
-                }
-                statusBarBlockViews.clear()
-            }
-        } catch (e: Exception) { }
+        removePersistentOverlay()
         
         try {
             unregisterReceiver(stopReceiver)
-            unregisterReceiver(homeKeyReceiver)
+            unregisterReceiver(screenStateReceiver)
         } catch (e: Exception) { }
         
+        wakeLock?.release()
+        
+        super.onDestroy()
+        
         Log.d(TAG, "Challenge lock activity destroyed")
-    }
-    
-    override fun finish() {
-        Log.d(TAG, "finish() called")
-        
-        if (!isDestroying) {
-            removeBottomNavigationBlocker()
-        }
-        
-        super.finish()
-    }
-    
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        Log.d(TAG, "onNewIntent - challenge lock still active")
     }
 }

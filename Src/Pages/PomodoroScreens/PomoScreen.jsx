@@ -10,6 +10,7 @@ import {
   Alert,
   AppState,
   NativeModules,
+  BackHandler,
 } from 'react-native';
 import {WP, HP, FS} from '../../utils/dimentions';
 import {colors} from '../../Helper/Contants';
@@ -41,7 +42,7 @@ import Tab3PressedSvg from '../../assets/Images/Pomodoro-screen/clock-bttn-press
 import Tab4PressedSvg from '../../assets/Images/Pomodoro-screen/setting-bttn-press.svg';
 import Tab5PressedSvg from '../../assets/Images/Pomodoro-screen/play-bttn-press.svg';
 
-const {PomodoroModule} = NativeModules;
+const {PomodoroModule, YouTubeNightModeModule} = NativeModules;
 
 const PomoScreen = () => {
   const navigation = useNavigation();
@@ -52,6 +53,13 @@ const PomoScreen = () => {
   const taskData = route.params?.task;
   const taskId = taskData?.id;
   const selectedDate = route.params?.selectedDate || new Date().toDateString();
+
+  // NEW: Check if coming from BlockTimeScheduler
+  const fromBlockTimeAlarm = route.params?.fromBlockTimeAlarm || false;
+
+  // NEW: Lock state for BlockTimeScheduler flow
+  const [isLocked, setIsLocked] = useState(false);
+  const isLockedRef = useRef(false);
 
   // Core timer state
   const [activeTab, setActiveTab] = useState(4);
@@ -107,6 +115,62 @@ const PomoScreen = () => {
     return getCompletionDateString(selectedDate);
   }, [selectedDate]);
 
+  // NEW: Enable lock for BlockTimeScheduler flow
+  useEffect(() => {
+    let mounted = true;
+
+    const enableLock = async () => {
+      if (fromBlockTimeAlarm && YouTubeNightModeModule) {
+        try {
+          console.log('🔒 [BlockTime] Enabling Kiosk Lock...');
+          await YouTubeNightModeModule.enableKioskLock();
+          if (mounted) {
+            setIsLocked(true);
+            isLockedRef.current = true;
+            console.log('✅ [BlockTime] Lock enabled successfully');
+          }
+        } catch (error) {
+          console.error('❌ [BlockTime] Error enabling lock:', error);
+          Alert.alert(
+            'Lock Error',
+            'Could not enable lock mode. Please check permissions.',
+            [{text: 'OK'}],
+          );
+        }
+      }
+    };
+
+    enableLock();
+
+    return () => {
+      mounted = false;
+      // Cleanup lock on unmount
+      if (isLockedRef.current && YouTubeNightModeModule) {
+        console.log('🔓 [BlockTime] Disabling lock on unmount...');
+        YouTubeNightModeModule.disableKioskLock()
+          .then(() => console.log('✅ [BlockTime] Lock disabled'))
+          .catch(err =>
+            console.error('❌ [BlockTime] Error disabling lock:', err),
+          );
+      }
+    };
+  }, [fromBlockTimeAlarm]);
+
+  // NEW: Block hardware back button ONLY when locked (BlockTime flow)
+  useEffect(() => {
+    if (!isLocked || !fromBlockTimeAlarm) return; // Only block if locked AND from BlockTime
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        console.log('🚫 [BlockTime] Back button blocked - screen is locked');
+        return true; // Block back button
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [isLocked, fromBlockTimeAlarm]); // Added fromBlockTimeAlarm dependency
+  
   // Get Pomodoro settings from task data
   const getPomodoroSettings = useCallback(() => {
     const defaultSettings = {
@@ -824,6 +888,22 @@ const PomoScreen = () => {
         }
       }
 
+      // NEW: Disable lock if it was enabled
+      if (isLockedRef.current && YouTubeNightModeModule) {
+        try {
+          console.log('🔓 [BlockTime] Disabling lock on completion...');
+          await YouTubeNightModeModule.disableKioskLock();
+          setIsLocked(false);
+          isLockedRef.current = false;
+          console.log('✅ [BlockTime] Lock disabled on completion');
+        } catch (error) {
+          console.error(
+            '❌ [BlockTime] Error disabling lock on completion:',
+            error,
+          );
+        }
+      }
+
       // FIXED: Save with updated values and mark as completed
       const completionSaveData = {
         totalSeconds: totalTimeWithCurrentSession,
@@ -980,7 +1060,7 @@ const PomoScreen = () => {
     }
   }, []);
 
-  // Blocking control
+  // Blocking control - UPDATED to handle both flows
   useEffect(() => {
     if (!isLoaded || targetTime === 0) return;
 
@@ -990,6 +1070,15 @@ const PomoScreen = () => {
     }
 
     blockingTimeoutRef.current = setTimeout(() => {
+      if (fromBlockTimeAlarm) {
+        // BlockTime flow: Kiosk lock is active, skip Pomodoro blocking
+        console.log(
+          '🔒 [BlockTime] Kiosk lock active - skipping Pomodoro blocking',
+        );
+        return;
+      }
+
+      // Normal flow: Use Pomodoro blocking
       const shouldBlock =
         isRunning && !isOnBreak && !isCompleted && !isTransitioning;
       managePomodoroBlocking(shouldBlock);
@@ -1009,6 +1098,7 @@ const PomoScreen = () => {
     isLoaded,
     targetTime,
     managePomodoroBlocking,
+    fromBlockTimeAlarm, // NEW: Added this dependency
   ]);
 
   // Background time handling
@@ -1264,7 +1354,7 @@ const PomoScreen = () => {
     }, 100);
   }, [isCompleted, targetTime, isTransitioning, handleSessionCompletion]);
 
-  // Handle end
+  // Handle end - UPDATE to disable lock
   const handleEnd = useCallback(async () => {
     console.log('Ending timer session');
 
@@ -1291,6 +1381,19 @@ const PomoScreen = () => {
       }
     }
 
+    // NEW: Disable lock if it was enabled
+    if (isLockedRef.current && YouTubeNightModeModule) {
+      try {
+        console.log('🔓 [BlockTime] Disabling lock on end...');
+        await YouTubeNightModeModule.disableKioskLock();
+        setIsLocked(false);
+        isLockedRef.current = false;
+        console.log('✅ [BlockTime] Lock disabled on end');
+      } catch (error) {
+        console.error('❌ [BlockTime] Error disabling lock on end:', error);
+      }
+    }
+
     setIsRunning(false);
     backgroundTimeRef.current = null;
     sessionCompletionRef.current = false;
@@ -1312,6 +1415,10 @@ const PomoScreen = () => {
       }
       if (PomodoroModule && isPomodoroBlocking) {
         PomodoroModule.stopPomodoroBlocking().catch(console.error);
+      }
+      // NEW: Cleanup lock on unmount
+      if (isLockedRef.current && YouTubeNightModeModule) {
+        YouTubeNightModeModule.disableKioskLock().catch(console.error);
       }
     };
   }, [isPomodoroBlocking]);

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notification accent color -->
+    <color name="notification_color">#3B82F6</color>
+    
+    <!-- Other colors if needed -->
+    <color name="primary">#3B82F6</color>
+    <color name="primary_dark">#1E40AF</color>
+    <color name="accent">#10B981</color>
+</resources>

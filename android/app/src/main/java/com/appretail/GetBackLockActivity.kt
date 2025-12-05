@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -29,6 +28,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.VideoView
 import java.text.SimpleDateFormat
+import android.app.NotificationManager
 import java.util.*
 
 class GetBackLockActivity : Activity() {
@@ -37,7 +37,7 @@ class GetBackLockActivity : Activity() {
         private const val TAG = "GetBackLockActivity"
         var isLockActive = false
         
-        // ✅ CRITICAL: Static storage for media URLs to survive recreation
+        // Static storage for media URLs to survive recreation
         private var storedConfirmationUrl: String? = null
         private var storedMediaUrl: String? = null
         private var storedMediaType: String? = null
@@ -70,6 +70,7 @@ class GetBackLockActivity : Activity() {
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var originalRingerMode: Int = AudioManager.RINGER_MODE_NORMAL
+    private var audioFocusChangeListener: AudioManager.OnAudioFocusChangeListener? = null
     
     // UI references
     private var overlayTimerTextView: TextView? = null
@@ -116,7 +117,7 @@ class GetBackLockActivity : Activity() {
         Log.d(TAG, "🔒 Get Back Lock Activity created")
         Log.d(TAG, "========================================")
         
-        // ✅ CRITICAL FIX: Load from static storage if available (for recreation)
+        // Load from static storage if available (for recreation)
         if (hasStoredData) {
             durationMinutes = storedDuration
             confirmationVideoUrl = storedConfirmationUrl
@@ -332,6 +333,12 @@ class GetBackLockActivity : Activity() {
     
     private fun setupAudioPlayer() {
         try {
+            // ✅ CHECK IF ALREADY EXISTS
+            if (mediaPlayer != null) {
+                Log.d(TAG, "⚠️ Audio player already exists, skipping duplicate setup")
+                return
+            }
+            
             Log.d(TAG, "🎵 Setting up audio: $mediaFileUrl")
             
             audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -362,17 +369,20 @@ class GetBackLockActivity : Activity() {
                 }
                 
                 setOnCompletionListener { 
-                    if (isLockActive) start()
+                    if (isLockActive) {
+                        Log.d(TAG, "🔁 Audio completed, restarting")
+                        start()
+                    }
                 }
                 
                 prepareAsync()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Audio error: ${e.message}", e)
+            Log.e(TAG, "❌ Audio setup error: ${e.message}", e)
         }
     }
     
-    private fun setupMediaInOverlay() {
+     private fun setupMediaInOverlay() {
         if (mediaFileUrl == null || mediaType == null) {
             Log.d(TAG, "No media to setup in overlay")
             return
@@ -380,13 +390,16 @@ class GetBackLockActivity : Activity() {
         
         try {
             when (mediaType) {
-                "audio" -> setupAudioPlayer()
+                "audio" -> {
+                    // ✅ DON'T setup audio here, it's done in initializeMediaFromIntent()
+                    Log.d(TAG, "⏩ Audio setup deferred to initializeMediaFromIntent()")
+                }
                 "video" -> setupVideoPlayerInOverlay()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Media overlay setup error", e)
         }
-    }
+}
     
     private fun setupVideoPlayerInOverlay() {
         try {
@@ -403,7 +416,6 @@ class GetBackLockActivity : Activity() {
             audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             requestAudioFocusForMedia()
             
-            // Create VideoView
             videoView = VideoView(this).apply {
                 val screenWidth = resources.displayMetrics.widthPixels
                 val videoHeight = (screenWidth * 9) / 16
@@ -478,7 +490,6 @@ class GetBackLockActivity : Activity() {
                 }
             }
             
-            // ✅ CRITICAL: Find the video container in the layout
             val videoContainerInLayout = persistentOverlay?.findViewById<FrameLayout>(R.id.videoContainer)
             if (videoContainerInLayout != null) {
                 Log.d(TAG, "✅ Found videoContainer in layout")
@@ -486,7 +497,6 @@ class GetBackLockActivity : Activity() {
                 videoContainerInLayout.addView(videoView)
                 videoContainerInLayout.visibility = View.VISIBLE
                 
-                // Hide lock icon
                 persistentOverlay?.findViewById<View>(R.id.lockIcon)?.visibility = View.GONE
                 
                 Log.d(TAG, "✅ VideoView added to container")
@@ -506,6 +516,26 @@ class GetBackLockActivity : Activity() {
     private fun requestAudioFocusForMedia() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // ✅ CREATE LISTENER (this was missing!)
+                audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+                    when (focusChange) {
+                        AudioManager.AUDIOFOCUS_GAIN -> {
+                            Log.d(TAG, "🔊 Audio focus gained")
+                            mediaPlayer?.setVolume(0.7f, 0.7f)
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS -> {
+                            Log.d(TAG, "🔇 Audio focus lost")
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                            Log.d(TAG, "⏸️ Audio focus lost temporarily")
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                            Log.d(TAG, "🔉 Audio ducked")
+                            mediaPlayer?.setVolume(0.3f, 0.3f)
+                        }
+                    }
+                }
+                
                 audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setAudioAttributes(
                         AudioAttributes.Builder()
@@ -513,10 +543,12 @@ class GetBackLockActivity : Activity() {
                             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                             .build()
                     )
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener!!) // ✅ ADD LISTENER
                     .setAcceptsDelayedFocusGain(true)
                     .build()
                 
-                audioManager?.requestAudioFocus(audioFocusRequest!!)
+                val result = audioManager?.requestAudioFocus(audioFocusRequest!!)
+                Log.d(TAG, "Audio focus result: $result")
             } else {
                 @Suppress("DEPRECATION")
                 audioManager?.requestAudioFocus(
@@ -699,28 +731,140 @@ class GetBackLockActivity : Activity() {
         }
     }
     
-    private fun finishGetBack() {
-        Log.d(TAG, "🏁 Finishing Get Back session")
-        
-        isLockActive = false
-        hasStoredData = false // Clear static storage
-        
-        countDownTimer?.cancel()
-        timeHandler?.removeCallbacks(timeUpdateRunnable!!)
-        
-        stopMediaPlayback()
-        restoreAudio()
-        removePersistentOverlay()
-        
+private fun finishGetBack() {
+    Log.d(TAG, "========================================")
+    Log.d(TAG, "🏁 FINISHING GET BACK SESSION")
+    Log.d(TAG, "========================================")
+    
+    isLockActive = false
+    hasStoredData = false
+    
+    Log.d(TAG, "⏱️ Step 1: Stopping timers...")
+    countDownTimer?.cancel()
+    timeHandler?.removeCallbacks(timeUpdateRunnable!!)
+    
+    Log.d(TAG, "🔇 Step 2: Stopping media...")
+    stopMediaPlayback()
+    
+    Log.d(TAG, "🔊 Step 3: Restoring audio...")
+    restoreAudio()
+    
+    Log.d(TAG, "🗑️ Step 4: Removing overlay...")
+    removePersistentOverlay()
+    
+    Log.d(TAG, "🔓 Step 5: Releasing wake lock...")
+    try {
         wakeLock?.release()
-        
-        try { unregisterReceiver(stopReceiver) } catch (e: Exception) { }
-        try { unregisterReceiver(screenStateReceiver) } catch (e: Exception) { }
-        
-        stopService(Intent(this, GetBackService::class.java))
-        
-        finish()
+    } catch (e: Exception) {
+        Log.e(TAG, "Wake lock release error", e)
     }
+    
+    Log.d(TAG, "📡 Step 6: Unregistering receivers...")
+    try { unregisterReceiver(stopReceiver) } catch (e: Exception) { }
+    try { unregisterReceiver(screenStateReceiver) } catch (e: Exception) { }
+    
+    Log.d(TAG, "🛑 Step 7: Stopping service...")
+    stopService(Intent(this, GetBackService::class.java))
+    
+    // ✅ SCHEDULE DND DISABLE AFTER ACTIVITY FINISHES
+    Log.d(TAG, "🔕 Scheduling DND disable...")
+    Handler(Looper.getMainLooper()).postDelayed({
+        disableDndWithRetry()
+    }, 500) // Wait for activity to fully finish
+    
+    Log.d(TAG, "✅ CLEANUP COMPLETE - CALLING FINISH()")
+    Log.d(TAG, "========================================")
+    
+    finish()
+}
+
+/**
+ * Disable DND with multiple retries and all filter types
+ */
+private fun disableDndWithRetry() {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            
+            if (!notificationManager.isNotificationPolicyAccessGranted) {
+                Log.w(TAG, "❌ Cannot disable DND - permission not granted")
+                return
+            }
+            
+            val currentFilter = notificationManager.currentInterruptionFilter
+            Log.d(TAG, "🔍 Current DND filter: $currentFilter")
+            
+            // Try to disable DND multiple times with delays
+            for (attempt in 1..5) {
+                Log.d(TAG, "🔄 DND disable attempt $attempt/5")
+                
+                try {
+                    // Force set to ALL (normal mode)
+                    notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                    
+                    // Wait a bit and check
+                    Thread.sleep(200)
+                    
+                    val newFilter = notificationManager.currentInterruptionFilter
+                    Log.d(TAG, "📊 New filter after attempt $attempt: $newFilter")
+                    
+                    if (newFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
+                        Log.d(TAG, "✅ DND DISABLED SUCCESSFULLY on attempt $attempt")
+                        return
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Attempt $attempt failed: ${e.message}")
+                }
+                
+                // Wait before next attempt
+                if (attempt < 5) {
+                    Thread.sleep(300)
+                }
+            }
+            
+            Log.e(TAG, "❌ FAILED TO DISABLE DND after 5 attempts")
+            Log.e(TAG, "Final filter state: ${notificationManager.currentInterruptionFilter}")
+            
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Critical error disabling DND: ${e.message}", e)
+    }
+}
+
+/**
+ * Disable DND when session ends
+ */
+private fun disableDnd() {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            
+            if (!notificationManager.isNotificationPolicyAccessGranted) {
+                Log.w(TAG, "Cannot disable DND - permission not granted")
+                return
+            }
+            
+            // Check if DND is actually enabled
+            val currentFilter = notificationManager.currentInterruptionFilter
+            if (currentFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
+                Log.d(TAG, "DND already disabled")
+                return
+            }
+            
+            Log.d(TAG, "Disabling DND (current filter: $currentFilter)")
+            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+            
+            val newFilter = notificationManager.currentInterruptionFilter
+            if (newFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
+                Log.d(TAG, "✅ DND disabled successfully")
+            } else {
+                Log.w(TAG, "⚠️ DND may not have been disabled (filter: $newFilter)")
+            }
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Error disabling DND: ${e.message}", e)
+    }
+}
     
     override fun onBackPressed() {
         // Blocked
@@ -748,20 +892,30 @@ class GetBackLockActivity : Activity() {
         }
     }
     
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.d(TAG, "💀 onDestroy")
-        
-        stopMediaPlayback()
-        
-        try { unregisterReceiver(stopReceiver) } catch (e: Exception) { }
-        try { unregisterReceiver(screenStateReceiver) } catch (e: Exception) { }
-        
-        restoreAudio()
-        removePersistentOverlay()
-        
-        countDownTimer?.cancel()
-        timeHandler?.removeCallbacks(timeUpdateRunnable!!)
+   override fun onDestroy() {
+    super.onDestroy()
+    Log.d(TAG, "💀 onDestroy")
+    
+    stopMediaPlayback()
+    
+    try { unregisterReceiver(stopReceiver) } catch (e: Exception) { }
+    try { unregisterReceiver(screenStateReceiver) } catch (e: Exception) { }
+    
+    restoreAudio()
+    removePersistentOverlay()
+    
+    countDownTimer?.cancel()
+    timeHandler?.removeCallbacks(timeUpdateRunnable!!)
+    
+    // ✅ FINAL DND DISABLE ATTEMPT IN onDestroy
+    Handler(Looper.getMainLooper()).postDelayed({
+        disableDndWithRetry()
+    }, 300)
+    
+    try {
         wakeLock?.release()
+    } catch (e: Exception) {
+        Log.e(TAG, "Wake lock release in onDestroy", e)
     }
+}
 }

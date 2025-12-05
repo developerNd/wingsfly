@@ -27,20 +27,13 @@ import {colors, Icons} from '../../../Helper/Contants';
 import {planYourDayService} from '../../../services/api/planYourDayService';
 import {useAuth} from '../../../contexts/AuthContext';
 import ReminderScheduler from '../../../services/notifications/ReminderScheduler';
-import {useMusic} from '../../../contexts/MusicContext'; // ADDED: Import Music Context
 import taskConfirmationAlarmManager from '../../../services/TaskConfirmation/taskConfirmationAlarmManager';
+import BlockTimeScheduler from '../../../services/Alarm/BlockTimeScheduler';
 
 const PlanTimerTrackerScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const {user} = useAuth();
-  const {
-    stopPlanMusic,
-    forceStopPlanMusic,
-    isPlanFlowActive,
-    isPlanMusicActive,
-    isPlaying,
-  } = useMusic(); // ADDED: Destructure music functions
 
   const previousData = route.params || {};
 
@@ -68,6 +61,10 @@ const PlanTimerTrackerScreen = () => {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderData, setReminderData] = useState(null);
 
+  // Priority states
+  const [priority, setPriority] = useState('');
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+
   // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -76,6 +73,22 @@ const PlanTimerTrackerScreen = () => {
   // Label states
   const isTaskNameLabelActive = taskNameFocused || taskName.length > 0;
   const isDescriptionLabelActive = descriptionFocused || description.length > 0;
+
+  // Priority options
+  const priorityOptions = [
+    {
+      label: 'Must',
+      value: 'Must',
+      backgroundColor: '#EFCCCC',
+      textColor: '#AF0000',
+    },
+    {
+      label: 'Important',
+      value: 'Important',
+      backgroundColor: '#D0D1E3',
+      textColor: colors.Primary,
+    },
+  ];
 
   // Load data when screen comes into focus
   useFocusEffect(
@@ -96,6 +109,7 @@ const PlanTimerTrackerScreen = () => {
         if (data.addReminder !== undefined) setAddReminder(data.addReminder);
         if (data.addToGoogleCalendar !== undefined)
           setAddToGoogleCalendar(data.addToGoogleCalendar);
+        if (data.priority !== undefined) setPriority(data.priority);
       }
     }, [route.params]),
   );
@@ -234,6 +248,13 @@ const PlanTimerTrackerScreen = () => {
     return `${day}/${month}/${year}`;
   };
 
+  const formatDateForDB = date => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const calculateDaysDifference = (startDate, endDate) => {
     const diffTime = Math.abs(endDate - startDate);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -258,6 +279,16 @@ const PlanTimerTrackerScreen = () => {
     } else {
       setShowEndDatePicker(true);
     }
+  };
+
+  // Priority handlers
+  const handlePriorityPress = () => {
+    setShowPriorityDropdown(!showPriorityDropdown);
+  };
+
+  const handlePrioritySelect = selectedPriority => {
+    setPriority(selectedPriority.value);
+    setShowPriorityDropdown(false);
   };
 
   // Reminder handlers
@@ -302,6 +333,7 @@ const PlanTimerTrackerScreen = () => {
         reminderData,
         addReminder,
         addToGoogleCalendar,
+        priority,
       },
     };
 
@@ -315,14 +347,11 @@ const PlanTimerTrackerScreen = () => {
     navigation.navigate('LinkGoal', serializedData);
   };
 
-  // UPDATED: Handle Done press with music stop functionality
+  // ✅ FIXED: Handle Done press with proper block_time_data serialization
   const handleDonePress = async () => {
-    console.log('🎵 PlanTimerTrackerScreen: handleDonePress called');
-    console.log('🎵 PlanTimerTrackerScreen: Current music state:', {
-      isPlanFlowActive,
-      isPlaying: isPlaying,
-      isPlanMusicActive: isPlanMusicActive,
-    });
+    console.log('========================================');
+    console.log('📝 [PlanTimerTracker] Starting task creation');
+    console.log('========================================');
 
     if (toastVisible) {
       hideToast();
@@ -335,7 +364,7 @@ const PlanTimerTrackerScreen = () => {
     }
 
     if (!user) {
-      Alert.alert('Error', 'Please log in to create Plan Your Day.');
+      showToast('Please log in to create Plan Your Day', 'error');
       return;
     }
 
@@ -349,6 +378,7 @@ const PlanTimerTrackerScreen = () => {
       reminderData,
       addReminder,
       addToGoogleCalendar,
+      priority,
     };
 
     const finalData = {
@@ -357,52 +387,31 @@ const PlanTimerTrackerScreen = () => {
     };
 
     try {
-      // 🎵 CRITICAL: Stop background music FIRST before any task creation
-      console.log(
-        '🎵 PlanTimerTrackerScreen: Task creation started - attempting to stop background music...',
-      );
+      // ✅ AUTOMATIC: Block time enabled if start time is set
+      const blockTimeEnabled = !!startTime;
 
-      // Multiple attempts to stop music to ensure it stops
-      try {
-        console.log(
-          '🎵 PlanTimerTrackerScreen: Attempt 1 - Using forceStopPlanMusic',
-        );
-        await forceStopPlanMusic();
-        console.log('🎵 PlanTimerTrackerScreen: Force stop completed');
-      } catch (musicError) {
-        console.error(
-          '🎵 PlanTimerTrackerScreen: Force stop failed, trying regular stop:',
-          musicError,
-        );
+      // Prepare block time data
+      const blockTimeData =
+        blockTimeEnabled && startTime
+          ? {
+              enabled: true,
+              start_time: startTime,
+            }
+          : null;
+
+      // Helper function to convert 24-hour time to 12-hour format for display
+      const convertTo12Hour = time24h => {
         try {
-          await stopPlanMusic();
-          console.log('🎵 PlanTimerTrackerScreen: Regular stop completed');
-        } catch (regularStopError) {
-          console.error(
-            '🎵 PlanTimerTrackerScreen: Regular stop also failed:',
-            regularStopError,
-          );
+          if (!time24h) return null;
+          const [hours, minutes] = time24h.split(':').map(Number);
+          const period = hours >= 12 ? 'PM' : 'AM';
+          const hour12 = hours % 12 || 12;
+          return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
+        } catch (error) {
+          console.error('Error converting time to 12-hour format:', error);
+          return null;
         }
-      }
-
-      // Additional verification that music is stopped
-      setTimeout(async () => {
-        try {
-          console.log(
-            '🎵 PlanTimerTrackerScreen: Additional verification - ensuring music is stopped',
-          );
-          await stopPlanMusic();
-        } catch (verificationError) {
-          console.error(
-            '🎵 PlanTimerTrackerScreen: Verification stop failed:',
-            verificationError,
-          );
-        }
-      }, 100);
-
-      console.log(
-        '🎵 PlanTimerTrackerScreen: Music stop attempts completed, proceeding with task creation',
-      );
+      };
 
       const planData = {
         title: taskName.trim(),
@@ -414,9 +423,10 @@ const PlanTimerTrackerScreen = () => {
         planType: 'hours',
         evaluationType: 'timerTracker',
         userId: user.id,
+        time: startTime ? convertTo12Hour(startTime) : null, // ✅ Convert 24-hour startTime to 12-hour format for time column
         timeColor: '#E4EBF3',
-        tags: ['Plan', 'Timer Tracker'],
-        priority: 'High',
+        tags: ['Plan', priority || 'Important'],
+        priority: priority || 'Important',
         startDate: startDate
           ? new Date(startDate).toISOString().split('T')[0]
           : null,
@@ -432,8 +442,8 @@ const PlanTimerTrackerScreen = () => {
         linkedGoalTitle: null,
         linkedGoalType: null,
         note: description.trim() || '',
-        blockTimeEnabled: false,
-        blockTimeData: null,
+        blockTimeEnabled: blockTimeEnabled,
+        blockTimeData: blockTimeData,
         durationEnabled: false,
         durationData: null,
         addPomodoro: false,
@@ -456,17 +466,80 @@ const PlanTimerTrackerScreen = () => {
         planData.reminderData = null;
       }
 
-      console.log(
-        '🎵 PlanTimerTrackerScreen: Saving Plan Your Day Timer Tracker data:',
-        planData,
-      );
+      console.log('💾 Saving Plan Your Day Timer Tracker...');
 
       const savedPlan = await planYourDayService.createPlanYourDay(planData);
+
+      console.log('✅ Task saved successfully:', savedPlan.id);
+
+      // ⏰ AUTOMATIC BLOCK TIME ALARM SCHEDULING - Triggers if start time is set
+      if (blockTimeEnabled && startTime && startDate) {
+        try {
+          console.log('========================================');
+          console.log('⏰ [BlockTime] Auto-scheduling Block Time alarm');
+          console.log('========================================');
+          console.log('📋 Task ID:', savedPlan.id);
+          console.log('📋 Start Time:', startTime);
+          console.log('📋 Start Date:', formatDateForDB(startDate));
+
+          const dateString = formatDateForDB(startDate);
+
+          // ✅ FIX: Stringify block_time_data for native module
+          const blockTimeTask = {
+            id: savedPlan.id,
+            title: taskName.trim(),
+            description: description.trim(),
+            category: planData.category,
+            evaluation_type: 'timerTracker',
+            block_time_enabled: true,
+            block_time_data: JSON.stringify({
+              // ✅ STRINGIFY HERE
+              start_time: startTime,
+              enabled: true,
+            }),
+            source: 'plan_your_day',
+            frequency_type: 'Once',
+            start_date: dateString,
+          };
+
+          console.log(
+            '📦 Block Time Task Object:',
+            JSON.stringify(blockTimeTask, null, 2),
+          );
+
+          const alarmResult = await BlockTimeScheduler.scheduleAlarmForTask(
+            blockTimeTask,
+            dateString,
+          );
+
+          if (alarmResult.success) {
+            console.log('========================================');
+            console.log('✅ [BlockTime] Alarm scheduled successfully!');
+            console.log('📱 Request Code:', alarmResult.result.requestCode);
+            console.log(
+              '⏰ Trigger Time:',
+              new Date(alarmResult.result.triggerTime).toLocaleString(),
+            );
+            console.log('========================================');
+          } else {
+            console.warn(
+              '⚠️ [BlockTime] Failed to schedule alarm:',
+              alarmResult.reason || alarmResult.error,
+            );
+          }
+        } catch (blockTimeError) {
+          console.error(
+            '❌ [BlockTime] Error scheduling Block Time alarm:',
+            blockTimeError,
+          );
+          // Don't block task creation if Block Time scheduling fails
+        }
+      }
 
       // Schedule task confirmation alarm
       if (startTime && startDate) {
         try {
-          console.log('Scheduling task confirmation alarm...');
+          console.log('📅 Scheduling task confirmation alarm...');
 
           const confirmationResult =
             await taskConfirmationAlarmManager.scheduleConfirmationAlarm({
@@ -483,21 +556,14 @@ const PlanTimerTrackerScreen = () => {
             });
 
           if (confirmationResult.success) {
-            console.log(
-              'Task confirmation alarm scheduled:',
-              confirmationResult.data,
-            );
-          } else {
-            console.warn(
-              'Failed to schedule confirmation alarm:',
-              confirmationResult.error,
-            );
+            console.log('✅ Task confirmation alarm scheduled');
           }
         } catch (confirmError) {
-          console.error('Error scheduling task confirmation:', confirmError);
+          console.error('❌ Error scheduling task confirmation:', confirmError);
         }
       }
 
+      // Schedule reminders
       let reminderMessage = '';
       if (planData.reminderEnabled && planData.reminderData) {
         try {
@@ -522,101 +588,40 @@ const PlanTimerTrackerScreen = () => {
 
           if (scheduledReminders.length > 0) {
             reminderMessage = ` ${scheduledReminders.length} reminder(s) scheduled.`;
-            console.log(
-              '🎵 PlanTimerTrackerScreen: Scheduled reminders:',
-              scheduledReminders,
-            );
+            console.log('✅ Reminders scheduled:', scheduledReminders.length);
           }
         } catch (reminderError) {
-          console.error(
-            '🎵 PlanTimerTrackerScreen: Error scheduling reminders:',
-            reminderError,
-          );
+          console.error('❌ Error scheduling reminders:', reminderError);
           reminderMessage = ' (Note: Reminders could not be scheduled)';
         }
       }
 
-      console.log(
-        '🎵 PlanTimerTrackerScreen: Task creation completed successfully',
-      );
+      console.log('========================================');
+      console.log('🎉 Task creation completed successfully!');
+      console.log('========================================');
 
-      // 🎵 FINAL MUSIC STOP: Ensure music is stopped after successful task creation
-      try {
-        console.log(
-          '🎵 PlanTimerTrackerScreen: Final music stop after task creation',
-        );
-        await forceStopPlanMusic();
-        console.log('🎵 PlanTimerTrackerScreen: Final music stop completed');
-      } catch (finalMusicError) {
-        console.error(
-          '🎵 PlanTimerTrackerScreen: Final music stop failed:',
-          finalMusicError,
-        );
-      }
+      let successMessage = 'Task created successfully!';
 
-      Alert.alert(
-        'Success',
-        `Plan Your Day Timer Tracker created successfully!${reminderMessage}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              console.log(
-                '🎵 PlanTimerTrackerScreen: Navigating to home after task creation',
-              );
+      // Show success toast
+      showToast(successMessage, 'success');
 
-              // 🎵 NAVIGATION MUSIC STOP: One more stop before navigation
-              forceStopPlanMusic()
-                .then(() => {
-                  console.log(
-                    '🎵 PlanTimerTrackerScreen: Pre-navigation music stop completed',
-                  );
-                })
-                .catch(error => {
-                  console.error(
-                    '🎵 PlanTimerTrackerScreen: Pre-navigation music stop failed:',
-                    error,
-                  );
-                });
-
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: 'PlanYourDayScreen',
-                    params: {
-                      newPlanCreated: true,
-                      refresh: true,
-                    },
-                  },
-                ],
-              });
+      // Navigate after a short delay to allow toast to be visible
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'PlanYourDayScreen',
+              params: {
+                newPlanCreated: true,
+                refresh: true,
+              },
             },
-          },
-        ],
-      );
+          ],
+        });
+      }, 1500);
     } catch (error) {
-      console.error(
-        '🎵 PlanTimerTrackerScreen: Error saving Plan Your Day Timer Tracker:',
-        error,
-      );
-
-      // 🎵 ERROR MUSIC STOP: Stop music even if task creation fails
-      try {
-        console.log(
-          '🎵 PlanTimerTrackerScreen: Stopping music due to task creation error',
-        );
-        await forceStopPlanMusic();
-        console.log(
-          '🎵 PlanTimerTrackerScreen: Error case music stop completed',
-        );
-      } catch (errorMusicStop) {
-        console.error(
-          '🎵 PlanTimerTrackerScreen: Error case music stop failed:',
-          errorMusicStop,
-        );
-      }
-
+      console.error('❌ Error saving Plan Your Day Timer Tracker:', error);
       Alert.alert('Error', 'Failed to create plan. Please try again.');
     }
   };
@@ -658,6 +663,7 @@ const PlanTimerTrackerScreen = () => {
     subtitle = null,
     customRight = null,
     onRowPress = null,
+    hasDropdown = false,
   ) => {
     return (
       <View style={styles.optionContainer}>
@@ -704,6 +710,13 @@ const PlanTimerTrackerScreen = () => {
                 />
               </TouchableOpacity>
             )}
+            {hasDropdown && (
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={WP(6)}
+                color="#646464"
+              />
+            )}
             {customRight && customRight}
           </View>
         </TouchableOpacity>
@@ -748,6 +761,70 @@ const PlanTimerTrackerScreen = () => {
                 <Text style={styles.daysDifferenceText}>days.</Text>
               </View>
             </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // Priority section component
+  const renderPrioritySection = () => {
+    return (
+      <View
+        style={[
+          styles.optionContainer,
+          showPriorityDropdown && styles.priorityContainerExpanded,
+        ]}>
+        <TouchableOpacity
+          style={styles.optionRow}
+          activeOpacity={0.7}
+          onPress={handlePriorityPress}>
+          <View style={styles.optionLeft}>
+            <Image
+              source={Icons.Flag}
+              style={styles.optionIcon}
+              resizeMode="contain"
+            />
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>Priority</Text>
+            </View>
+          </View>
+          <View style={styles.optionRight}>
+            <MaterialIcons
+              name={
+                showPriorityDropdown
+                  ? 'keyboard-arrow-up'
+                  : 'keyboard-arrow-down'
+              }
+              size={WP(6)}
+              color="#646464"
+            />
+          </View>
+        </TouchableOpacity>
+
+        {showPriorityDropdown && (
+          <View style={styles.priorityDropdown}>
+            <View style={styles.priorityButtonsContainer}>
+              {priorityOptions.map((option, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.priorityButton,
+                    {backgroundColor: option.backgroundColor},
+                    priority === option.value && styles.priorityButtonSelected,
+                  ]}
+                  onPress={() => handlePrioritySelect(option)}
+                  activeOpacity={0.8}>
+                  <Text
+                    style={[
+                      styles.priorityButtonText,
+                      {color: option.textColor},
+                    ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
       </View>
@@ -850,6 +927,9 @@ const PlanTimerTrackerScreen = () => {
 
         {/* End Date Section */}
         {renderEndDateSection()}
+
+        {/* Priority Section */}
+        {renderPrioritySection()}
 
         {/* Add a Reminder */}
         {renderOptionRow(
@@ -1075,6 +1155,10 @@ const styles = StyleSheet.create({
     borderColor: '#F0F0F0',
     minHeight: HP(4.375),
   },
+  priorityContainerExpanded: {
+    minHeight: HP(12),
+    paddingBottom: HP(1.5),
+  },
   noBottomBorder: {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
@@ -1241,6 +1325,29 @@ const styles = StyleSheet.create({
     fontSize: FS(1.8),
     fontFamily: 'OpenSans-SemiBold',
     color: '#646464',
+  },
+  priorityDropdown: {
+    paddingTop: HP(1),
+    paddingHorizontal: WP(10),
+  },
+  priorityButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  priorityButton: {
+    paddingVertical: HP(1.2),
+    borderRadius: WP(2),
+    width: WP(28.5),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priorityButtonSelected: {
+    opacity: 0.8,
+    transform: [{scale: 0.95}],
+  },
+  priorityButtonText: {
+    fontSize: FS(1.5),
+    fontFamily: 'OpenSans-SemiBold',
   },
   calendarContainer: {
     marginBottom: HP(0.9),

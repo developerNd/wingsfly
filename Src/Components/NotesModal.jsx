@@ -12,26 +12,33 @@ import {
   Platform,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {useNotes} from '../contexts/NotesContext';
+import {useAuth} from '../contexts/AuthContext';
+import {notesService} from '../services/api/notesService';
 import {colors} from '../Helper/Contants';
 import {WP, HP, FS} from '../utils/dimentions';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 
 const NotesModal = () => {
+  const {user} = useAuth();
   const {
     noteContent,
     isNotesVisible,
     updateNoteContent,
-    saveNotes,
+    saveNotes: contextSaveNotes,
     hideNotes,
-    clearNotes,
+    clearNotes: contextClearNotes,
   } = useNotes();
 
   const [localContent, setLocalContent] = useState(noteContent);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [noteId, setNoteId] = useState(null);
   
   // Position and size state
   const pan = useRef(new Animated.ValueXY({x: 0, y: 0})).current;
@@ -54,9 +61,44 @@ const NotesModal = () => {
   const MIN_HEIGHT = SCREEN_HEIGHT * 0.25;
   const MAX_HEIGHT = SCREEN_HEIGHT * 0.85;
 
+  // Load notes from database when modal opens
+  useEffect(() => {
+    if (isNotesVisible && user?.id) {
+      loadNotesFromDB();
+    }
+  }, [isNotesVisible, user?.id]);
+
   useEffect(() => {
     setLocalContent(noteContent);
   }, [noteContent]);
+
+  // Load notes from database
+  const loadNotesFromDB = async () => {
+    if (!user?.id) {
+      console.log('[NOTES] No user ID available');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const notes = await notesService.getUserNotes(user.id);
+      
+      if (notes) {
+        setNoteId(notes.id);
+        setLocalContent(notes.content || '');
+        updateNoteContent(notes.content || '');
+      } else {
+        // No notes found, start fresh
+        setNoteId(null);
+        setLocalContent('');
+      }
+    } catch (error) {
+      console.error('Error loading notes:', error);
+      Alert.alert('Error', 'Failed to load notes. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Calculate distance between two touches
   const getDistance = (touches) => {
@@ -76,13 +118,54 @@ const NotesModal = () => {
     }
 
     saveTimerRef.current = setTimeout(() => {
-      saveNotes(text);
+      saveNotesToDB(text);
     }, 2000);
   };
 
-  const handleSave = () => {
-    saveNotes(localContent);
-    Alert.alert('Success', 'Notes saved successfully!');
+  // Save notes to database
+  const saveNotesToDB = async (content) => {
+    if (!user?.id) {
+      console.log('[NOTES] No user ID available for saving');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const savedNotes = await notesService.saveNotes(user.id, content, noteId);
+      
+      if (savedNotes) {
+        setNoteId(savedNotes.id);
+        contextSaveNotes(content);
+      }
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      Alert.alert('Error', 'Failed to save notes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user?.id) {
+      Alert.alert('Error', 'Please log in to save notes.');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const savedNotes = await notesService.saveNotes(user.id, localContent, noteId);
+      
+      if (savedNotes) {
+        setNoteId(savedNotes.id);
+        contextSaveNotes(localContent);
+        Alert.alert('Success', 'Notes saved successfully!');
+      }
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      Alert.alert('Error', 'Failed to save notes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleClear = () => {
@@ -94,9 +177,18 @@ const NotesModal = () => {
         {
           text: 'Clear',
           style: 'destructive',
-          onPress: () => {
-            clearNotes();
-            setLocalContent('');
+          onPress: async () => {
+            try {
+              if (noteId) {
+                await notesService.clearNotes(noteId);
+              }
+              contextClearNotes();
+              setLocalContent('');
+              Alert.alert('Success', 'Notes cleared successfully!');
+            } catch (error) {
+              console.error('Error clearing notes:', error);
+              Alert.alert('Error', 'Failed to clear notes. Please try again.');
+            }
           },
         },
       ],
@@ -122,7 +214,6 @@ const NotesModal = () => {
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 1,
       onMoveShouldSetPanResponder: (evt) => {
-        // Allow dragging only with one finger
         if (evt.nativeEvent.touches.length === 1 && isDragging) {
           return true;
         }
@@ -149,7 +240,6 @@ const NotesModal = () => {
         setIsDragging(false);
         pan.flattenOffset();
         
-        // Keep within screen bounds
         const maxX = SCREEN_WIDTH - modalSize.width;
         const maxY = SCREEN_HEIGHT - modalSize.height - 50;
         
@@ -169,7 +259,6 @@ const NotesModal = () => {
     }),
   ).current;
 
-  // Pinch zoom responder
   const pinchResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2,
@@ -188,11 +277,9 @@ const NotesModal = () => {
           const currentDistance = getDistance(evt.nativeEvent.touches);
           const scale = currentDistance / initialDistance.current;
           
-          // Calculate new size
           let newWidth = initialSize.current.width * scale;
           let newHeight = initialSize.current.height * scale;
           
-          // Apply constraints
           newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, newWidth));
           newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, newHeight));
           
@@ -201,7 +288,6 @@ const NotesModal = () => {
             height: newHeight,
           });
           
-          // Adjust position to keep modal within bounds
           const maxX = SCREEN_WIDTH - newWidth;
           const maxY = SCREEN_HEIGHT - newHeight - 50;
           
@@ -241,7 +327,15 @@ const NotesModal = () => {
         {/* Header */}
         <View style={styles.header} {...panResponder.panHandlers}>
           <View style={styles.dragHandle} />
-          <Text style={styles.headerTitle}>My Notes</Text>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>My Notes</Text>
+            {isSaving && (
+              <View style={styles.savingIndicator}>
+                <ActivityIndicator size="small" color={colors.White} />
+                <Text style={styles.savingText}>Saving...</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.headerButtons}>
             <TouchableOpacity onPress={toggleExpand} style={styles.headerButton}>
               <Icon
@@ -257,34 +351,50 @@ const NotesModal = () => {
         </View>
 
         {/* Content */}
-        <ScrollView
-          style={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
-          <TextInput
-            style={styles.textInput}
-            multiline
-            placeholder="Write your notes here..."
-            placeholderTextColor="#999"
-            value={localContent}
-            onChangeText={handleTextChange}
-            textAlignVertical="top"
-          />
-        </ScrollView>
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.Primary} />
+            <Text style={styles.loadingText}>Loading notes...</Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
+            <TextInput
+              style={styles.textInput}
+              multiline
+              placeholder="Write your notes here..."
+              placeholderTextColor="#999"
+              value={localContent}
+              onChangeText={handleTextChange}
+              textAlignVertical="top"
+            />
+          </ScrollView>
+        )}
 
         {/* Footer */}
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.footerButton}
             onPress={handleClear}
-            disabled={!localContent || localContent.length === 0}>
+            disabled={!localContent || localContent.length === 0 || isLoading}>
             <Icon name="delete-outline" size={WP(5)} color="#E74C3C" />
             <Text style={styles.clearButtonText}>Clear</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <Icon name="save" size={WP(5)} color={colors.White} />
-            <Text style={styles.saveButtonText}>Save</Text>
+          <TouchableOpacity 
+            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} 
+            onPress={handleSave}
+            disabled={isSaving || isLoading}>
+            {isSaving ? (
+              <ActivityIndicator size="small" color={colors.White} />
+            ) : (
+              <Icon name="save" size={WP(5)} color={colors.White} />
+            )}
+            <Text style={styles.saveButtonText}>
+              {isSaving ? 'Saving...' : 'Save'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -337,11 +447,26 @@ const styles = StyleSheet.create({
     left: '50%',
     marginLeft: -WP(5),
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: WP(2),
+    marginTop: HP(0.5),
+  },
   headerTitle: {
     fontSize: FS(2),
     fontFamily: 'Roboto-Bold',
     color: colors.White,
-    marginTop: HP(0.5),
+  },
+  savingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: WP(1),
+  },
+  savingText: {
+    fontSize: FS(1.4),
+    fontFamily: 'Roboto-Regular',
+    color: colors.White,
   },
   headerButtons: {
     flexDirection: 'row',
@@ -350,6 +475,17 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     padding: WP(1),
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: HP(2),
+  },
+  loadingText: {
+    fontSize: FS(1.6),
+    fontFamily: 'Roboto-Regular',
+    color: '#666',
   },
   contentContainer: {
     flex: 1,
@@ -391,6 +527,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: WP(4),
     paddingVertical: HP(1.2),
     borderRadius: WP(2),
+  },
+  saveButtonDisabled: {
+    opacity: 0.7,
   },
   saveButtonText: {
     fontSize: FS(1.6),

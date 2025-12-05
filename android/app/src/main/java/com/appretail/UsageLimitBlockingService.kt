@@ -32,16 +32,13 @@ class UsageLimitBlockingService : Service() {
     private lateinit var sharedPreferences: SharedPreferences
     private val mainHandler = Handler(Looper.getMainLooper())
     
-    // Unified notification manager
     private lateinit var notificationManager: UnifiedNotificationManager
     
-    // Enhanced tracking
     private val activeAppSessions = ConcurrentHashMap<String, AppSession>()
     private var currentForegroundApp = ""
     private var lastAppSwitchTime = 0L
     private var isServiceRunning = false
     
-    // Monitoring jobs
     private var usageMonitoringJob: Job? = null
     private var continuousUsageUpdateJob: Job? = null
     private var realTimeBlockingJob: Job? = null
@@ -49,7 +46,6 @@ class UsageLimitBlockingService : Service() {
     
     private val TAG = "UsageLimitBlocking"
     
-    // Monitoring intervals
     private val APP_SWITCH_CHECK_INTERVAL = 100L
     private val USAGE_UPDATE_INTERVAL = 5000L
     private val BLOCKING_CHECK_INTERVAL = 200L
@@ -109,8 +105,6 @@ class UsageLimitBlockingService : Service() {
             windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             sharedPreferences = getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-            
-            // Initialize unified notification manager
             notificationManager = UnifiedNotificationManager.getInstance(this)
             
             startForegroundService()
@@ -348,19 +342,14 @@ class UsageLimitBlockingService : Service() {
             
             val totalUsageMinutes = getTotalUsageToday(currentForegroundApp)
             
-            Log.d(TAG, "Usage check: $currentForegroundApp ${totalUsageMinutes}min / ${usageLimit}min")
-            
             if (totalUsageMinutes >= usageLimit) {
                 Log.d(TAG, "LIMIT EXCEEDED: $currentForegroundApp")
                 
-                // Check if app was already blocked before this usage session
                 val wasAlreadyBlocked = isAppAlreadyBlocked(currentForegroundApp)
                 
                 markLimitReached(currentForegroundApp)
                 
                 mainHandler.post {
-                    // Show video only if app was being actively used when limit was reached
-                    // If already blocked, just close without video
                     blockAppForUsageLimit(currentForegroundApp, showVideo = !wasAlreadyBlocked)
                 }
             }
@@ -487,7 +476,6 @@ class UsageLimitBlockingService : Service() {
         return sharedPreferences.getLong("usage_limit_$packageName", 0L)
     }
 
-    // ✅ NEW: Check if app is already blocked today
     private fun isAppAlreadyBlocked(packageName: String): Boolean {
         val todayDate = getTodayDateString()
         val savedDate = sharedPreferences.getString("usage_date_$packageName", "")
@@ -507,54 +495,50 @@ class UsageLimitBlockingService : Service() {
     }
 
     private fun getVideoUrlFromSupabase(): String? {
-    return try {
-        val videoPrefs = getSharedPreferences("UsageLimitVideo", Context.MODE_PRIVATE)
-        val videoUrl = videoPrefs.getString("video_url", "") ?: ""
-        
-        if (videoUrl.isEmpty()) {
-            Log.w(TAG, "No video URL found in cache")
-            null
-        } else {
-            videoUrl
-        }
-    } catch (e: Exception) {
-        Log.e(TAG, "Error getting video URL: ${e.message}", e)
-        null
-    }
-}
-
-// Update the blockAppForUsageLimit method
-private fun blockAppForUsageLimit(packageName: String, showVideo: Boolean) {
-    try {
-        Log.d(TAG, "Blocking app: $packageName, Show video: $showVideo")
-        
-        forceCloseApp(packageName)
-        
-        if (showVideo) {
-            // Get video URL from Supabase cache
-            val videoUrl = getVideoUrlFromSupabase()
+        return try {
+            val videoPrefs = getSharedPreferences("UsageLimitVideo", Context.MODE_PRIVATE)
+            val videoUrl = videoPrefs.getString("video_url", "") ?: ""
             
-            if (!videoUrl.isNullOrEmpty()) {
-                Log.d(TAG, "Limit reached during usage - showing video from Supabase")
-                launchVideoLockActivity(packageName, videoUrl)
+            if (videoUrl.isEmpty()) {
+                Log.w(TAG, "No video URL found in cache")
+                null
             } else {
-                Log.d(TAG, "Limit reached during usage - no video, showing lock screen")
-                showUsageLimitLockScreen(packageName)
+                videoUrl
             }
-        } else {
-            // App was already blocked, user tried to open it - just close
-            Log.d(TAG, "App already blocked - just closing without video")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting video URL: ${e.message}", e)
+            null
         }
-        
-        // Force close multiple times to ensure app stays closed
-        mainHandler.postDelayed({ forceCloseApp(packageName) }, 100)
-        mainHandler.postDelayed({ forceCloseApp(packageName) }, 300)
-        mainHandler.postDelayed({ forceCloseApp(packageName) }, 500)
-        
-    } catch (e: Exception) {
-        Log.e(TAG, "Error blocking app: ${e.message}", e)
     }
-}
+
+    private fun blockAppForUsageLimit(packageName: String, showVideo: Boolean) {
+        try {
+            Log.d(TAG, "Blocking app: $packageName, Show video: $showVideo")
+            
+            forceCloseApp(packageName)
+            
+            if (showVideo) {
+                val videoUrl = getVideoUrlFromSupabase()
+                
+                if (!videoUrl.isNullOrEmpty()) {
+                    Log.d(TAG, "Limit reached during usage - showing video from Supabase")
+                    launchVideoLockActivity(packageName, videoUrl)
+                } else {
+                    Log.d(TAG, "Limit reached during usage - no video, showing lock screen")
+                    showUsageLimitLockScreen(packageName)
+                }
+            } else {
+                Log.d(TAG, "App already blocked - just closing without video")
+            }
+            
+            mainHandler.postDelayed({ forceCloseApp(packageName) }, 100)
+            mainHandler.postDelayed({ forceCloseApp(packageName) }, 300)
+            mainHandler.postDelayed({ forceCloseApp(packageName) }, 500)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error blocking app: ${e.message}", e)
+        }
+    }
 
     private fun forceCloseApp(packageName: String) {
         try {
@@ -593,17 +577,17 @@ private fun blockAppForUsageLimit(packageName: String, showVideo: Boolean) {
             val inflater = LayoutInflater.from(this)
             usageLimitLockView = inflater.inflate(R.layout.usage_limit_lock_screen, null)
             
+            // ✅ FIXED: Removed usageInfo TextView - not needed in layout
             val appNameText = usageLimitLockView!!.findViewById<TextView>(R.id.appName)
             val lockMessage = usageLimitLockView!!.findViewById<TextView>(R.id.lockMessage)
-            val usageInfo = usageLimitLockView!!.findViewById<TextView>(R.id.usageInfo)
             val appIconView = usageLimitLockView!!.findViewById<ImageView>(R.id.appIcon)
             val closeButton = usageLimitLockView!!.findViewById<Button>(R.id.closeButton)
             
             appNameText.text = appName
             appIconView.setImageDrawable(appIcon)
             
-            lockMessage.text = "Daily Usage Limit Reached!"
-            usageInfo.text = "You've used $appName for ${formatTime(usageMinutes)} today.\nLimit: ${formatTime(limitMinutes)}"
+            // Show usage info in lock message
+            lockMessage.text = "Daily Usage Limit Reached!\nYou've used $appName for ${formatTime(usageMinutes)} today.\nLimit: ${formatTime(limitMinutes)}"
             
             closeButton.text = "OK"
             closeButton.setOnClickListener {
@@ -639,32 +623,32 @@ private fun blockAppForUsageLimit(packageName: String, showVideo: Boolean) {
         }
     }
 
-private fun launchVideoLockActivity(packageName: String, videoUrl: String) {
-    try {
-        val packageManager = applicationContext.packageManager
-        val appInfo = packageManager.getApplicationInfo(packageName, 0)
-        val appName = packageManager.getApplicationLabel(appInfo).toString()
-        
-        Log.d(TAG, "🎬 Launching video lock activity")
-        Log.d(TAG, "📦 Package: $packageName")
-        Log.d(TAG, "📱 App: $appName")
-        Log.d(TAG, "🎥 Video URL: $videoUrl")
-        
-        val intent = Intent(this, UsageLimitVideoLockActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra("package_name", packageName)
-            putExtra("app_name", appName)
-            putExtra("video_url", videoUrl) // Make sure this key matches
+    private fun launchVideoLockActivity(packageName: String, videoUrl: String) {
+        try {
+            val packageManager = applicationContext.packageManager
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val appName = packageManager.getApplicationLabel(appInfo).toString()
+            
+            Log.d(TAG, "🎬 Launching video lock activity")
+            Log.d(TAG, "📦 Package: $packageName")
+            Log.d(TAG, "📱 App: $appName")
+            Log.d(TAG, "🎥 Video URL: $videoUrl")
+            
+            val intent = Intent(this, UsageLimitVideoLockActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra("package_name", packageName)
+                putExtra("app_name", appName)
+                putExtra("video_url", videoUrl)
+            }
+            
+            startActivity(intent)
+            Log.d(TAG, "✅ Video lock activity launched")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error launching video activity: ${e.message}", e)
+            showUsageLimitLockScreen(packageName)
         }
-        
-        startActivity(intent)
-        Log.d(TAG, "✅ Video lock activity launched")
-        
-    } catch (e: Exception) {
-        Log.e(TAG, "❌ Error launching video activity: ${e.message}", e)
-        showUsageLimitLockScreen(packageName)
     }
-}
 
     private fun removeUsageLimitLockScreen() {
         try {
@@ -784,10 +768,6 @@ private fun launchVideoLockActivity(packageName: String, videoUrl: String) {
         }
     }
 
-    inner class ServiceBinder : android.os.Binder() {
-        fun asService(): UsageLimitBlockingService = this@UsageLimitBlockingService
-    }
-
     fun checkAndBlockAppForUsageLimit(packageName: String) {
         val usageLimit = getAppUsageLimit(packageName)
         if (usageLimit > 0) {
@@ -795,7 +775,6 @@ private fun launchVideoLockActivity(packageName: String, videoUrl: String) {
             if (totalUsage >= usageLimit) {
                 Log.d(TAG, "Manual check - limit exceeded for $packageName")
                 
-                // Check if already blocked
                 val isFirstTimeBlocked = !isAppAlreadyBlocked(packageName)
                 
                 mainHandler.post {
